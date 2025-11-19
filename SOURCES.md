@@ -27,15 +27,38 @@ Comprehensive list of popular CLI tools including:
 
 ### Import all sources at once:
 
+WenPM supports two import formats:
+- **txt format** - URL list (requires GitHub API calls)
+- **json format** - Complete package info (no API calls, faster!)
+
 ```bash
 # Import essential tools (recommended for beginners)
+# txt format - will fetch package info from GitHub
 wenpm source import sources-essential.txt
+
+# json format - instant import with complete package info
+wenpm source import sources-essential.json
 
 # Import comprehensive list
 wenpm source import wenpm-sources.txt
 
 # Import from URL (if hosted on GitHub)
-wenpm source import https://raw.githubusercontent.com/superyngo/WenPM/main/sources-essential.txt
+wenpm source import https://raw.githubusercontent.com/superyngo/WenPM/main/sources-essential.json
+```
+
+**💡 Pro Tip:** Use JSON format to avoid GitHub API rate limits! JSON files contain complete package information and import instantly without fetching from GitHub.
+
+### Export your sources:
+
+```bash
+# Export as txt (URLs only)
+wenpm source export -o my-sources.txt
+
+# Export as JSON (complete package info - recommended for sharing!)
+wenpm source export -o my-sources.json -f json
+
+# Export to stdout
+wenpm source export
 ```
 
 ### After importing, install packages:

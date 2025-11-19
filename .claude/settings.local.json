@@ -5,7 +5,8 @@
       "Bash(cargo build:*)",
       "Bash(cargo run:*)",
       "Bash(dir:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(cat:*)"
     ],
     "deny": [],
     "ask": []

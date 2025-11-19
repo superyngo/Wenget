@@ -12,7 +12,7 @@ pub enum SourceCommand {
     Add { urls: Vec<String> },
     Del { names: Vec<String> },
     Import { source: String },
-    Export { output: Option<String> },
+    Export { output: Option<String>, format: String },
     Update,
     List,
     Info { names: Vec<String> },
@@ -24,7 +24,7 @@ pub fn run(cmd: SourceCommand) -> Result<()> {
         SourceCommand::Add { urls } => run_add(urls),
         SourceCommand::Del { names } => run_del(names),
         SourceCommand::Import { source } => run_import(source),
-        SourceCommand::Export { output } => run_export(output),
+        SourceCommand::Export { output, format } => run_export(output, format),
         SourceCommand::Update => run_update(),
         SourceCommand::List => run_list(),
         SourceCommand::Info { names } => run_info(names),
@@ -177,7 +177,7 @@ fn run_del(names: Vec<String>) -> Result<()> {
     Ok(())
 }
 
-/// Import packages from a file or URL
+/// Import packages from a file or URL (supports txt and json formats)
 fn run_import(source: String) -> Result<()> {
     let config = Config::new()?;
 
@@ -186,7 +186,7 @@ fn run_import(source: String) -> Result<()> {
         config.init()?;
     }
 
-    println!("{} {}", "Reading URLs from:".cyan(), source);
+    println!("{} {}", "Reading from:".cyan(), source);
 
     let content = if source.starts_with("http://") || source.starts_with("https://") {
         // Fetch from URL
@@ -198,6 +198,97 @@ fn run_import(source: String) -> Result<()> {
         fs::read_to_string(&source)
             .with_context(|| format!("Failed to read source file: {}", source))?
     };
+
+    // Detect format: JSON or txt
+    let trimmed = content.trim();
+    let is_json = trimmed.starts_with('{') || trimmed.starts_with('[');
+
+    if is_json {
+        // Import JSON format (package info)
+        import_json(config, &content)
+    } else {
+        // Import txt format (URLs)
+        import_txt(&content)
+    }
+}
+
+/// Import from JSON format (package info)
+fn import_json(config: Config, content: &str) -> Result<()> {
+    println!("  {} JSON format", "Detected".cyan());
+
+    // Load existing manifest
+    let mut manifest = config.get_or_create_sources()?;
+
+    // Try to parse as array of packages first
+    let packages: Vec<crate::core::Package> = if content.trim().starts_with('[') {
+        serde_json::from_str(content)
+            .context("Failed to parse JSON as package array")?
+    } else {
+        // Try to parse as SourceManifest
+        let source_manifest: crate::core::SourceManifest = serde_json::from_str(content)
+            .context("Failed to parse JSON as SourceManifest")?;
+        source_manifest.packages
+    };
+
+    if packages.is_empty() {
+        println!("{}", "No packages found in JSON".yellow());
+        return Ok(());
+    }
+
+    println!("  Found {} package(s)\n", packages.len());
+
+    // Track results
+    let mut added = 0;
+    let mut updated = 0;
+    let mut skipped = 0;
+
+    // Add each package
+    for package in packages {
+        let name = package.name.clone();
+
+        if let Some(existing) = manifest.packages.iter_mut().find(|p| p.name == name) {
+            // Update existing package
+            if existing.platforms != package.platforms {
+                *existing = package;
+                println!("  {} {} (platforms updated)", "✓".green(), name);
+                updated += 1;
+            } else {
+                println!("  {} {} (already up to date)", "•".cyan(), name);
+                skipped += 1;
+            }
+        } else {
+            // Add new package
+            println!("  {} {} ({} platforms)", "✓".green(), name, package.platforms.len());
+            manifest.packages.push(package);
+            added += 1;
+        }
+    }
+
+    // Save manifest
+    config.save_sources(&manifest)?;
+
+    // Summary
+    println!();
+    println!("{}", "Summary:".bold());
+    if added > 0 {
+        println!("  {} {} package(s) added", "✓".green(), added);
+    }
+    if updated > 0 {
+        println!("  {} {} package(s) updated", "✓".green(), updated);
+    }
+    if skipped > 0 {
+        println!("  {} {} package(s) skipped", "•".cyan(), skipped);
+    }
+
+    println!();
+    println!("Total packages in sources: {}", manifest.packages.len());
+
+    Ok(())
+}
+
+/// Import from txt format (URLs)
+fn import_txt(content: &str) -> Result<()> {
+    println!("  {} txt format (URLs)", "Detected".cyan());
 
     // Parse URLs (one per line, skip empty lines and comments)
     let urls: Vec<String> = content
@@ -218,8 +309,8 @@ fn run_import(source: String) -> Result<()> {
     run_add(urls)
 }
 
-/// Export packages to a file
-fn run_export(output: Option<String>) -> Result<()> {
+/// Export packages to a file (supports txt and json formats)
+fn run_export(output: Option<String>, format: String) -> Result<()> {
     let config = Config::new()?;
 
     // Load manifest
@@ -230,20 +321,39 @@ fn run_export(output: Option<String>) -> Result<()> {
         return Ok(());
     }
 
-    // Collect all repo URLs
-    let urls: Vec<String> = manifest.packages.iter().map(|p| p.repo.clone()).collect();
+    let format_lower = format.to_lowercase();
 
-    let content = urls.join("\n");
+    let content = match format_lower.as_str() {
+        "json" => {
+            // Export as JSON (full package info)
+            serde_json::to_string_pretty(&manifest.packages)
+                .context("Failed to serialize packages to JSON")?
+        }
+        "txt" | _ => {
+            // Export as txt (URLs only)
+            let urls: Vec<String> = manifest.packages.iter().map(|p| p.repo.clone()).collect();
+            urls.join("\n")
+        }
+    };
 
     if let Some(output_path) = output {
         // Write to file
-        fs::write(&output_path, content)
+        fs::write(&output_path, &content)
             .with_context(|| format!("Failed to write to file: {}", output_path))?;
+
+        let desc = if format_lower == "json" {
+            "package info"
+        } else {
+            "package URLs"
+        };
+
         println!(
-            "{} {} package URL(s) to {}",
+            "{} {} {} to {} (format: {})",
             "Exported".green(),
-            urls.len(),
-            output_path
+            manifest.packages.len(),
+            desc,
+            output_path,
+            format_lower
         );
     } else {
         // Print to stdout

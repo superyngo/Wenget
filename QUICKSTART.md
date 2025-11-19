@@ -31,8 +31,14 @@ After initialization, **restart your terminal** for PATH changes to take effect.
 ### 2. Import Package Sources
 Import our curated list of essential CLI tools:
 ```bash
+# Recommended: JSON format (faster, no API calls)
+wenpm source import sources-essential.json
+
+# Alternative: txt format (will fetch from GitHub API)
 wenpm source import sources-essential.txt
 ```
+
+**💡 Tip:** JSON format is recommended as it contains complete package info and doesn't require GitHub API calls!
 
 ### 3. View Available Packages
 See what packages are available for your platform:
@@ -89,7 +95,8 @@ wenpm source update
 wenpm source add https://github.com/user/repo
 
 # Export your sources list
-wenpm source export -o my-sources.txt
+wenpm source export -o my-sources.txt        # txt format (URLs)
+wenpm source export -o my-sources.json -f json  # JSON format (full info)
 ```
 
 ### Package Management

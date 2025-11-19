@@ -96,11 +96,15 @@ pub enum SourceCommands {
         source: String,
     },
 
-    /// Export package URLs
+    /// Export package URLs or package info
     Export {
         /// Output file path (prints to stdout if not specified)
         #[arg(short, long)]
         output: Option<String>,
+
+        /// Export format: txt (URLs) or json (package info)
+        #[arg(short, long, default_value = "txt")]
+        format: String,
     },
 
     /// Update package metadata from sources

@@ -36,8 +36,8 @@ fn main() {
                 SourceCommands::Import { source } => {
                     commands::source::SourceCommand::Import { source }
                 }
-                SourceCommands::Export { output } => {
-                    commands::source::SourceCommand::Export { output }
+                SourceCommands::Export { output, format } => {
+                    commands::source::SourceCommand::Export { output, format }
                 }
                 SourceCommands::Update => commands::source::SourceCommand::Update,
                 SourceCommands::List => commands::source::SourceCommand::List,
