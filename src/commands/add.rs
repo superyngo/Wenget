@@ -23,8 +23,8 @@ pub fn run(names: Vec<String>, yes: bool) -> Result<()> {
         config.init()?;
     }
 
-    // Load manifests
-    let mut sources = config.get_or_create_sources()?;
+    // Load manifests from cache (includes local + bucket sources)
+    let mut sources = config.get_packages_from_cache()?;
     let mut installed = config.get_or_create_installed()?;
 
     if names.is_empty() {
@@ -49,12 +49,12 @@ pub fn run(names: Vec<String>, yes: bool) -> Result<()> {
         .iter()
         .filter(|pkg| {
             // Check if name matches
-            let name_matches = glob_patterns.iter().any(|pattern| pattern.matches(&pkg.name));
+            let name_matches = glob_patterns
+                .iter()
+                .any(|pattern| pattern.matches(&pkg.name));
 
             // Check if platform is supported
-            let platform_matches = platform_ids
-                .iter()
-                .any(|id| pkg.platforms.contains_key(id));
+            let platform_matches = platform_ids.iter().any(|id| pkg.platforms.contains_key(id));
 
             name_matches && platform_matches
         })
@@ -77,9 +77,9 @@ pub fn run(names: Vec<String>, yes: bool) -> Result<()> {
     for (name, repo) in &matching_package_info {
         let already_installed = installed.is_installed(name);
         let status = if already_installed {
-            format!("(reinstall)").yellow()
+            "(reinstall)".to_string().yellow()
         } else {
-            format!("(new)").green()
+            "(new)".to_string().green()
         };
 
         // Fetch latest version
@@ -141,7 +141,7 @@ pub fn run(names: Vec<String>, yes: bool) -> Result<()> {
                         installed.upsert_package(pkg_name.clone(), inst_pkg);
                         config.save_installed(&installed)?;
 
-                        println!("  {} {}", "✓".green(), "Installed successfully");
+                        println!("  {} Installed successfully", "✓".green());
                         success_count += 1;
                     }
                     Err(e) => {
@@ -166,7 +166,7 @@ pub fn run(names: Vec<String>, yes: bool) -> Result<()> {
                             installed.upsert_package(pkg_name.clone(), inst_pkg);
                             config.save_installed(&installed)?;
 
-                            println!("  {} {}", "✓".green(), "Installed successfully");
+                            println!("  {} Installed successfully", "✓".green());
                             success_count += 1;
                         }
                         Err(e) => {
@@ -219,7 +219,7 @@ fn install_package(
     let filename = binary
         .url
         .split('/')
-        .last()
+        .next_back()
         .context("Invalid download URL")?;
 
     let download_path = download_dir.join(filename);

@@ -18,5 +18,6 @@ pub trait SourceProvider {
     fn can_handle(&self, url: &str) -> bool;
 
     /// Get the provider name
+    #[allow(dead_code)]
     fn name(&self) -> &str;
 }

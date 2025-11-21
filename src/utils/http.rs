@@ -66,6 +66,7 @@ impl HttpClient {
     }
 
     /// Check GitHub API rate limit
+    #[allow(dead_code)]
     pub fn check_rate_limit(&self) -> Result<RateLimit> {
         let data: serde_json::Value = self
             .get_json("https://api.github.com/rate_limit")
@@ -92,6 +93,7 @@ impl Default for HttpClient {
 
 /// GitHub API rate limit information
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct RateLimit {
     pub limit: u64,
     pub remaining: u64,
@@ -100,11 +102,13 @@ pub struct RateLimit {
 
 impl RateLimit {
     /// Check if we're close to the rate limit
+    #[allow(dead_code)]
     pub fn is_low(&self) -> bool {
         self.remaining < 10
     }
 
     /// Get a warning message if rate limit is low
+    #[allow(dead_code)]
     pub fn warning_message(&self) -> Option<String> {
         if self.is_low() {
             Some(format!(

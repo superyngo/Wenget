@@ -15,8 +15,8 @@ pub fn run(names: Vec<String>, yes: bool) -> Result<()> {
 
     let config = Config::new()?;
 
-    // Load manifests
-    let sources = config.get_or_create_sources()?;
+    // Load manifests from cache (includes local + bucket sources)
+    let sources = config.get_packages_from_cache()?;
     let installed = config.get_or_create_installed()?;
 
     if installed.packages.is_empty() {
@@ -65,11 +65,7 @@ fn find_upgradeable(
             // Fetch latest version from GitHub
             if let Ok(latest_version) = github.fetch_latest_version(&src_pkg.repo) {
                 if inst_pkg.version != latest_version {
-                    upgradeable.push((
-                        name.clone(),
-                        inst_pkg.version.clone(),
-                        latest_version,
-                    ));
+                    upgradeable.push((name.clone(), inst_pkg.version.clone(), latest_version));
                 }
             }
         }

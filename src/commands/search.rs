@@ -9,8 +9,8 @@ use glob::Pattern;
 pub fn run(patterns: Vec<String>) -> Result<()> {
     let config = Config::new()?;
 
-    // Load manifest
-    let manifest = config.get_or_create_sources()?;
+    // Load manifest from cache (includes local + bucket sources)
+    let manifest = config.get_packages_from_cache()?;
 
     if manifest.packages.is_empty() {
         println!("{}", "No packages in sources".yellow());
@@ -40,12 +40,12 @@ pub fn run(patterns: Vec<String>) -> Result<()> {
         .iter()
         .filter(|pkg| {
             // Check if name matches any pattern
-            let name_matches = glob_patterns.iter().any(|pattern| pattern.matches(&pkg.name));
+            let name_matches = glob_patterns
+                .iter()
+                .any(|pattern| pattern.matches(&pkg.name));
 
             // Check if supports current platform
-            let platform_matches = platform_ids
-                .iter()
-                .any(|id| pkg.platforms.contains_key(id));
+            let platform_matches = platform_ids.iter().any(|id| pkg.platforms.contains_key(id));
 
             name_matches && platform_matches
         })
@@ -60,10 +60,7 @@ pub fn run(patterns: Vec<String>) -> Result<()> {
     }
 
     // Print header
-    println!(
-        "{}",
-        format!("Search results for: {:?}", patterns).bold()
-    );
+    println!("{}", format!("Search results for: {:?}", patterns).bold());
     println!();
     println!(
         "{:<20} {:<10} {}",

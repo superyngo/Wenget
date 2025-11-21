@@ -25,6 +25,12 @@ pub enum Commands {
         command: SourceCommands,
     },
 
+    /// Manage buckets (remote manifest sources)
+    Bucket {
+        #[command(subcommand)]
+        command: BucketCommands,
+    },
+
     /// Install packages (alias: add)
     #[command(visible_alias = "a")]
     Add {
@@ -73,7 +79,11 @@ pub enum Commands {
     },
 
     /// Initialize WenPM (create directories and set up PATH)
-    Init,
+    Init {
+        /// Skip confirmation prompts
+        #[arg(short = 'y', long)]
+        yes: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -107,8 +117,8 @@ pub enum SourceCommands {
         format: String,
     },
 
-    /// Update package metadata from sources
-    Update,
+    /// Refresh package metadata from sources
+    Refresh,
 
     /// List available packages from sources
     List,
@@ -118,6 +128,30 @@ pub enum SourceCommands {
         /// Package names to show (supports wildcards *)
         names: Vec<String>,
     },
+}
+
+#[derive(Subcommand)]
+pub enum BucketCommands {
+    /// Add a bucket
+    Add {
+        /// Bucket name
+        name: String,
+
+        /// URL to the manifest.json file
+        url: String,
+    },
+
+    /// Delete buckets
+    Del {
+        /// Bucket names to delete
+        names: Vec<String>,
+    },
+
+    /// List all buckets
+    List,
+
+    /// Refresh cache from buckets
+    Refresh,
 }
 
 impl Cli {

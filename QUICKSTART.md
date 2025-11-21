@@ -88,8 +88,8 @@ wenpm source list
 # Show package information
 wenpm source info ripgrep
 
-# Update package metadata
-wenpm source update
+# Refresh package metadata
+wenpm source refresh
 
 # Add a specific package source
 wenpm source add https://github.com/user/repo
@@ -97,6 +97,21 @@ wenpm source add https://github.com/user/repo
 # Export your sources list
 wenpm source export -o my-sources.txt        # txt format (URLs)
 wenpm source export -o my-sources.json -f json  # JSON format (full info)
+```
+
+### Bucket Management (Remote Sources)
+```bash
+# Add a bucket (curated package collections)
+wenpm bucket add official https://url/to/manifest.json
+
+# List all buckets
+wenpm bucket list
+
+# Remove a bucket
+wenpm bucket del official
+
+# Refresh cache from buckets
+wenpm bucket refresh
 ```
 
 ### Package Management

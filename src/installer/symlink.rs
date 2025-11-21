@@ -11,7 +11,11 @@ use anyhow::Context;
 pub fn create_symlink(target: &Path, link: &Path) -> Result<()> {
     use std::os::unix::fs::symlink;
 
-    log::debug!("Creating symlink: {} -> {}", link.display(), target.display());
+    log::debug!(
+        "Creating symlink: {} -> {}",
+        link.display(),
+        target.display()
+    );
 
     // Remove existing symlink if it exists
     if link.exists() || link.is_symlink() {
@@ -32,6 +36,7 @@ pub fn create_symlink(target: &Path, link: &Path) -> Result<()> {
 
 /// Placeholder for Windows (uses shim instead)
 #[cfg(not(unix))]
+#[allow(dead_code)]
 pub fn create_symlink(_target: &Path, _link: &Path) -> Result<()> {
     // On Windows, we use .cmd shims instead of symlinks
     Ok(())

@@ -44,6 +44,16 @@ impl WenPaths {
         self.root.join("installed.json")
     }
 
+    /// Get the buckets config path (~/.wenpm/buckets.json)
+    pub fn buckets_json(&self) -> PathBuf {
+        self.root.join("buckets.json")
+    }
+
+    /// Get the manifest cache path (~/.wenpm/manifest-cache.json)
+    pub fn manifest_cache_json(&self) -> PathBuf {
+        self.root.join("manifest-cache.json")
+    }
+
     /// Get the apps directory (~/.wenpm/apps/)
     pub fn apps_dir(&self) -> PathBuf {
         self.root.join("apps")
@@ -55,6 +65,7 @@ impl WenPaths {
     }
 
     /// Get a specific app's bin directory (~/.wenpm/apps/{name}/bin/)
+    #[allow(dead_code)]
     pub fn app_bin_dir(&self, name: &str) -> PathBuf {
         self.app_dir(name).join("bin")
     }
@@ -82,14 +93,11 @@ impl WenPaths {
     /// - ~/.wenpm/bin/
     /// - ~/.wenpm/cache/downloads/
     pub fn init_dirs(&self) -> Result<()> {
-        std::fs::create_dir_all(&self.root)
-            .context("Failed to create WenPM root directory")?;
+        std::fs::create_dir_all(&self.root).context("Failed to create WenPM root directory")?;
 
-        std::fs::create_dir_all(self.apps_dir())
-            .context("Failed to create apps directory")?;
+        std::fs::create_dir_all(self.apps_dir()).context("Failed to create apps directory")?;
 
-        std::fs::create_dir_all(self.bin_dir())
-            .context("Failed to create bin directory")?;
+        std::fs::create_dir_all(self.bin_dir()).context("Failed to create bin directory")?;
 
         std::fs::create_dir_all(self.downloads_dir())
             .context("Failed to create downloads directory")?;
@@ -122,6 +130,7 @@ impl WenPaths {
     ///
     /// On Windows: {name}.exe
     /// On Unix: {name}
+    #[allow(dead_code)]
     pub fn executable_name(name: &str) -> String {
         #[cfg(windows)]
         {

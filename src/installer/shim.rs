@@ -47,7 +47,12 @@ mod tests {
     fn test_create_shim() {
         let temp_dir = TempDir::new().unwrap();
 
-        let target = temp_dir.path().join("apps").join("test").join("bin").join("test.exe");
+        let target = temp_dir
+            .path()
+            .join("apps")
+            .join("test")
+            .join("bin")
+            .join("test.exe");
         let shim = temp_dir.path().join("bin").join("test.cmd");
 
         // Create target directory

@@ -1,0 +1,299 @@
+name: Release Build
+
+on:
+  push:
+    tags:
+      - "v*.*.*" # 當推送 v1.0.0 格式的 tag 時觸發
+
+permissions:
+  contents: write
+  actions: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    continue-on-error: false
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux builds - 使用 Cargo.toml 中的激進優化設定
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: wenpm
+            asset_name: wenpm-linux-x86_64
+          - os: ubuntu-latest
+            target: i686-unknown-linux-gnu
+            artifact_name: wenpm
+            asset_name: wenpm-linux-i686
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            artifact_name: wenpm
+            asset_name: wenpm-linux-x86_64-musl
+          - os: ubuntu-latest
+            target: i686-unknown-linux-musl
+            artifact_name: wenpm
+            asset_name: wenpm-linux-i686-musl
+          - os: ubuntu-latest
+            target: armv7-unknown-linux-gnueabihf
+            artifact_name: wenpm
+            asset_name: wenpm-linux-armv7
+          - os: ubuntu-latest
+            target: armv7-unknown-linux-musleabihf
+            artifact_name: wenpm
+            asset_name: wenpm-linux-armv7-musl
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            artifact_name: wenpm
+            asset_name: wenpm-linux-aarch64
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-musl
+            artifact_name: wenpm
+            asset_name: wenpm-linux-aarch64-musl
+          # Windows builds - 使用溫和優化以避免防毒軟體誤報
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_name: wenpm.exe
+            asset_name: wenpm-windows-x86_64.exe
+            rustflags: "-C target-feature=+crt-static"
+            opt_level: "3"
+            lto: "thin"
+            strip: "false"
+            codegen_units: "16"
+            panic: "unwind"
+          - os: windows-latest
+            target: i686-pc-windows-msvc
+            artifact_name: wenpm.exe
+            asset_name: wenpm-windows-i686.exe
+            rustflags: "-C target-feature=+crt-static"
+            opt_level: "3"
+            lto: "thin"
+            strip: "false"
+            codegen_units: "16"
+            panic: "unwind"
+          # macOS builds - 使用 Cargo.toml 中的激進優化設定
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            artifact_name: wenpm
+            asset_name: wenpm-macos-x86_64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact_name: wenpm
+            asset_name: wenpm-macos-aarch64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install 32-bit libraries (Linux i686 only)
+        if: matrix.target == 'i686-unknown-linux-gnu' || matrix.target == 'i686-unknown-linux-musl'
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y gcc-multilib g++-multilib
+
+      - name: Install musl tools (Linux musl only)
+        if: matrix.target == 'x86_64-unknown-linux-musl' || matrix.target == 'aarch64-unknown-linux-musl'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-musl" ]; then
+            sudo apt-get install -y musl-dev gcc-aarch64-linux-gnu
+          fi
+
+      - name: Install ARM cross-compilation tools (ARM targets only)
+        if: matrix.target == 'armv7-unknown-linux-gnueabihf' || matrix.target == 'armv7-unknown-linux-musleabihf'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
+          if [ "${{ matrix.target }}" = "armv7-unknown-linux-musleabihf" ]; then
+            sudo apt-get install -y musl-tools
+          fi
+
+      - name: Install ARM64 cross-compilation tools (ARM64 targets only)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+      - name: Configure cargo for ARM cross-compilation
+        if: matrix.target == 'armv7-unknown-linux-gnueabihf' || matrix.target == 'armv7-unknown-linux-musleabihf' || matrix.target == 'aarch64-unknown-linux-gnu' || matrix.target == 'aarch64-unknown-linux-musl'
+        run: |
+          mkdir -p ~/.cargo
+          if [ "${{ matrix.target }}" = "armv7-unknown-linux-gnueabihf" ]; then
+            echo '[target.armv7-unknown-linux-gnueabihf]' >> ~/.cargo/config.toml
+            echo 'linker = "arm-linux-gnueabihf-gcc"' >> ~/.cargo/config.toml
+          elif [ "${{ matrix.target }}" = "armv7-unknown-linux-musleabihf" ]; then
+            echo '[target.armv7-unknown-linux-musleabihf]' >> ~/.cargo/config.toml
+            echo 'linker = "arm-linux-gnueabihf-gcc"' >> ~/.cargo/config.toml
+          elif [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
+            echo '[target.aarch64-unknown-linux-gnu]' >> ~/.cargo/config.toml
+            echo 'linker = "aarch64-linux-gnu-gcc"' >> ~/.cargo/config.toml
+          elif [ "${{ matrix.target }}" = "aarch64-unknown-linux-musl" ]; then
+            echo '[target.aarch64-unknown-linux-musl]' >> ~/.cargo/config.toml
+            echo 'linker = "aarch64-linux-gnu-gcc"' >> ~/.cargo/config.toml
+          fi
+
+      - name: Build (Windows)
+        if: matrix.os == 'windows-latest'
+        run: cargo build --release --target ${{ matrix.target }}
+        env:
+          RUSTFLAGS: ${{ matrix.rustflags }}
+          CARGO_PROFILE_RELEASE_OPT_LEVEL: ${{ matrix.opt_level }}
+          CARGO_PROFILE_RELEASE_LTO: ${{ matrix.lto }}
+          CARGO_PROFILE_RELEASE_STRIP: ${{ matrix.strip }}
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: ${{ matrix.codegen_units }}
+          CARGO_PROFILE_RELEASE_PANIC: ${{ matrix.panic }}
+
+      - name: Build (Linux and macOS)
+        if: matrix.os != 'windows-latest'
+        run: cargo build --release --target ${{ matrix.target }}
+        env:
+          RUSTFLAGS: ${{ matrix.rustflags }}
+
+      - name: Strip binary (Linux and macOS - x86)
+        if: matrix.os != 'windows-latest' && matrix.target != 'armv7-unknown-linux-gnueabihf' && matrix.target != 'armv7-unknown-linux-musleabihf' && matrix.target != 'aarch64-unknown-linux-gnu' && matrix.target != 'aarch64-unknown-linux-musl'
+        run: strip target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+
+      - name: Strip binary (ARM32)
+        if: matrix.target == 'armv7-unknown-linux-gnueabihf' || matrix.target == 'armv7-unknown-linux-musleabihf'
+        run: arm-linux-gnueabihf-strip target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+
+      - name: Strip binary (ARM64)
+        if: matrix.target == 'aarch64-unknown-linux-gnu' || matrix.target == 'aarch64-unknown-linux-musl'
+        run: aarch64-linux-gnu-strip target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+
+      - name: Create tarball (Linux and macOS)
+        if: matrix.os != 'windows-latest'
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar czf ${{ matrix.asset_name }}.tar.gz ${{ matrix.artifact_name }}
+          mv ${{ matrix.asset_name }}.tar.gz ../../../
+
+      - name: Upload artifacts (Linux and macOS)
+        if: matrix.os != 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: ${{ matrix.asset_name }}.tar.gz
+
+      - name: Upload artifacts (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Display structure
+        run: |
+          echo "Current directory structure:"
+          ls -la
+          echo "Artifacts directory:"
+          ls -la artifacts/
+          echo "Looking for artifacts:"
+          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.exe" \)
+
+      - name: Prepare release files
+        run: |
+          mkdir -p release_files
+          # Copy all tar.gz files to release_files directory
+          find artifacts -type f -name "*.tar.gz" -exec cp {} release_files/ \;
+          # Handle Windows exe files by renaming with platform suffix
+          for dir in artifacts/*; do
+            if [ -d "$dir" ] && [[ "$dir" == *"windows"* ]]; then
+              asset_name=$(basename "$dir")
+              exe_file="$dir/wenpm.exe"
+              if [ -f "$exe_file" ]; then
+                cp "$exe_file" "release_files/$asset_name"
+              fi
+            fi
+          done
+          echo "Files in release_files:"
+          ls -la release_files/
+
+      - name: Generate checksums
+        run: |
+          cd release_files
+          if [ -n "$(ls -A)" ]; then
+            sha256sum * > SHA256SUMS
+            echo "Checksums generated:"
+            cat SHA256SUMS
+          else
+            echo "No files found in release_files directory!"
+            exit 1
+          fi
+
+      - name: Get tag message
+        id: tag_message
+        run: |
+          # 獲取當前 tag 名稱
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          echo "Tag name: $TAG_NAME"
+
+          # 獲取 tag 的註解消息（如果是 annotated tag）
+          TAG_MESSAGE=$(git tag -l --format='%(contents)' "$TAG_NAME")
+
+          # 如果 tag 沒有消息，使用默認消息
+          if [ -z "$TAG_MESSAGE" ]; then
+            TAG_MESSAGE="Release $TAG_NAME"
+          fi
+
+          # 輸出到 GitHub Actions 輸出變量
+          # 使用多行字符串格式
+          echo "message<<EOF" >> $GITHUB_OUTPUT
+          echo "$TAG_MESSAGE" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          echo "Tag message retrieved successfully"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: release_files/*
+          draft: false
+          prerelease: false
+          body: |
+            ${{ steps.tag_message.outputs.message }}
+
+            ---
+
+            ## 📦 下載 / Downloads
+
+            請從下方選擇適合您系統的版本下載。
+            Please download the appropriate version for your system from below.
+
+            ## 🔒 檔案校驗 / File Verification
+
+            使用 SHA256SUMS 檔案驗證下載的檔案完整性。
+            Use the SHA256SUMS file to verify the integrity of downloaded files.
+
+            ---
+
+            ## 📝 自動生成的變更日誌 / Auto-generated Changelog
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

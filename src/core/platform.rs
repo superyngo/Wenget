@@ -105,16 +105,6 @@ impl Platform {
         Self { os, arch }
     }
 
-    /// Convert to platform string
-    ///
-    /// Returns strings like:
-    /// - "windows-x86_64"
-    /// - "linux-x86_64"
-    /// - "macos-aarch64"
-    pub fn to_string(&self) -> String {
-        format!("{}-{}", self.os.as_str(), self.arch.as_str())
-    }
-
     /// Get all possible platform identifiers for this platform
     ///
     /// Returns variants like:
@@ -122,7 +112,7 @@ impl Platform {
     /// - "linux-x86_64-musl"
     /// - "linux-x86_64-gnu"
     pub fn possible_identifiers(&self) -> Vec<String> {
-        let base = self.to_string();
+        let base = format!("{}", self);
         let mut identifiers = vec![base.clone()];
 
         // Add Linux variants
@@ -137,7 +127,7 @@ impl Platform {
 
 impl std::fmt::Display for Platform {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.to_string())
+        write!(f, "{}-{}", self.os.as_str(), self.arch.as_str())
     }
 }
 
@@ -161,10 +151,7 @@ impl BinarySelector {
     ///
     /// # Returns
     /// The best matching asset, or None if no suitable asset found
-    pub fn select_for_platform(
-        assets: &[BinaryAsset],
-        platform: Platform,
-    ) -> Option<BinaryAsset> {
+    pub fn select_for_platform(assets: &[BinaryAsset], platform: Platform) -> Option<BinaryAsset> {
         let mut scored_assets: Vec<(usize, &BinaryAsset)> = assets
             .iter()
             .filter_map(|asset| {

@@ -71,6 +71,7 @@ impl SourceManifest {
     }
 
     /// Find a package by name (mutable)
+    #[allow(dead_code)]
     pub fn find_package_mut(&mut self, name: &str) -> Option<&mut Package> {
         self.packages.iter_mut().find(|p| p.name == name)
     }
@@ -92,6 +93,7 @@ impl SourceManifest {
     }
 
     /// Get packages that support a specific platform
+    #[allow(dead_code)]
     pub fn packages_for_platform(&self, platform: &str) -> Vec<&Package> {
         self.packages
             .iter()
@@ -161,6 +163,7 @@ impl InstalledManifest {
     }
 
     /// Get all installed package names
+    #[allow(dead_code)]
     pub fn installed_names(&self) -> Vec<&str> {
         self.packages.keys().map(|s| s.as_str()).collect()
     }

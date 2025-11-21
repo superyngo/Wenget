@@ -1,19 +1,18 @@
 //! Initialize WenPM
 
+use crate::bucket::Bucket;
 use crate::core::Config;
 use anyhow::{Context, Result};
 use colored::Colorize;
 use std::env;
+use std::io::{self, Write as IoWrite};
 use std::path::PathBuf;
 
 #[cfg(not(windows))]
 use std::fs::{self, OpenOptions};
 
-#[cfg(not(windows))]
-use std::io::Write;
-
 /// Initialize WenPM (create directories and manifests)
-pub fn run() -> Result<()> {
+pub fn run(yes: bool) -> Result<()> {
     println!("{}", "Initializing WenPM...".cyan());
 
     let config = Config::new()?;
@@ -52,10 +51,16 @@ pub fn run() -> Result<()> {
     // Set up PATH
     setup_path(&config)?;
 
+    // Ask about adding wenpm bucket
+    println!();
+    if prompt_add_wenpm_bucket(yes)? {
+        add_wenpm_bucket(&config)?;
+    }
+
     println!();
     println!("{}", "Next steps:".bold());
-    println!("  1. Add package sources:  wenpm source add <github-url>");
-    println!("  2. List available:       wenpm source list");
+    println!("  1. List available:       wenpm source list");
+    println!("  2. Search packages:      wenpm search <keyword>");
     println!("  3. Install packages:     wenpm add <package-name>");
 
     Ok(())
@@ -102,7 +107,7 @@ fn setup_path_windows(bin_dir: &str) -> Result<()> {
     );
 
     let output = Command::new("powershell")
-        .args(&["-NoProfile", "-Command", &ps_script])
+        .args(["-NoProfile", "-Command", &ps_script])
         .output()
         .context("Failed to execute PowerShell command")?;
 
@@ -152,7 +157,8 @@ fn setup_path_unix(bin_dir: &str) -> Result<()> {
             Ok(true) => updated_files.push(config_path),
             Ok(false) => skipped_files.push(config_path),
             Err(e) => {
-                println!("  {} Failed to update {}: {}",
+                println!(
+                    "  {} Failed to update {}: {}",
                     "⚠".yellow(),
                     config_path.display(),
                     e
@@ -169,7 +175,14 @@ fn setup_path_unix(bin_dir: &str) -> Result<()> {
         println!();
         println!("{}", "IMPORTANT:".yellow().bold());
         println!("  Run the following command to apply changes:");
-        println!("  source ~/{}", updated_files[0].file_name().unwrap().to_string_lossy().cyan());
+        println!(
+            "  source ~/{}",
+            updated_files[0]
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .cyan()
+        );
         println!();
         println!("  Or restart your terminal");
     }
@@ -190,12 +203,7 @@ fn detect_shell_configs(home: &PathBuf) -> Vec<PathBuf> {
     let mut configs = Vec::new();
 
     // Check for common shell configs
-    let candidates = vec![
-        ".bashrc",
-        ".bash_profile",
-        ".zshrc",
-        ".profile",
-    ];
+    let candidates = vec![".bashrc", ".bash_profile", ".zshrc", ".profile"];
 
     for candidate in candidates {
         let path = home.join(candidate);
@@ -244,6 +252,88 @@ fn is_in_path(dir: PathBuf) -> Result<bool> {
     let path_var = env::var("PATH").unwrap_or_default();
     let dir_str = dir.to_string_lossy();
 
-    Ok(path_var.split(if cfg!(windows) { ';' } else { ':' })
+    Ok(path_var
+        .split(if cfg!(windows) { ';' } else { ':' })
         .any(|p| p == dir_str.as_ref()))
+}
+
+/// Prompt user to add wenpm bucket
+fn prompt_add_wenpm_bucket(yes: bool) -> Result<bool> {
+    if yes {
+        return Ok(true);
+    }
+
+    println!("{}", "─".repeat(60));
+    println!();
+    println!("{}", "Add official WenPM bucket?".bold());
+    println!();
+    println!("The WenPM bucket provides curated open-source tools including:");
+    println!("  • ripgrep, fd, bat - Modern CLI utilities");
+    println!("  • gitui, zoxide - Enhanced Git and navigation");
+    println!("  • starship, bottom - Shell customization and monitoring");
+    println!("  • and more...");
+    println!();
+    print!("Add wenpm bucket? [Y/n]: ");
+    io::stdout().flush()?;
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    let input = input.trim().to_lowercase();
+
+    Ok(input.is_empty() || input == "y" || input == "yes")
+}
+
+/// Add wenpm bucket
+fn add_wenpm_bucket(config: &Config) -> Result<()> {
+    const WENPM_BUCKET_NAME: &str = "wenpm";
+    const WENPM_BUCKET_URL: &str =
+        "https://raw.githubusercontent.com/superyngo/wenpm-bucket/refs/heads/main/manifest.json";
+
+    println!();
+    println!("{} wenpm bucket...", "Adding".cyan());
+
+    // Load bucket config
+    let mut bucket_config = config.get_or_create_buckets()?;
+
+    // Create bucket
+    let bucket = Bucket {
+        name: WENPM_BUCKET_NAME.to_string(),
+        url: WENPM_BUCKET_URL.to_string(),
+        enabled: true,
+        priority: 100,
+    };
+
+    // Try to add bucket
+    if bucket_config.add_bucket(bucket) {
+        // Save config
+        config.save_buckets(&bucket_config)?;
+
+        println!("{} Bucket '{}' added", "✓".green(), WENPM_BUCKET_NAME);
+        println!("  URL: {}", WENPM_BUCKET_URL);
+
+        // Build cache immediately
+        match config.rebuild_cache() {
+            Ok(cache) => {
+                println!();
+                println!(
+                    "{} {} package(s) available from wenpm bucket",
+                    "✓".green(),
+                    cache.packages.len()
+                );
+            }
+            Err(e) => {
+                println!();
+                println!("{} Failed to build cache: {}", "⚠".yellow(), e);
+                println!("  You can rebuild it later with: wenpm bucket refresh");
+            }
+        }
+    } else {
+        println!(
+            "{} Bucket '{}' already exists",
+            "✗".yellow(),
+            WENPM_BUCKET_NAME
+        );
+    }
+
+    Ok(())
 }

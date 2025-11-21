@@ -9,13 +9,24 @@ use std::fs;
 
 /// Source subcommands
 pub enum SourceCommand {
-    Add { urls: Vec<String> },
-    Del { names: Vec<String> },
-    Import { source: String },
-    Export { output: Option<String>, format: String },
-    Update,
+    Add {
+        urls: Vec<String>,
+    },
+    Del {
+        names: Vec<String>,
+    },
+    Import {
+        source: String,
+    },
+    Export {
+        output: Option<String>,
+        format: String,
+    },
+    Refresh,
     List,
-    Info { names: Vec<String> },
+    Info {
+        names: Vec<String>,
+    },
 }
 
 /// Run source command
@@ -25,7 +36,7 @@ pub fn run(cmd: SourceCommand) -> Result<()> {
         SourceCommand::Del { names } => run_del(names),
         SourceCommand::Import { source } => run_import(source),
         SourceCommand::Export { output, format } => run_export(output, format),
-        SourceCommand::Update => run_update(),
+        SourceCommand::Refresh => run_refresh(),
         SourceCommand::List => run_list(),
         SourceCommand::Info { names } => run_info(names),
     }
@@ -70,7 +81,12 @@ fn run_add(urls: Vec<String>) -> Result<()> {
 
                 // Try to add package
                 if manifest.add_package(package) {
-                    println!("{} {} ({} platforms)", "Added".green(), name, platform_count);
+                    println!(
+                        "{} {} ({} platforms)",
+                        "Added".green(),
+                        name,
+                        platform_count
+                    );
                     added += 1;
                 } else {
                     println!("{} (already exists)", "Skipped".yellow());
@@ -86,6 +102,11 @@ fn run_add(urls: Vec<String>) -> Result<()> {
 
     // Save manifest
     config.save_sources(&manifest)?;
+
+    // Invalidate cache
+    if added > 0 {
+        config.invalidate_cache()?;
+    }
 
     // Summary
     println!();
@@ -133,7 +154,7 @@ fn run_del(names: Vec<String>) -> Result<()> {
         print!("  {} {} ... ", "Deleting".cyan(), name);
 
         // Try to match by name first, then by URL
-        let to_delete = if let Some(_) = manifest.find_package(&name) {
+        let to_delete = if manifest.find_package(&name).is_some() {
             Some(name.clone())
         } else {
             // Try to find by URL
@@ -160,6 +181,11 @@ fn run_del(names: Vec<String>) -> Result<()> {
 
     // Save manifest
     config.save_sources(&manifest)?;
+
+    // Invalidate cache
+    if deleted > 0 {
+        config.invalidate_cache()?;
+    }
 
     // Summary
     println!();
@@ -221,12 +247,11 @@ fn import_json(config: Config, content: &str) -> Result<()> {
 
     // Try to parse as array of packages first
     let packages: Vec<crate::core::Package> = if content.trim().starts_with('[') {
-        serde_json::from_str(content)
-            .context("Failed to parse JSON as package array")?
+        serde_json::from_str(content).context("Failed to parse JSON as package array")?
     } else {
         // Try to parse as SourceManifest
-        let source_manifest: crate::core::SourceManifest = serde_json::from_str(content)
-            .context("Failed to parse JSON as SourceManifest")?;
+        let source_manifest: crate::core::SourceManifest =
+            serde_json::from_str(content).context("Failed to parse JSON as SourceManifest")?;
         source_manifest.packages
     };
 
@@ -258,7 +283,12 @@ fn import_json(config: Config, content: &str) -> Result<()> {
             }
         } else {
             // Add new package
-            println!("  {} {} ({} platforms)", "✓".green(), name, package.platforms.len());
+            println!(
+                "  {} {} ({} platforms)",
+                "✓".green(),
+                name,
+                package.platforms.len()
+            );
             manifest.packages.push(package);
             added += 1;
         }
@@ -266,6 +296,11 @@ fn import_json(config: Config, content: &str) -> Result<()> {
 
     // Save manifest
     config.save_sources(&manifest)?;
+
+    // Invalidate cache
+    if added > 0 || updated > 0 {
+        config.invalidate_cache()?;
+    }
 
     // Summary
     println!();
@@ -329,8 +364,8 @@ fn run_export(output: Option<String>, format: String) -> Result<()> {
             serde_json::to_string_pretty(&manifest.packages)
                 .context("Failed to serialize packages to JSON")?
         }
-        "txt" | _ => {
-            // Export as txt (URLs only)
+        _ => {
+            // Export as txt (URLs only) - default format
             let urls: Vec<String> = manifest.packages.iter().map(|p| p.repo.clone()).collect();
             urls.join("\n")
         }
@@ -363,8 +398,8 @@ fn run_export(output: Option<String>, format: String) -> Result<()> {
     Ok(())
 }
 
-/// Update package metadata from sources
-fn run_update() -> Result<()> {
+/// Refresh package metadata from sources
+fn run_refresh() -> Result<()> {
     let config = Config::new()?;
 
     // Load manifest
@@ -424,6 +459,13 @@ fn run_update() -> Result<()> {
     // Save manifest
     config.save_sources(&new_manifest)?;
 
+    // Rebuild cache after refresh
+    if updated > 0 {
+        println!();
+        println!("{} manifest cache...", "Rebuilding".cyan());
+        config.rebuild_cache()?;
+    }
+
     // Summary
     println!();
     println!("{}", "Summary:".bold());
@@ -453,8 +495,8 @@ fn process_url(provider: &GitHubProvider, url: &str) -> Result<crate::core::Pack
 fn run_list() -> Result<()> {
     let config = Config::new()?;
 
-    // Load manifest
-    let manifest = config.get_or_create_sources()?;
+    // Load manifest from cache (includes local + bucket sources)
+    let manifest = config.get_packages_from_cache()?;
 
     if manifest.packages.is_empty() {
         println!("{}", "No packages in sources".yellow());
@@ -470,11 +512,7 @@ fn run_list() -> Result<()> {
     let compatible_packages: Vec<_> = manifest
         .packages
         .iter()
-        .filter(|pkg| {
-            platform_ids
-                .iter()
-                .any(|id| pkg.platforms.contains_key(id))
-        })
+        .filter(|pkg| platform_ids.iter().any(|id| pkg.platforms.contains_key(id)))
         .collect();
 
     if compatible_packages.is_empty() {
@@ -515,10 +553,7 @@ fn run_list() -> Result<()> {
     }
 
     println!();
-    println!(
-        "Total: {} package(s)",
-        compatible_packages.len()
-    );
+    println!("Total: {} package(s)", compatible_packages.len());
 
     Ok(())
 }
@@ -536,8 +571,8 @@ fn truncate(s: &str, max_len: usize) -> String {
 fn run_info(patterns: Vec<String>) -> Result<()> {
     let config = Config::new()?;
 
-    // Load manifests
-    let sources = config.get_or_create_sources()?;
+    // Load manifests from cache (includes local + bucket sources)
+    let sources = config.get_packages_from_cache()?;
     let installed = config.get_or_create_installed()?;
 
     // Create GitHub provider to fetch versions
@@ -569,7 +604,11 @@ fn run_info(patterns: Vec<String>) -> Result<()> {
     let matching_packages: Vec<_> = sources
         .packages
         .iter()
-        .filter(|pkg| glob_patterns.iter().any(|pattern| pattern.matches(&pkg.name)))
+        .filter(|pkg| {
+            glob_patterns
+                .iter()
+                .any(|pattern| pattern.matches(&pkg.name))
+        })
         .collect();
 
     if matching_packages.is_empty() {

@@ -34,19 +34,11 @@ pub fn run() -> Result<()> {
 
     // Print packages
     for (name, pkg) in packages {
-        println!(
-            "{:<20} {:<15} {}",
-            name.green(),
-            pkg.version,
-            pkg.platform
-        );
+        println!("{:<20} {:<15} {}", name.green(), pkg.version, pkg.platform);
     }
 
     println!();
-    println!(
-        "Total: {} package(s) installed",
-        manifest.packages.len()
-    );
+    println!("Total: {} package(s) installed", manifest.packages.len());
 
     Ok(())
 }

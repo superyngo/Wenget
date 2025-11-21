@@ -61,6 +61,56 @@ wenpm source export -o my-sources.json -f json
 wenpm source export
 ```
 
+### Using Buckets (Remote Manifest Sources):
+
+**Buckets** are remote manifest sources that provide pre-built package information, eliminating the need for GitHub API calls and greatly improving performance.
+
+#### Why use buckets?
+- ✨ **Zero API calls** - No GitHub API rate limits
+- ⚡ **Instant access** - Package info is pre-fetched
+- 🌐 **Offline-capable** - Cache lasts 24 hours
+- 📦 **Curated collections** - Maintained package lists
+
+#### Bucket commands:
+
+```bash
+# Add a bucket (official or community)
+wenpm bucket add official https://raw.githubusercontent.com/user/wenpm-bucket/main/manifest.json
+
+# List all buckets
+wenpm bucket list
+
+# Remove a bucket
+wenpm bucket del official
+
+# Refresh cache from all buckets
+wenpm bucket refresh
+```
+
+#### How buckets work:
+
+1. **Bucket sources** use the same `manifest.json` format as local sources
+2. When you add a bucket, WenPM fetches its manifest and caches it locally
+3. All package operations (search, list, install) use the **cached manifest** (includes local + bucket packages)
+4. **Local sources** always take priority over bucket sources
+5. Cache automatically refreshes after 24 hours or when you run `bucket refresh`
+
+#### Creating your own bucket:
+
+1. Export your sources as JSON:
+   ```bash
+   wenpm source export -o manifest.json -f json
+   ```
+
+2. Host the `manifest.json` file on GitHub or any public URL
+
+3. Users can add your bucket:
+   ```bash
+   wenpm bucket add your-bucket https://your-url/manifest.json
+   ```
+
+**💡 Pro Tip:** Buckets are perfect for teams or organizations to share curated package collections without requiring users to import individual packages!
+
 ### After importing, install packages:
 
 ```bash

@@ -1,5 +1,7 @@
 //! WenPM - A cross-platform package manager for GitHub binaries
 
+mod bucket;
+mod cache;
 mod cli;
 mod commands;
 mod core;
@@ -8,7 +10,7 @@ mod installer;
 mod providers;
 mod utils;
 
-use cli::{Cli, Commands, SourceCommands};
+use cli::{BucketCommands, Cli, Commands, SourceCommands};
 use colored::Colorize;
 
 fn main() {
@@ -27,7 +29,7 @@ fn main() {
 
     // Run the appropriate command
     let result = match cli.command {
-        Commands::Init => commands::run_init(),
+        Commands::Init { yes } => commands::run_init(yes),
 
         Commands::Source { command } => {
             let source_cmd = match command {
@@ -39,11 +41,23 @@ fn main() {
                 SourceCommands::Export { output, format } => {
                     commands::source::SourceCommand::Export { output, format }
                 }
-                SourceCommands::Update => commands::source::SourceCommand::Update,
+                SourceCommands::Refresh => commands::source::SourceCommand::Refresh,
                 SourceCommands::List => commands::source::SourceCommand::List,
                 SourceCommands::Info { names } => commands::source::SourceCommand::Info { names },
             };
             commands::run_source(source_cmd)
+        }
+
+        Commands::Bucket { command } => {
+            let bucket_cmd = match command {
+                BucketCommands::Add { name, url } => {
+                    commands::bucket::BucketCommand::Add { name, url }
+                }
+                BucketCommands::Del { names } => commands::bucket::BucketCommand::Del { names },
+                BucketCommands::List => commands::bucket::BucketCommand::List,
+                BucketCommands::Refresh => commands::bucket::BucketCommand::Refresh,
+            };
+            commands::run_bucket(bucket_cmd)
         }
 
         Commands::Add { names, yes } => commands::run_add(names, yes),

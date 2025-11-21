@@ -66,10 +66,7 @@ fn is_standalone_executable(filename: &str) -> bool {
 }
 
 /// "Extract" a standalone executable by copying it to the destination directory
-fn extract_standalone_executable(
-    executable_path: &Path,
-    dest_dir: &Path,
-) -> Result<Vec<String>> {
+fn extract_standalone_executable(executable_path: &Path, dest_dir: &Path) -> Result<Vec<String>> {
     let filename = executable_path
         .file_name()
         .context("Invalid executable filename")?;
@@ -127,7 +124,10 @@ fn extract_tar_archive<R: std::io::Read>(
 ) -> Result<Vec<String>> {
     let mut extracted_files = Vec::new();
 
-    for entry_result in archive.entries().context("Failed to read archive entries")? {
+    for entry_result in archive
+        .entries()
+        .context("Failed to read archive entries")?
+    {
         let mut entry = entry_result.context("Failed to read entry")?;
 
         let path = entry.path().context("Failed to get entry path")?;

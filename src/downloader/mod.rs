@@ -45,8 +45,8 @@ pub fn download_file(url: &str, dest: &Path) -> Result<()> {
     };
 
     // Create destination file
-    let mut file = File::create(dest)
-        .with_context(|| format!("Failed to create file: {}", dest.display()))?;
+    let mut file =
+        File::create(dest).with_context(|| format!("Failed to create file: {}", dest.display()))?;
 
     // Download and write with progress
     let mut downloaded = 0u64;
@@ -54,8 +54,7 @@ pub fn download_file(url: &str, dest: &Path) -> Result<()> {
 
     let mut reader = std::io::BufReader::new(response);
     loop {
-        let n = std::io::Read::read(&mut reader, &mut buffer)
-            .context("Failed to read response")?;
+        let n = std::io::Read::read(&mut reader, &mut buffer).context("Failed to read response")?;
 
         if n == 0 {
             break;
