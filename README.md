@@ -2,29 +2,34 @@
 
 A cross-platform package manager for GitHub binaries, written in Rust.
 
+WenPM simplifies the installation and management of command-line tools and applications distributed through GitHub Releases. It automatically detects your platform, downloads the appropriate binaries, and manages them in an organized directory structure.
+
 ## Features
 
-- **No Version Management**: Always installs the latest version
-- **Local Metadata**: Complete local manifest management
-- **Auto-parse GitHub Releases**: Automatically generates local JSON manifests
-- **Multi-source Support**: GitHub / GitLab / self-hosted (planned)
-- **Multi-threaded**: Fast downloads and analysis
+- **🚀 One-line Installation**: Remote installation scripts for quick setup
+- **🔄 Auto-update**: Always installs the latest version from GitHub Releases
+- **📦 Bucket System**: Organize packages using bucket manifests
+- **🌐 Cross-platform**: Windows, macOS, Linux (multiple architectures)
+- **📁 Organized Storage**: All packages in `~/.wenpm/` with proper structure
+- **🔍 Smart Search**: Search packages across all configured buckets
+- **⚡ Fast Downloads**: Multi-threaded downloads with caching
+- **🎯 Platform Detection**: Automatically selects the correct binary for your system
 
-## Installation
+## Quick Install
 
-### Quick Install (Coming Soon)
-
-**Unix/Linux/macOS**:
-```bash
-curl -fsSL https://raw.githubusercontent.com/superyngo/WenPM/main/scripts/install.sh | bash
-```
-
-**Windows (PowerShell)**:
+### Windows (PowerShell)
 ```powershell
-iwr https://raw.githubusercontent.com/superyngo/WenPM/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/superyngo/WenPM/main/install.ps1 | iex
 ```
 
-### Manual Build
+### Linux/macOS (Bash)
+```bash
+curl -fsSL https://raw.githubusercontent.com/superyngo/WenPM/main/install.sh | bash
+```
+
+### Manual Installation
+
+Download the latest release from [GitHub Releases](https://github.com/superyngo/WenPM/releases) and place it in your PATH, or build from source:
 
 ```bash
 git clone https://github.com/superyngo/WenPM.git
@@ -37,106 +42,336 @@ The binary will be at `target/release/wenpm` (or `wenpm.exe` on Windows).
 ## Quick Start
 
 ```bash
-# Initialize WenPM
+# Initialize WenPM (done automatically with install scripts)
 wenpm init
 
-# Add a package from GitHub (Coming in Phase 2)
-wenpm add https://github.com/user/repo
+# Add the official WenPM bucket (if not added during init)
+wenpm bucket add wenpm https://raw.githubusercontent.com/superyngo/wenpm-bucket/main/manifest.json
 
-# List available packages
-wenpm list
+# Search for packages
+wenpm search ripgrep
 
 # Install a package
-wenpm install package-name
+wenpm add ripgrep
 
-# Upgrade all packages
-wenpm upgrade all
+# List installed packages
+wenpm list
 
-# Set up PATH
-wenpm setup-path
+# Update package metadata
+wenpm update
+
+# Delete a package
+wenpm delete ripgrep
 ```
 
 ## Commands
 
-### Core Commands
+### Package Management
 
-- `wenpm init` - Initialize WenPM (create directories and manifests)
-- `wenpm add <url>...` - Add packages from GitHub URLs
-- `wenpm list` - List available packages for current platform
-- `wenpm search <name>...` - Search for packages
-- `wenpm info <name>...` - Show package information
-- `wenpm update` - Update package metadata from sources
-- `wenpm install <name>...` - Install packages
-- `wenpm upgrade [name...]` - Upgrade installed packages
-- `wenpm delete <name>...` - Delete installed packages
-- `wenpm setup-path` - Set up PATH environment variable
+- `wenpm add <name>...` - Install packages
+- `wenpm delete <name>...` - Uninstall packages
+  - `wenpm del self` - Uninstall WenPM itself
+- `wenpm list` - List installed packages
+- `wenpm search <keyword>` - Search available packages
+- `wenpm update` - Update package metadata from all buckets
+
+### Bucket Management
+
+- `wenpm bucket add <name> <url>` - Add a bucket
+- `wenpm bucket remove <name>` - Remove a bucket
+- `wenpm bucket list` - List all buckets
+- `wenpm bucket refresh` - Rebuild package cache
+
+### Source Management (Legacy)
+
+- `wenpm source add <url>...` - Add package sources
+- `wenpm source list` - List package sources
+- `wenpm source export -o <file>` - Export sources
+- `wenpm source import <file>` - Import sources
+
+### System
+
+- `wenpm init` - Initialize WenPM directories and configuration
+- `wenpm --version` - Show version information
+- `wenpm --help` - Show help message
 
 ### Global Options
 
-- `-v, --verbose` - Enable verbose logging
+- `--yes`, `-y` - Skip confirmation prompts
+- `--verbose`, `-v` - Enable verbose logging
 
 ## Directory Structure
 
 ```
 ~/.wenpm/
-├── sources.json           # Package metadata
-├── installed.json         # Installed packages info
-├── bin/                   # Symlinks/shims (add to PATH)
 ├── apps/                  # Installed applications
-│   └── <app-name>/
-│       └── bin/
-└── cache/                 # Download cache
-    └── downloads/
+│   ├── wenpm/            # WenPM itself
+│   └── <package>/        # Each installed package
+├── bin/                   # Symlinks/shims (added to PATH)
+│   ├── wenpm.cmd         # WenPM shim (Windows)
+│   ├── wenpm             # WenPM symlink (Unix)
+│   └── <package>.cmd     # Package shims
+├── cache/                 # Download and package cache
+│   └── packages.json     # Cached package list
+├── buckets.json          # Bucket configuration
+├── sources.json          # Package sources (legacy)
+└── installed.json        # Installed packages info
 ```
 
-## Development Status
+## Bucket System
 
-### Phase 1 (Current) ✅
-- [x] Project structure
-- [x] Core modules (config, manifest, paths, platform)
-- [x] CLI framework
-- [x] `init` command
+Buckets are collections of package manifests hosted online. The official WenPM bucket provides curated open-source tools.
 
-### Phase 2 (In Progress)
-- [ ] GitHub Provider
-- [ ] `add` command
-- [ ] `list/search/info` commands
+### Official Bucket
 
-### Phase 3+
-- [ ] Download & installation
-- [ ] Update & upgrade
-- [ ] Self-upgrade
-- [ ] Complete all commands
+```bash
+wenpm bucket add wenpm https://raw.githubusercontent.com/superyngo/wenpm-bucket/main/manifest.json
+```
 
-See [DEVELOPMENT_PLAN.md](./DEVELOPMENT_PLAN.md) for the full roadmap.
+### Creating Your Own Bucket
+
+Create a `manifest.json` with the following structure:
+
+```json
+{
+  "name": "my-bucket",
+  "description": "My custom bucket",
+  "packages": [
+    {
+      "name": "my-tool",
+      "repo": "username/repo",
+      "description": "Tool description"
+    }
+  ]
+}
+```
+
+Host it on GitHub or any web server, then add it:
+
+```bash
+wenpm bucket add my-bucket https://example.com/manifest.json
+```
 
 ## Platform Support
 
-| Platform | Status |
-|----------|--------|
-| Windows (x86_64) | ✅ Planned |
-| Windows (ARM64) | ✅ Planned |
-| Linux (x86_64) | ✅ Planned |
-| Linux (ARM64) | ✅ Planned |
-| macOS (Intel) | ✅ Planned |
-| macOS (Apple Silicon) | ✅ Planned |
+WenPM supports the following platforms:
+
+| Platform | Architecture | Status |
+|----------|--------------|--------|
+| Windows | x86_64 (64-bit) | ✅ Supported |
+| Windows | i686 (32-bit) | ✅ Supported |
+| Linux | x86_64 | ✅ Supported |
+| Linux | i686 | ✅ Supported |
+| Linux | aarch64 (ARM64) | ✅ Supported |
+| Linux | armv7 | ✅ Supported |
+| macOS | x86_64 (Intel) | ✅ Supported |
+| macOS | aarch64 (Apple Silicon) | ✅ Supported |
+
+## How It Works
+
+1. **Platform Detection**: WenPM automatically detects your OS and architecture
+2. **Package Resolution**: Searches buckets for the requested package
+3. **Binary Selection**: Identifies the appropriate binary from GitHub Releases
+4. **Download**: Downloads and caches the binary
+5. **Installation**: Extracts and places the binary in `~/.wenpm/apps/<package>/`
+6. **Shim Creation**: Creates a shim/symlink in `~/.wenpm/bin/` for easy access
+
+## Examples
+
+### Install Popular Tools
+
+```bash
+# Modern alternatives to classic Unix tools
+wenpm add ripgrep fd bat
+
+# Git TUI
+wenpm add gitui lazygit
+
+# System monitoring
+wenpm add bottom
+
+# Shell prompt
+wenpm add starship
+
+# Directory navigation
+wenpm add zoxide
+```
+
+### Manage Packages
+
+```bash
+# Search for a tool
+wenpm search rust
+
+# Update metadata and install
+wenpm update
+wenpm add tokei
+
+# List what's installed
+wenpm list
+
+# Remove a package
+wenpm delete tokei
+```
+
+## Important Disclaimer
+
+**⚠️ NO WARRANTIES OR GUARANTEES**
+
+WenPM is a package manager that facilitates downloading and installing applications from GitHub Releases. **WenPM DOES NOT:**
+
+- ❌ Verify the authenticity or safety of packages
+- ❌ Maintain or update the applications themselves
+- ❌ Provide usage information or support for installed applications
+- ❌ Guarantee the security, stability, or functionality of any package
+- ❌ Take responsibility for any damage caused by installed applications
+
+**Users are responsible for:**
+- ✅ Verifying the trustworthiness of package sources
+- ✅ Understanding what each package does before installing
+- ✅ Reviewing the source repositories and releases
+- ✅ Accepting all risks associated with installing third-party software
+
+**By using WenPM, you acknowledge that you install packages at your own risk.**
+
+WenPM acts only as a convenience tool for downloading and organizing binaries. The responsibility for verifying, securing, and using applications rests entirely with the user.
+
+## Uninstallation
+
+### Using WenPM
+```bash
+wenpm del self
+```
+
+This will:
+1. Remove WenPM from PATH
+2. Delete all WenPM directories and installed packages
+3. Remove the WenPM executable itself
+
+### Manual Uninstallation
+
+**Windows:**
+```powershell
+# Remove from PATH, then delete:
+Remove-Item -Recurse -Force "$env:USERPROFILE\.wenpm"
+```
+
+**Linux/macOS:**
+```bash
+# Remove from PATH, then delete:
+rm -rf ~/.wenpm
+```
+
+## Development
+
+### Building from Source
+
+```bash
+git clone https://github.com/superyngo/WenPM.git
+cd WenPM
+cargo build --release
+```
+
+### Running Tests
+
+```bash
+cargo test
+```
+
+### Project Structure
+
+```
+wenpm/
+├── src/
+│   ├── bucket.rs         # Bucket management
+│   ├── cache.rs          # Package cache
+│   ├── cli.rs            # CLI interface
+│   ├── commands/         # Command implementations
+│   ├── core/             # Core functionality
+│   ├── downloader/       # Download logic
+│   ├── installer/        # Installation logic
+│   ├── providers/        # GitHub API integration
+│   └── utils/            # Utilities
+├── install.ps1           # Windows installer
+└── install.sh            # Unix installer
+```
+
+## Troubleshooting
+
+### PATH Not Updated
+
+After installation, you may need to restart your terminal or run:
+
+**Windows:**
+```powershell
+refreshenv
+```
+
+**Linux/macOS:**
+```bash
+source ~/.bashrc  # or ~/.zshrc, ~/.profile
+```
+
+### Package Not Found
+
+```bash
+# Update package metadata
+wenpm update
+
+# Check available buckets
+wenpm bucket list
+
+# Rebuild cache
+wenpm bucket refresh
+```
+
+### Permission Errors (Linux/macOS)
+
+```bash
+# Ensure ~/.wenpm/bin is in PATH and has correct permissions
+chmod +x ~/.wenpm/bin/*
+```
 
 ## Contributing
 
-Contributions are welcome! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
+Contributions are welcome! Please feel free to submit issues, feature requests, or pull requests.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
 ## License
 
-MIT License - see [LICENSE](./LICENSE) for details.
+MIT License - Copyright (c) 2025 wen
+
+See [LICENSE](./LICENSE) for details.
 
 ## Credits
 
 Inspired by:
-- [Obtainium](https://github.com/ImranR98/Obtainium) (Android)
-- [Scoop](https://scoop.sh/) (Windows)
+- [Scoop](https://scoop.sh/) - Windows package manager
+- [Homebrew](https://brew.sh/) - macOS package manager
+- [Obtainium](https://github.com/ImranR98/Obtainium) - Android app manager
 
 ## Links
 
 - **GitHub**: https://github.com/superyngo/WenPM
+- **Releases**: https://github.com/superyngo/WenPM/releases
 - **Issues**: https://github.com/superyngo/WenPM/issues
-- **Discussions**: https://github.com/superyngo/WenPM/discussions
+- **Official Bucket**: https://github.com/superyngo/wenpm-bucket
+
+## Changelog
+
+### v0.2.0 (2025-01-21)
+- Add installation scripts for Windows and Unix
+- Improve init bucket checking
+- Fix self-deletion when executable is inside .wenpm
+- Fix shim absolute path issues
+
+### v0.1.0 (2025-01-21)
+- Initial release
+- Basic package management
+- Bucket system
+- Cross-platform support
