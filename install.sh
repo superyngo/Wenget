@@ -90,10 +90,31 @@ get_latest_release() {
 
 # Download and extract release
 download_release() {
-    local asset_name="$APP_NAME-$OS-$ARCH.tar.gz"
+    local asset_name=""
+    local download_url=""
 
-    # Extract download URL from release data
-    local download_url=$(echo "$RELEASE_DATA" | grep "\"browser_download_url\".*$asset_name" | sed -E 's/.*"browser_download_url": *"([^"]+)".*/\1/')
+    # For Linux, try musl version first, then fall back to gnu
+    if [ "$OS" = "linux" ]; then
+        local musl_asset="$APP_NAME-$OS-$ARCH-musl.tar.gz"
+        local gnu_asset="$APP_NAME-$OS-$ARCH.tar.gz"
+
+        # Try musl version first
+        download_url=$(echo "$RELEASE_DATA" | grep "\"browser_download_url\".*$musl_asset" | sed -E 's/.*"browser_download_url": *"([^"]+)".*/\1/')
+
+        if [ -n "$download_url" ]; then
+            asset_name="$musl_asset"
+            print_info "Using musl version: $asset_name"
+        else
+            # Fall back to gnu version
+            print_info "musl version not found, trying gnu version..."
+            download_url=$(echo "$RELEASE_DATA" | grep "\"browser_download_url\".*$gnu_asset" | sed -E 's/.*"browser_download_url": *"([^"]+)".*/\1/')
+            asset_name="$gnu_asset"
+        fi
+    else
+        # For macOS, use the standard naming
+        asset_name="$APP_NAME-$OS-$ARCH.tar.gz"
+        download_url=$(echo "$RELEASE_DATA" | grep "\"browser_download_url\".*$asset_name" | sed -E 's/.*"browser_download_url": *"([^"]+)".*/\1/')
+    fi
 
     if [ -z "$download_url" ]; then
         print_error "Could not find release asset: $asset_name"
