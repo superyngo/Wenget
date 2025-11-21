@@ -206,9 +206,18 @@ fn delete_self(yes: bool) -> Result<()> {
     }
     println!();
 
+    // Check if executable is inside .wenpm directory
+    let exe_in_wenpm = exe_path.starts_with(paths.root());
+
     // Step 2: Delete WenPM directories
     println!("{} Deleting WenPM directories...", "2.".bold());
-    if paths.root().exists() {
+    if exe_in_wenpm {
+        println!(
+            "   {} Scheduled for deletion (executable is inside .wenpm)",
+            "✓".yellow()
+        );
+        println!("      Directory will be deleted after wenpm exits");
+    } else if paths.root().exists() {
         match fs::remove_dir_all(paths.root()) {
             Ok(()) => println!("   {} Deleted: {}", "✓".green(), paths.root().display()),
             Err(e) => println!("   {} Failed to delete directory: {}", "✗".red(), e),
@@ -220,7 +229,7 @@ fn delete_self(yes: bool) -> Result<()> {
 
     // Step 3: Delete the executable
     println!("{} Deleting wenpm executable...", "3.".bold());
-    delete_executable(&exe_path)?;
+    delete_executable(&exe_path, exe_in_wenpm, paths.root())?;
 
     println!();
     println!("{}", "═".repeat(60));
@@ -332,15 +341,15 @@ fn remove_from_shell_config(config_path: &Path, bin_dir: &str) -> Result<()> {
 }
 
 /// Delete the executable (platform-specific implementation)
-fn delete_executable(exe_path: &Path) -> Result<()> {
+fn delete_executable(exe_path: &Path, exe_in_wenpm: bool, wenpm_root: &Path) -> Result<()> {
     #[cfg(windows)]
     {
-        delete_executable_windows(exe_path)
+        delete_executable_windows(exe_path, exe_in_wenpm, wenpm_root)
     }
 
     #[cfg(not(windows))]
     {
-        delete_executable_unix(exe_path)
+        delete_executable_unix(exe_path, exe_in_wenpm, wenpm_root)
     }
 }
 
@@ -348,7 +357,11 @@ fn delete_executable(exe_path: &Path) -> Result<()> {
 /// On Windows, we can't delete a running executable directly,
 /// so we use a batch script that waits and then deletes it
 #[cfg(windows)]
-fn delete_executable_windows(exe_path: &Path) -> Result<()> {
+fn delete_executable_windows(
+    exe_path: &Path,
+    exe_in_wenpm: bool,
+    wenpm_root: &Path,
+) -> Result<()> {
     use std::process::Command;
 
     // Create a temporary batch script to delete the executable after exit
@@ -356,14 +369,28 @@ fn delete_executable_windows(exe_path: &Path) -> Result<()> {
     let script_path = temp_dir.join("wenpm_uninstall.bat");
 
     let exe_path_str = exe_path.to_string_lossy();
-    let script_content = format!(
-        r#"@echo off
+    let script_content = if exe_in_wenpm {
+        // If executable is inside .wenpm, delete the entire directory
+        let wenpm_root_str = wenpm_root.to_string_lossy();
+        format!(
+            r#"@echo off
+timeout /t 2 /nobreak >nul
+rd /s /q "{}"
+del /f /q "%~f0"
+"#,
+            wenpm_root_str
+        )
+    } else {
+        // Otherwise just delete the executable
+        format!(
+            r#"@echo off
 timeout /t 2 /nobreak >nul
 del /f /q "{}"
 del /f /q "%~f0"
 "#,
-        exe_path_str
-    );
+            exe_path_str
+        )
+    };
 
     fs::write(&script_path, script_content).context("Failed to create uninstall script")?;
 
@@ -383,7 +410,7 @@ del /f /q "%~f0"
 
 /// Delete executable on Unix
 #[cfg(not(windows))]
-fn delete_executable_unix(exe_path: &Path) -> Result<()> {
+fn delete_executable_unix(exe_path: &Path, exe_in_wenpm: bool, wenpm_root: &Path) -> Result<()> {
     use std::process::Command;
 
     // Create a shell script to delete the executable after exit
@@ -391,14 +418,28 @@ fn delete_executable_unix(exe_path: &Path) -> Result<()> {
     let script_path = temp_dir.join("wenpm_uninstall.sh");
 
     let exe_path_str = exe_path.to_string_lossy();
-    let script_content = format!(
-        r#"#!/bin/sh
+    let script_content = if exe_in_wenpm {
+        // If executable is inside .wenpm, delete the entire directory
+        let wenpm_root_str = wenpm_root.to_string_lossy();
+        format!(
+            r#"#!/bin/sh
+sleep 2
+rm -rf "{}"
+rm -f "$0"
+"#,
+            wenpm_root_str
+        )
+    } else {
+        // Otherwise just delete the executable
+        format!(
+            r#"#!/bin/sh
 sleep 2
 rm -f "{}"
 rm -f "$0"
 "#,
-        exe_path_str
-    );
+            exe_path_str
+        )
+    };
 
     fs::write(&script_path, script_content).context("Failed to create uninstall script")?;
 

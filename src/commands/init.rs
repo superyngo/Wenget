@@ -33,6 +33,16 @@ pub fn run(yes: bool) -> Result<()> {
             setup_path(&config)?;
         }
 
+        // Check if wenpm bucket exists
+        if !has_wenpm_bucket(&config)? {
+            println!();
+            if prompt_add_wenpm_bucket(yes)? {
+                add_wenpm_bucket(&config)?;
+            }
+        } else {
+            println!("{}", "✓ WenPM bucket is configured".green());
+        }
+
         return Ok(());
     }
 
@@ -404,6 +414,23 @@ fn prompt_add_wenpm_bucket(yes: bool) -> Result<bool> {
     let input = input.trim().to_lowercase();
 
     Ok(input.is_empty() || input == "y" || input == "yes")
+}
+
+/// Check if wenpm bucket is already configured
+fn has_wenpm_bucket(config: &Config) -> Result<bool> {
+    const WENPM_BUCKET_URL: &str =
+        "https://raw.githubusercontent.com/superyngo/wenpm-bucket/refs/heads/main/manifest.json";
+
+    match config.get_or_create_buckets() {
+        Ok(bucket_config) => {
+            // Check if any bucket has the wenpm URL
+            Ok(bucket_config
+                .buckets
+                .iter()
+                .any(|b| b.url == WENPM_BUCKET_URL))
+        }
+        Err(_) => Ok(false),
+    }
 }
 
 /// Add wenpm bucket
