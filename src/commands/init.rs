@@ -8,6 +8,12 @@ use std::env;
 use std::io::{self, Write as IoWrite};
 use std::path::PathBuf;
 
+#[cfg(windows)]
+use crate::installer::shim::create_shim;
+
+#[cfg(unix)]
+use crate::installer::symlink::create_symlink;
+
 #[cfg(not(windows))]
 use std::fs::{self, OpenOptions};
 
@@ -20,6 +26,9 @@ pub fn run(yes: bool) -> Result<()> {
     if config.is_initialized() {
         println!("{}", "✓ WenPM is already initialized".green());
         println!("  Root: {}", config.paths().root().display());
+
+        // Check and setup wenpm executable if missing
+        check_and_setup_wenpm_executable(&config)?;
 
         // Check if PATH is already configured
         if is_in_path(config.paths().bin_dir())? {
@@ -48,6 +57,9 @@ pub fn run(yes: bool) -> Result<()> {
     println!("  Installed: {}", config.paths().installed_json().display());
     println!();
 
+    // Setup wenpm executable itself
+    setup_wenpm_executable(&config)?;
+
     // Set up PATH
     setup_path(&config)?;
 
@@ -63,6 +75,67 @@ pub fn run(yes: bool) -> Result<()> {
     println!("  2. Search packages:      wenpm search <keyword>");
     println!("  3. Install packages:     wenpm add <package-name>");
 
+    Ok(())
+}
+
+/// Check and setup wenpm executable if missing (for already initialized)
+fn check_and_setup_wenpm_executable(config: &Config) -> Result<()> {
+    let bin_dir = config.paths().bin_dir();
+
+    #[cfg(windows)]
+    let wenpm_bin = bin_dir.join("wenpm.cmd");
+
+    #[cfg(unix)]
+    let wenpm_bin = bin_dir.join("wenpm");
+
+    // Check if wenpm executable/shim exists
+    if wenpm_bin.exists() {
+        println!("{}", "✓ WenPM executable is in bin directory".green());
+    } else {
+        println!("{}", "⚠ WenPM executable is not in bin directory".yellow());
+        println!();
+        setup_wenpm_executable(config)?;
+    }
+
+    Ok(())
+}
+
+/// Setup wenpm executable itself in bin directory
+fn setup_wenpm_executable(config: &Config) -> Result<()> {
+    let current_exe = env::current_exe().context("Failed to get current executable path")?;
+    let bin_dir = config.paths().bin_dir();
+
+    #[cfg(windows)]
+    {
+        let shim_path = bin_dir.join("wenpm.cmd");
+
+        match create_shim(&current_exe, &shim_path, "wenpm") {
+            Ok(_) => {
+                println!("{}", "✓ Created wenpm shim in bin directory".green());
+            }
+            Err(e) => {
+                println!("{} Failed to create wenpm shim: {}", "⚠".yellow(), e);
+                println!("  You can manually copy wenpm.exe to the bin directory later");
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    {
+        let symlink_path = bin_dir.join("wenpm");
+
+        match create_symlink(&current_exe, &symlink_path) {
+            Ok(_) => {
+                println!("{}", "✓ Created wenpm symlink in bin directory".green());
+            }
+            Err(e) => {
+                println!("{} Failed to create wenpm symlink: {}", "⚠".yellow(), e);
+                println!("  You can manually copy or link wenpm to the bin directory later");
+            }
+        }
+    }
+
+    println!();
     Ok(())
 }
 
