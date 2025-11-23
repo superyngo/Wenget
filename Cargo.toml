@@ -1,6 +1,6 @@
 [package]
 name = "wenget"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 authors = ["wen"]
 description = "A cross-platform package manager for GitHub binaries"
@@ -15,7 +15,8 @@ clap = { version = "4.5", features = ["derive"] }
 
 # HTTP client
 # Using native-tls for better 32-bit architecture support (avoids ring dependency)
-reqwest = { version = "0.12", default-features = false, features = ["json", "blocking", "native-tls"] }
+# vendored feature compiles OpenSSL from source for cross-compilation
+reqwest = { version = "0.12", default-features = false, features = ["json", "blocking", "native-tls-vendored"] }
 
 # Async runtime
 tokio = { version = "1.35", features = ["full"] }
