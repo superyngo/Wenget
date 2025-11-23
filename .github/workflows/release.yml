@@ -35,6 +35,10 @@ jobs:
             artifact_name: wenget
             asset_name: wenget-linux-x86_64-musl
           - os: ubuntu-latest
+            target: i686-unknown-linux-musl
+            artifact_name: wenget
+            asset_name: wenget-linux-i686-musl
+          - os: ubuntu-latest
             target: armv7-unknown-linux-gnueabihf
             artifact_name: wenget
             asset_name: wenget-linux-armv7
@@ -100,10 +104,13 @@ jobs:
           sudo apt-get install -y gcc-multilib g++-multilib
 
       - name: Install musl tools (Linux musl only)
-        if: matrix.target == 'x86_64-unknown-linux-musl' || matrix.target == 'aarch64-unknown-linux-musl'
+        if: matrix.target == 'x86_64-unknown-linux-musl' || matrix.target == 'i686-unknown-linux-musl' || matrix.target == 'aarch64-unknown-linux-musl'
         run: |
           sudo apt-get update
           sudo apt-get install -y musl-tools
+          if [ "${{ matrix.target }}" = "i686-unknown-linux-musl" ]; then
+            sudo apt-get install -y gcc-multilib g++-multilib
+          fi
           if [ "${{ matrix.target }}" = "aarch64-unknown-linux-musl" ]; then
             sudo apt-get install -y musl-dev gcc-aarch64-linux-gnu
           fi
@@ -123,11 +130,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
 
-      - name: Configure cargo for ARM cross-compilation
-        if: matrix.target == 'armv7-unknown-linux-gnueabihf' || matrix.target == 'armv7-unknown-linux-musleabihf' || matrix.target == 'aarch64-unknown-linux-gnu' || matrix.target == 'aarch64-unknown-linux-musl'
+      - name: Configure cargo for cross-compilation
+        if: matrix.target == 'i686-unknown-linux-musl' || matrix.target == 'armv7-unknown-linux-gnueabihf' || matrix.target == 'armv7-unknown-linux-musleabihf' || matrix.target == 'aarch64-unknown-linux-gnu' || matrix.target == 'aarch64-unknown-linux-musl'
         run: |
           mkdir -p ~/.cargo
-          if [ "${{ matrix.target }}" = "armv7-unknown-linux-gnueabihf" ]; then
+          if [ "${{ matrix.target }}" = "i686-unknown-linux-musl" ]; then
+            echo '[target.i686-unknown-linux-musl]' >> ~/.cargo/config.toml
+            echo 'linker = "musl-gcc"' >> ~/.cargo/config.toml
+          elif [ "${{ matrix.target }}" = "armv7-unknown-linux-gnueabihf" ]; then
             echo '[target.armv7-unknown-linux-gnueabihf]' >> ~/.cargo/config.toml
             echo 'linker = "arm-linux-gnueabihf-gcc"' >> ~/.cargo/config.toml
           elif [ "${{ matrix.target }}" = "armv7-unknown-linux-musleabihf" ]; then

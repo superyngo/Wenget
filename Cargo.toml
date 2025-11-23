@@ -1,8 +1,8 @@
 [package]
 name = "wenget"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
-authors = ["Wenget Team"]
+authors = ["wen"]
 description = "A cross-platform package manager for GitHub binaries"
 license = "MIT"
 repository = "https://github.com/superyngo/Wenget"
