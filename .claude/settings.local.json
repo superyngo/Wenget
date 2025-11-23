@@ -24,7 +24,8 @@
       "Bash(git push:*)",
       "Bash(gh run:*)",
       "Bash(git commit:*)",
-      "Bash(git tag -a v0.2.2 -m \"$(cat <<''EOF''\nRelease v0.2.2\n\n## Bug Fixes\n- Fix i686-unknown-linux-musl build errors (ring crypto library limitation)\n- Fix armv7-unknown-linux-musleabihf build errors\n\n## Changes\n- Switch from rustls-tls to native-tls for better 32-bit architecture support\n- Now supports iSH (iOS Linux environment) via i686-musl target\n\n## Technical Improvements\n- Avoid ring dependency which has limited 32-bit musl support\n- Use system native OpenSSL/LibreSSL for TLS\n- More portable across different CPU architectures\n\n## Supported Platforms\nAll platforms from v0.2.1 plus:\n- i686-unknown-linux-musl (iSH compatible)\n- armv7-unknown-linux-musleabihf (fixed)\nEOF\n)\")"
+      "Bash(git tag -a v0.2.2 -m \"$(cat <<''EOF''\nRelease v0.2.2\n\n## Bug Fixes\n- Fix i686-unknown-linux-musl build errors (ring crypto library limitation)\n- Fix armv7-unknown-linux-musleabihf build errors\n\n## Changes\n- Switch from rustls-tls to native-tls for better 32-bit architecture support\n- Now supports iSH (iOS Linux environment) via i686-musl target\n\n## Technical Improvements\n- Avoid ring dependency which has limited 32-bit musl support\n- Use system native OpenSSL/LibreSSL for TLS\n- More portable across different CPU architectures\n\n## Supported Platforms\nAll platforms from v0.2.1 plus:\n- i686-unknown-linux-musl (iSH compatible)\n- armv7-unknown-linux-musleabihf (fixed)\nEOF\n)\")",
+      "Bash(./target/release/wenget.exe:*)"
     ],
     "deny": [],
     "ask": []

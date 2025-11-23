@@ -60,7 +60,7 @@ fn main() {
             commands::run_bucket(bucket_cmd)
         }
 
-        Commands::Add { names, yes } => commands::run_add(names, yes),
+        Commands::Install { names, yes } => commands::run_add(names, yes),
 
         Commands::List => commands::run_list(),
 
@@ -68,7 +68,7 @@ fn main() {
 
         Commands::Update { names, yes } => commands::run_update(names, yes),
 
-        Commands::Del { names, yes, force } => commands::run_delete(names, yes, force),
+        Commands::Remove { names, yes, force } => commands::run_delete(names, yes, force),
     };
 
     // Handle errors

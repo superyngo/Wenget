@@ -31,9 +31,10 @@ pub enum Commands {
         command: BucketCommands,
     },
 
-    /// Install packages (alias: add)
-    #[command(visible_alias = "a")]
-    Add {
+    /// Install packages
+    #[command(visible_alias = "add")]
+    #[command(visible_alias = "i")]
+    Install {
         /// Package names to install (supports wildcards *)
         names: Vec<String>,
 
@@ -64,16 +65,18 @@ pub enum Commands {
         yes: bool,
     },
 
-    /// Delete installed packages
-    Del {
-        /// Package names to delete (supports wildcards *)
+    /// Remove installed packages
+    #[command(visible_alias = "del")]
+    #[command(visible_alias = "rm")]
+    Remove {
+        /// Package names to remove (supports wildcards *)
         names: Vec<String>,
 
         /// Skip confirmation prompts
         #[arg(short = 'y', long)]
         yes: bool,
 
-        /// Force deletion (allow deleting wenget itself)
+        /// Force removal (allow removing wenget itself)
         #[arg(short, long)]
         force: bool,
     },
