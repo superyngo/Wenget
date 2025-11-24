@@ -10,6 +10,7 @@ mod installer;
 mod providers;
 mod utils;
 
+use clap::CommandFactory;
 use cli::{BucketCommands, Cli, Commands, SourceCommands};
 use colored::Colorize;
 
@@ -27,8 +28,15 @@ fn main() {
         log::set_max_level(log::LevelFilter::Debug);
     }
 
+    // Handle no command (show help and exit 0)
+    let Some(command) = cli.command else {
+        let _ = Cli::command().print_help();
+        println!(); // Add newline after help
+        return;
+    };
+
     // Run the appropriate command
-    let result = match cli.command {
+    let result = match command {
         Commands::Init { yes } => commands::run_init(yes),
 
         Commands::Source { command } => {
