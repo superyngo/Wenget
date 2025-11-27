@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Tag name for the release'
+        description: "Tag name for the release"
         required: true
         type: string
-  release:
-    types: [released]
+  # release:
+  #   types: [released]
 
 jobs:
   winget:
