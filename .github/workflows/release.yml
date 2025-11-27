@@ -48,6 +48,14 @@ jobs:
             asset_name: wenget-linux-aarch64-musl
             cflags: "-U_FORTIFY_SOURCE"
             cc: "aarch64-linux-gnu-gcc"
+          - os: ubuntu-latest
+            target: i686-unknown-linux-musl
+            artifact_name: wenget
+            asset_name: wenget-linux-i686-musl
+          - os: ubuntu-latest
+            target: armv7-unknown-linux-musleabihf
+            artifact_name: wenget
+            asset_name: wenget-linux-armv7-musl
           # Windows builds - 使用溫和優化以避免防毒軟體誤報
           - os: windows-latest
             target: x86_64-pc-windows-msvc
@@ -88,6 +96,10 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      - name: Install cross (for musl targets)
+        if: matrix.target == 'x86_64-unknown-linux-musl' || matrix.target == 'aarch64-unknown-linux-musl' || matrix.target == 'i686-unknown-linux-musl' || matrix.target == 'armv7-unknown-linux-musleabihf'
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
       - name: Install 32-bit libraries (Linux i686 only)
         if: matrix.target == 'i686-unknown-linux-gnu'
         run: |
@@ -96,7 +108,7 @@ jobs:
           sudo apt-get install -y gcc-multilib g++-multilib
 
       - name: Install musl tools (Linux musl only)
-        if: matrix.target == 'x86_64-unknown-linux-musl' || matrix.target == 'aarch64-unknown-linux-musl'
+        if: false
         run: |
           sudo apt-get update
           sudo apt-get install -y musl-tools
@@ -117,7 +129,7 @@ jobs:
           sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
 
       - name: Configure cargo for ARM cross-compilation
-        if: matrix.target == 'armv7-unknown-linux-gnueabihf' || matrix.target == 'aarch64-unknown-linux-gnu' || matrix.target == 'aarch64-unknown-linux-musl'
+        if: matrix.target == 'armv7-unknown-linux-gnueabihf' || matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
           mkdir -p ~/.cargo
           if [ "${{ matrix.target }}" = "armv7-unknown-linux-gnueabihf" ]; then
@@ -142,8 +154,16 @@ jobs:
           CARGO_PROFILE_RELEASE_CODEGEN_UNITS: ${{ matrix.codegen_units }}
           CARGO_PROFILE_RELEASE_PANIC: ${{ matrix.panic }}
 
+      - name: Build with cross (musl targets)
+        if: matrix.target == 'x86_64-unknown-linux-musl' || matrix.target == 'aarch64-unknown-linux-musl' || matrix.target == 'i686-unknown-linux-musl' || matrix.target == 'armv7-unknown-linux-musleabihf'
+        run: cross build --release --target ${{ matrix.target }}
+        env:
+          RUSTFLAGS: ${{ matrix.rustflags }}
+          CFLAGS: ${{ matrix.cflags }}
+          CC: ${{ matrix.cc }}
+
       - name: Build (Linux and macOS)
-        if: matrix.os != 'windows-latest'
+        if: matrix.os != 'windows-latest' && matrix.target != 'x86_64-unknown-linux-musl' && matrix.target != 'aarch64-unknown-linux-musl' && matrix.target != 'i686-unknown-linux-musl' && matrix.target != 'armv7-unknown-linux-musleabihf'
         run: cargo build --release --target ${{ matrix.target }}
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
@@ -151,7 +171,7 @@ jobs:
           CC: ${{ matrix.cc }}
 
       - name: Strip binary (Linux and macOS - x86)
-        if: matrix.os != 'windows-latest' && matrix.target != 'armv7-unknown-linux-gnueabihf' && matrix.target != 'aarch64-unknown-linux-gnu' && matrix.target != 'aarch64-unknown-linux-musl'
+        if: matrix.os != 'windows-latest' && matrix.target != 'armv7-unknown-linux-gnueabihf' && matrix.target != 'aarch64-unknown-linux-gnu' && matrix.target != 'aarch64-unknown-linux-musl' && matrix.target != 'i686-unknown-linux-musl' && matrix.target != 'armv7-unknown-linux-musleabihf'
         run: strip target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
 
       - name: Strip binary (ARM32)
@@ -161,6 +181,10 @@ jobs:
       - name: Strip binary (ARM64)
         if: matrix.target == 'aarch64-unknown-linux-gnu' || matrix.target == 'aarch64-unknown-linux-musl'
         run: aarch64-linux-gnu-strip target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+
+      - name: Strip binary (cross-compiled musl)
+        if: matrix.target == 'x86_64-unknown-linux-musl' || matrix.target == 'aarch64-unknown-linux-musl' || matrix.target == 'i686-unknown-linux-musl' || matrix.target == 'armv7-unknown-linux-musleabihf'
+        run: echo "Skipping strip for cross-compiled ${{ matrix.target }} (already stripped by cross)"
 
       - name: Create tarball (Linux and macOS)
         if: matrix.os != 'windows-latest'
@@ -287,3 +311,14 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Trigger WinGet workflow
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: "winget.yml",
+              ref: context.ref
+            })

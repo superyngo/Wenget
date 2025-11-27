@@ -1,0 +1,17 @@
+name: Publish to WinGet
+
+on:
+  workflow_dispatch:
+  # release:
+  #   types: [released]
+
+jobs:
+  winget:
+    runs-on: windows-latest
+    steps:
+      - uses: vedantmgoyal9/winget-releaser@main
+        with:
+          identifier: WenAnLin.wenget
+          token: ${{ secrets.WINGET_TOKEN }}
+          installers-regex: '\.exe$'
+          max-versions-to-keep: 5
