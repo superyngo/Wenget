@@ -5,7 +5,7 @@ use crate::core::{Config, InstalledPackage, Platform, WenPaths};
 use crate::downloader;
 use crate::installer::{create_shim, extract_archive, find_executable};
 use crate::package_resolver::{PackageInput, PackageResolver, ResolvedPackage};
-use crate::providers::GitHubProvider;
+use crate::providers::{GitHubProvider, SourceProvider};
 use anyhow::{Context, Result};
 use chrono::Utc;
 use colored::Colorize;
@@ -164,18 +164,55 @@ pub fn run(names: Vec<String>, yes: bool) -> Result<()> {
     // Combine new installs and updates
     let all_packages: Vec<_> = to_install.into_iter().chain(to_update).collect();
 
-    for resolved in all_packages {
-        let pkg = &resolved.package;
-        let pkg_name = &pkg.name;
-        let repo_url = &pkg.repo;
+    // Collect packages to update in cache (packages fetched from GitHub API)
+    let mut packages_to_cache: Vec<(crate::core::Package, PackageSource)> = Vec::new();
 
-        let version = github.fetch_latest_version(repo_url)?;
+    for resolved in all_packages {
+        let pkg_name = &resolved.package.name;
+        let repo_url = &resolved.package.repo;
+
+        // Try to fetch latest package info from GitHub API (includes latest download links)
+        // If API rate limit is hit, fallback to cached package info
+        let (pkg_to_install, version, using_fallback) =
+            match github.fetch_package(repo_url) {
+                Ok(latest_pkg) => {
+                    // Successfully fetched from GitHub API - use latest download links
+                    let version = github
+                        .fetch_latest_version(repo_url)
+                        .unwrap_or_else(|_| "unknown".to_string());
+                    (latest_pkg, version, false)
+                }
+                Err(e) => {
+                    // Failed to fetch from GitHub API (likely rate limit) - use cached package info
+                    log::warn!(
+                        "Failed to fetch latest package info from GitHub API for {}: {}",
+                        pkg_name,
+                        e
+                    );
+                    println!(
+                        "  {} Using cached download links (GitHub API unavailable)",
+                        "⚠".yellow()
+                    );
+
+                    let version = github
+                        .fetch_latest_version(repo_url)
+                        .unwrap_or_else(|_| "unknown".to_string());
+                    (resolved.package.clone(), version, true)
+                }
+            };
+
         println!("{} {} v{}...", "Installing".cyan(), pkg_name, version);
+        if using_fallback {
+            println!(
+                "  {} Falling back to bucket source download links",
+                "ℹ".cyan()
+            );
+        }
 
         match install_package(
             &config,
             &paths,
-            pkg,
+            &pkg_to_install,
             &platform_ids,
             &version,
             &resolved.source,
@@ -183,6 +220,11 @@ pub fn run(names: Vec<String>, yes: bool) -> Result<()> {
             Ok(inst_pkg) => {
                 installed.upsert_package(pkg_name.clone(), inst_pkg);
                 config.save_installed(&installed)?;
+
+                // Collect package for cache update if fetched from GitHub API
+                if !using_fallback {
+                    packages_to_cache.push((pkg_to_install.clone(), resolved.source.clone()));
+                }
 
                 println!("  {} Installed successfully", "✓".green());
                 success_count += 1;
@@ -193,6 +235,19 @@ pub fn run(names: Vec<String>, yes: bool) -> Result<()> {
             }
         }
         println!();
+    }
+
+    // Update cache with latest package info from GitHub API
+    if !packages_to_cache.is_empty() {
+        match update_cache_with_packages(&config, packages_to_cache) {
+            Ok(count) => {
+                log::info!("Updated cache with {} latest package(s)", count);
+            }
+            Err(e) => {
+                log::warn!("Failed to update cache: {}", e);
+                // Don't fail the entire operation if cache update fails
+            }
+        }
     }
 
     // Summary
@@ -293,4 +348,30 @@ fn install_package(
     };
 
     Ok(inst_pkg)
+}
+
+/// Update manifest cache with latest package info from GitHub API
+fn update_cache_with_packages(
+    config: &Config,
+    packages: Vec<(crate::core::Package, PackageSource)>,
+) -> Result<usize> {
+    // Load current cache
+    let mut cache = config.get_or_rebuild_cache()?;
+
+    // Save count before moving packages
+    let count = packages.len();
+
+    // Update cache with new package info
+    for (package, source) in packages {
+        log::debug!(
+            "Updating cache with latest info for {} from GitHub API",
+            package.name
+        );
+        cache.add_package(package, source);
+    }
+
+    // Save updated cache
+    config.save_cache(&cache)?;
+
+    Ok(count)
 }
