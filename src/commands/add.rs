@@ -173,33 +173,32 @@ pub fn run(names: Vec<String>, yes: bool) -> Result<()> {
 
         // Try to fetch latest package info from GitHub API (includes latest download links)
         // If API rate limit is hit, fallback to cached package info
-        let (pkg_to_install, version, using_fallback) =
-            match github.fetch_package(repo_url) {
-                Ok(latest_pkg) => {
-                    // Successfully fetched from GitHub API - use latest download links
-                    let version = github
-                        .fetch_latest_version(repo_url)
-                        .unwrap_or_else(|_| "unknown".to_string());
-                    (latest_pkg, version, false)
-                }
-                Err(e) => {
-                    // Failed to fetch from GitHub API (likely rate limit) - use cached package info
-                    log::warn!(
-                        "Failed to fetch latest package info from GitHub API for {}: {}",
-                        pkg_name,
-                        e
-                    );
-                    println!(
-                        "  {} Using cached download links (GitHub API unavailable)",
-                        "⚠".yellow()
-                    );
+        let (pkg_to_install, version, using_fallback) = match github.fetch_package(repo_url) {
+            Ok(latest_pkg) => {
+                // Successfully fetched from GitHub API - use latest download links
+                let version = github
+                    .fetch_latest_version(repo_url)
+                    .unwrap_or_else(|_| "unknown".to_string());
+                (latest_pkg, version, false)
+            }
+            Err(e) => {
+                // Failed to fetch from GitHub API (likely rate limit) - use cached package info
+                log::warn!(
+                    "Failed to fetch latest package info from GitHub API for {}: {}",
+                    pkg_name,
+                    e
+                );
+                println!(
+                    "  {} Using cached download links (GitHub API unavailable)",
+                    "⚠".yellow()
+                );
 
-                    let version = github
-                        .fetch_latest_version(repo_url)
-                        .unwrap_or_else(|_| "unknown".to_string());
-                    (resolved.package.clone(), version, true)
-                }
-            };
+                let version = github
+                    .fetch_latest_version(repo_url)
+                    .unwrap_or_else(|_| "unknown".to_string());
+                (resolved.package.clone(), version, true)
+            }
+        };
 
         println!("{} {} v{}...", "Installing".cyan(), pkg_name, version);
         if using_fallback {

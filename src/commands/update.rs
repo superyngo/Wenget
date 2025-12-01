@@ -3,6 +3,7 @@
 use crate::commands::add;
 use crate::core::manifest::PackageSource;
 use crate::core::Config;
+use crate::providers::base::SourceProvider;
 use crate::providers::GitHubProvider;
 use anyhow::Result;
 use colored::Colorize;
@@ -102,13 +103,21 @@ fn find_upgradeable(
 
 /// Upgrade wenget itself
 fn upgrade_self() -> Result<()> {
+    use crate::core::platform::Os;
+    use crate::core::{Platform, WenPaths};
+    use crate::downloader::download_file;
+    use crate::installer::{extract_archive, find_executable};
+    use colored::Colorize;
+    use std::env;
+    use std::fs;
+
     println!("{}", "Upgrading wenget...".cyan());
 
     // Get current version
     let current_version = env!("CARGO_PKG_VERSION");
     println!("Current version: {}", current_version);
 
-    // Fetch latest release from GitHub
+    // Fetch latest package info from GitHub
     let provider = GitHubProvider::new()?;
     let latest_version = provider.fetch_latest_version("https://github.com/superyngo/wenget")?;
 
@@ -119,16 +128,165 @@ fn upgrade_self() -> Result<()> {
         return Ok(());
     }
 
+    println!(
+        "{}",
+        format!(
+            "New version available: {} -> {}",
+            current_version, latest_version
+        )
+        .yellow()
+    );
+    println!();
+
+    // Get package information including binaries
+    let package = provider.fetch_package("https://github.com/superyngo/wenget")?;
+
+    // Select binary for current platform
+    let current_platform = Platform::current();
+    let platform_id = current_platform.to_string();
+
+    let binary = package
+        .platforms
+        .get(&platform_id)
+        .or_else(|| {
+            // Try with musl variant for Linux
+            if current_platform.os == Os::Linux {
+                package.platforms.get(&format!("{}-musl", platform_id))
+            } else {
+                None
+            }
+        })
+        .ok_or_else(|| anyhow::anyhow!("No binary available for platform: {}", platform_id))?;
+
+    println!("Downloading: {}", binary.url);
+
+    // Determine download file name from URL
+    let filename = binary
+        .url
+        .rsplit('/')
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("Invalid download URL"))?;
+
+    // Download to temporary directory
+    let paths = WenPaths::new()?;
+    let temp_dir = paths.cache_dir().join("self-upgrade");
+    fs::create_dir_all(&temp_dir)?;
+
+    let download_path = temp_dir.join(filename);
+    download_file(&binary.url, &download_path)?;
+
+    // Extract archive
+    let extract_dir = temp_dir.join("extracted");
+    fs::create_dir_all(&extract_dir)?;
+
+    println!("{}", "Extracting...".cyan());
+    let extracted_files = extract_archive(&download_path, &extract_dir)?;
+
+    // Find the wenget executable
+    let exe_relative_path = find_executable(&extracted_files, "wenget")
+        .ok_or_else(|| anyhow::anyhow!("Could not find wenget executable in archive"))?;
+
+    let new_exe_path = extract_dir.join(&exe_relative_path);
+
+    if !new_exe_path.exists() {
+        anyhow::bail!("Extracted executable not found: {}", new_exe_path.display());
+    }
+
+    // Get current executable path
+    let current_exe = env::current_exe()?;
+
+    println!("{}", "Installing new version...".cyan());
+
+    // Platform-specific replacement logic
+    #[cfg(windows)]
+    {
+        replace_exe_windows(&current_exe, &new_exe_path)?;
+    }
+
+    #[cfg(not(windows))]
+    {
+        replace_exe_unix(&current_exe, &new_exe_path)?;
+    }
+
+    // Clean up temporary files
+    let _ = fs::remove_dir_all(&temp_dir);
+
     println!();
     println!(
         "{}",
-        "Self-upgrade functionality will be available in the next update".yellow()
+        "✓ Successfully upgraded to the latest version!".green()
     );
-    println!("For now, please manually download and install the latest version from:");
-    println!(
-        "  {}",
-        "https://github.com/superyngo/wenget/releases/latest".cyan()
+    println!("Please restart your terminal or run 'wenget --version' to verify.");
+
+    Ok(())
+}
+
+/// Replace executable on Windows
+///
+/// Windows locks running executables, so we use a multi-step process:
+/// 1. Rename current exe to .old
+/// 2. Copy new exe to original location
+/// 3. Create a cleanup script to delete .old file
+#[cfg(windows)]
+fn replace_exe_windows(
+    current_exe: &std::path::PathBuf,
+    new_exe: &std::path::PathBuf,
+) -> Result<()> {
+    use std::fs;
+    use std::process::Command;
+
+    let old_exe = current_exe.with_extension("exe.old");
+
+    // Rename current executable
+    if old_exe.exists() {
+        fs::remove_file(&old_exe)?;
+    }
+    fs::rename(current_exe, &old_exe)?;
+
+    // Copy new executable to the original location
+    fs::copy(new_exe, current_exe)?;
+
+    // Create cleanup script
+    let cleanup_script = current_exe.parent().unwrap().join("wenget_cleanup.cmd");
+
+    let script_content = format!(
+        r#"@echo off
+timeout /t 2 /nobreak >nul
+del /f /q "{}"
+del /f /q "%~f0"
+"#,
+        old_exe.display()
     );
+
+    fs::write(&cleanup_script, script_content)?;
+
+    // Start cleanup script in background
+    let _ = Command::new("cmd")
+        .args(["/C", "start", "/B", cleanup_script.to_str().unwrap()])
+        .spawn();
+
+    Ok(())
+}
+
+/// Replace executable on Unix (Linux/macOS)
+///
+/// On Unix, we can directly replace the running executable
+#[cfg(not(windows))]
+fn replace_exe_unix(current_exe: &std::path::PathBuf, new_exe: &std::path::PathBuf) -> Result<()> {
+    use std::fs;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        // Ensure new executable has correct permissions
+        let mut perms = fs::metadata(new_exe)?.permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(new_exe, perms)?;
+    }
+
+    // Copy new executable over current one
+    fs::copy(new_exe, current_exe)?;
 
     Ok(())
 }

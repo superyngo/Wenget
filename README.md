@@ -57,8 +57,11 @@ wenget add ripgrep
 # List installed packages
 wenget list
 
-# Update package metadata
+# Update installed packages
 wenget update
+
+# Upgrade Wenget itself
+wenget update self
 
 # Delete a package
 wenget delete ripgrep
@@ -76,6 +79,7 @@ wenget delete ripgrep
   - `wenget list --all` - Show all available packages from buckets
 - `wenget search <keyword>` - Search available packages
 - `wenget update [name]` - Update installed packages
+  - `wenget update self` - Upgrade Wenget itself to the latest version
 
 ### Bucket Management
 
@@ -458,6 +462,25 @@ Inspired by:
 - **Official Bucket**: https://github.com/superyngo/wenget-bucket
 
 ## Changelog
+
+### v0.4.0 (2025-12-01)
+**Self-Update Feature Release**
+
+#### 🎉 New Features
+- **Self-update capability** - `wenget update self` command to upgrade Wenget itself
+  - Automatic version detection from GitHub releases
+  - Platform-specific binary selection
+  - Smart executable replacement for Windows and Unix systems
+  - Automatic cleanup of old versions
+
+#### 🔧 Technical Improvements
+- **Windows**: Special handling for locked executables with background cleanup script
+- **Unix/Linux/macOS**: Direct executable replacement with permission management
+- **Error handling**: Comprehensive error messages and validation
+
+#### 📝 Documentation
+- Updated README with self-update instructions
+- Added usage examples for the new command
 
 ### v0.3.0 (2025-11-25)
 **Major Restructuring Release**
