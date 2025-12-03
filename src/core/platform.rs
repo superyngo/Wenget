@@ -32,9 +32,9 @@ impl Os {
     /// Get OS keywords for matching
     pub fn keywords(&self) -> &[&str] {
         match self {
-            Os::Windows => &["windows", "win64", "win32", "pc-windows"],
+            Os::Windows => &["windows", "win64", "win32", "pc-windows", "msvc", "win"],
             Os::Linux => &["linux", "unknown-linux"],
-            Os::MacOS => &["darwin", "macos", "apple"],
+            Os::MacOS => &["darwin", "macos", "apple", "osx", "mac"],
         }
     }
 
@@ -188,12 +188,15 @@ impl BinarySelector {
         }
 
         let mut score = 0;
+        let mut has_os_match = false;
+        let mut has_arch_match = false;
 
         // OS matching
         let os_keywords = platform.os.keywords();
         for keyword in os_keywords {
             if filename_lower.contains(keyword) {
                 score += 100;
+                has_os_match = true;
                 break;
             }
         }
@@ -203,7 +206,27 @@ impl BinarySelector {
         for keyword in arch_keywords {
             if filename_lower.contains(keyword) {
                 score += 50;
+                has_arch_match = true;
                 break;
+            }
+        }
+
+        // Fallback: If OS matches but no architecture specified, assume common architecture
+        // This handles files like "gitui-win.tar.gz" or "app-mac.zip"
+        if has_os_match && !has_arch_match {
+            // Only apply fallback for x86_64 and aarch64 (most common)
+            if platform.arch == Arch::X86_64 {
+                // Assume x86_64 for Windows/Linux without arch info
+                if platform.os == Os::Windows || platform.os == Os::Linux {
+                    score += 25; // Lower than explicit arch match (50)
+                    eprintln!("⚠️  Fallback assumption: {} -> {}", filename, platform);
+                }
+            } else if platform.arch == Arch::Aarch64 {
+                // Assume aarch64 for macOS without arch info (Apple Silicon is now standard)
+                if platform.os == Os::MacOS {
+                    score += 25;
+                    eprintln!("⚠️  Fallback assumption: {} -> {}", filename, platform);
+                }
             }
         }
 
@@ -242,7 +265,6 @@ impl BinarySelector {
             ".apk",
             ".dmg",
             ".pkg",
-            ".msi",
             ".sha256",
             ".sha512",
             ".asc",
@@ -382,5 +404,42 @@ mod tests {
         assert!(selected.is_some());
         // Should prefer musl
         assert!(selected.unwrap().name.contains("musl"));
+    }
+
+    #[test]
+    fn test_fallback_detection_gitui() {
+        // Test fallback detection for gitui-style filenames
+        let test_cases = vec![
+            ("gitui-win.tar.gz", Platform::new(Os::Windows, Arch::X86_64), true),
+            ("gitui-win.msi", Platform::new(Os::Windows, Arch::X86_64), true),
+            ("gitui-mac.tar.gz", Platform::new(Os::MacOS, Arch::Aarch64), true),
+            ("gitui-linux-x86_64.tar.gz", Platform::new(Os::Linux, Arch::X86_64), true),
+        ];
+
+        for (filename, platform, should_match) in test_cases {
+            let assets = vec![BinaryAsset {
+                name: filename.to_string(),
+                url: format!("https://example.com/{}", filename),
+                size: 1000000,
+            }];
+
+            let selected = BinarySelector::select_for_platform(&assets, platform);
+
+            if should_match {
+                assert!(
+                    selected.is_some(),
+                    "Expected {} to match platform {}",
+                    filename,
+                    platform
+                );
+            } else {
+                assert!(
+                    selected.is_none(),
+                    "Expected {} NOT to match platform {}",
+                    filename,
+                    platform
+                );
+            }
+        }
     }
 }
