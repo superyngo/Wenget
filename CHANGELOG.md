@@ -5,6 +5,35 @@ All notable changes to Wenget will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.3] - 2025-12-03
+
+### Added
+- **Fallback platform detection** - Intelligent handling of release files with ambiguous names
+  - Added fallback OS keywords: "win", "mac", "osx", "msvc" for broader matching
+  - Automatic architecture assumption when explicit info is missing:
+    - Windows/Linux without arch → assumes x86_64 (most common)
+    - macOS without arch → assumes aarch64 (Apple Silicon standard)
+  - Fallback matches scored lower (125 points) than exact matches (150 points)
+  - Warning messages displayed when using fallback assumptions
+  - Enables detection of packages like `gitui-win.tar.gz` and `app-mac.zip`
+
+### Fixed
+- **Platform detection for ambiguous filenames** - Files like `gitui-win.tar.gz` are now correctly detected
+  - Previously required explicit architecture in filename (e.g., `win64`, `x86_64`)
+  - Now supports generic OS-only filenames with intelligent fallback
+  - Maintains preference for explicitly-named binaries over fallback matches
+
+### Changed
+- **.msi file handling** - Removed support for .msi installer packages
+  - .msi files now properly excluded from binary selection
+  - Focuses on portable archive formats (tar.gz, zip, exe)
+  - Avoids conflicts with Windows installer packages that need special handling
+
+### Technical
+- Enhanced `BinarySelector::score_asset()` with 2-tier detection logic
+- Added `test_fallback_detection_gitui()` test case for validation
+- Scoring system: Exact match (OS+Arch=150) > Fallback (OS=100, Fallback Arch=25) > No match
+
 ## [0.5.2] - 2025-12-03
 
 ### Improved
