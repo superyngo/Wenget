@@ -89,6 +89,33 @@ impl ScriptType {
             }
         }
     }
+
+    /// Check basic OS compatibility without executing commands (for listing)
+    /// This is faster than is_supported_on_current_platform and doesn't require
+    /// the interpreter to be installed
+    pub fn is_os_compatible(&self) -> bool {
+        match self {
+            ScriptType::PowerShell => {
+                // PowerShell scripts work on Windows natively
+                // On Unix, they require pwsh but we don't check here
+                cfg!(target_os = "windows")
+            }
+            ScriptType::Batch => {
+                // Batch scripts only work on Windows
+                cfg!(target_os = "windows")
+            }
+            ScriptType::Bash => {
+                // Bash scripts work natively on Unix-like systems
+                // On Windows they require WSL/Git Bash but we don't check here
+                !cfg!(target_os = "windows")
+            }
+            ScriptType::Python => {
+                // Python scripts can work on any platform if Python is installed
+                // We don't check for Python installation here
+                true
+            }
+        }
+    }
 }
 
 /// Platform-specific binary information

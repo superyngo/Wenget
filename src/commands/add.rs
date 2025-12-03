@@ -227,6 +227,8 @@ fn install_single_script(
     // Install script to app directory
     let files = install_script(paths, name, content, script_type)?;
 
+    println!("  Command will be available as: {}", name);
+
     // Create shim
     println!("  Creating launcher...");
     create_script_shim(paths, name, script_type)?;
@@ -791,6 +793,8 @@ fn install_script_from_bucket(
 
     // Install script to app directory
     let files = install_script(paths, command_name, &content, &script_type)?;
+
+    println!("  Command will be available as: {}", command_name);
 
     // Create shim
     println!("  Creating launcher...");

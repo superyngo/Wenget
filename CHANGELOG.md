@@ -5,6 +5,27 @@ All notable changes to Wenget will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] - 2025-12-03
+
+### Improved
+- **Script installation UX** - Now displays "Command will be available as:" message during script installation
+  - Consistent with package installation behavior
+  - Shows the command name that will be used to invoke the script
+  - Applied to both direct script installations and bucket script installations
+
+### Changed
+- **Script filtering in list --all** - Improved platform compatibility filtering
+  - Added `is_os_compatible()` method for basic OS compatibility checking
+  - Scripts now filtered by native OS support without executing interpreter checks
+  - Significantly faster performance (no command execution during listing)
+  - Consistent with package filtering behavior (platform-based, not runtime-based)
+  - Windows shows PowerShell/Batch/Python scripts only
+  - Unix-like systems show Bash/Python scripts only
+
+### Technical
+- Script filtering now uses compile-time platform checks instead of runtime interpreter checks
+- More efficient `list --all` command with no external command execution
+
 ## [0.5.1] - 2025-12-03
 
 ### Fixed
@@ -131,6 +152,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub integration
 - Package cache system
 
+[0.5.2]: https://github.com/superyngo/wenget/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/superyngo/wenget/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/superyngo/wenget/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/superyngo/wenget/compare/v0.3.0...v0.4.0

@@ -105,11 +105,11 @@ fn list_all_packages(config: &Config) -> Result<()> {
         })
         .collect();
 
-    // Filter scripts that support current platform
+    // Filter scripts that are compatible with current OS
     let scripts: Vec<_> = manifest
         .scripts
         .iter()
-        .filter(|script| script.script_type.is_supported_on_current_platform())
+        .filter(|script| script.script_type.is_os_compatible())
         .collect();
 
     if packages.is_empty() && scripts.is_empty() {
