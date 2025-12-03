@@ -4,7 +4,7 @@
 //! This reduces GitHub API calls and improves performance.
 
 use crate::bucket::{Bucket, BucketConfig};
-use crate::core::manifest::{Package, PackageSource, SourceManifest};
+use crate::core::manifest::{Package, PackageSource, ScriptItem, SourceManifest};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -18,6 +18,17 @@ pub struct CachedPackage {
     /// The package data
     #[serde(flatten)]
     pub package: Package,
+
+    /// Source origin
+    pub source: PackageSource,
+}
+
+/// Script with source information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CachedScript {
+    /// The script data
+    #[serde(flatten)]
+    pub script: ScriptItem,
 
     /// Source origin
     pub source: PackageSource,
@@ -60,6 +71,10 @@ pub struct ManifestCache {
 
     /// Cached packages (key: repo URL)
     pub packages: HashMap<String, CachedPackage>,
+
+    /// Cached scripts (key: script name)
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub scripts: HashMap<String, CachedScript>,
 }
 
 fn default_ttl() -> i64 {
@@ -75,6 +90,7 @@ impl ManifestCache {
             ttl_seconds: default_ttl(),
             sources: HashMap::new(),
             packages: HashMap::new(),
+            scripts: HashMap::new(),
         }
     }
 
@@ -119,6 +135,13 @@ impl ManifestCache {
             .insert(repo, CachedPackage { package, source });
     }
 
+    /// Add a script to cache
+    pub fn add_script(&mut self, script: ScriptItem, source: PackageSource) {
+        let name = script.name.clone();
+        self.scripts
+            .insert(name, CachedScript { script, source });
+    }
+
     /// Get all packages as Vec (for compatibility with SourceManifest)
     pub fn get_packages(&self) -> Vec<Package> {
         self.packages
@@ -127,10 +150,19 @@ impl ManifestCache {
             .collect()
     }
 
+    /// Get all scripts as Vec
+    pub fn get_scripts(&self) -> Vec<ScriptItem> {
+        self.scripts
+            .values()
+            .map(|cs| cs.script.clone())
+            .collect()
+    }
+
     /// Convert cache to SourceManifest for compatibility
     pub fn to_source_manifest(&self) -> SourceManifest {
         SourceManifest {
             packages: self.get_packages(),
+            scripts: self.get_scripts(),
         }
     }
 
@@ -140,12 +172,27 @@ impl ManifestCache {
         self.packages.values().find(|cp| cp.package.name == name)
     }
 
+    /// Find a script by name
+    #[allow(dead_code)]
+    pub fn find_script(&self, name: &str) -> Option<&CachedScript> {
+        self.scripts.get(name)
+    }
+
     /// Get packages filtered by source
     #[allow(dead_code)]
     pub fn packages_by_source(&self, source_type: &PackageSource) -> Vec<&CachedPackage> {
         self.packages
             .values()
             .filter(|cp| &cp.source == source_type)
+            .collect()
+    }
+
+    /// Get scripts filtered by source
+    #[allow(dead_code)]
+    pub fn scripts_by_source(&self, source_type: &PackageSource) -> Vec<&CachedScript> {
+        self.scripts
+            .values()
+            .filter(|cs| &cs.source == source_type)
             .collect()
     }
 }
@@ -174,11 +221,23 @@ pub fn build_cache(
         match fetch_bucket_fn(bucket) {
             Ok(manifest) => {
                 let package_count = manifest.packages.len();
+                let script_count = manifest.scripts.len();
+                let total_count = package_count + script_count;
 
                 // Add packages
                 for package in manifest.packages {
                     cache.add_package(
                         package,
+                        PackageSource::Bucket {
+                            name: bucket.name.clone(),
+                        },
+                    );
+                }
+
+                // Add scripts
+                for script in manifest.scripts {
+                    cache.add_script(
+                        script,
                         PackageSource::Bucket {
                             name: bucket.name.clone(),
                         },
@@ -192,7 +251,7 @@ pub fn build_cache(
                         source: PackageSource::Bucket {
                             name: bucket.name.clone(),
                         },
-                        package_count,
+                        package_count: total_count,
                         last_fetched: Some(now),
                         url: Some(bucket.url.clone()),
                     },

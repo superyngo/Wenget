@@ -29,12 +29,16 @@ pub enum Commands {
     #[command(visible_alias = "install")]
     #[command(visible_alias = "a")]
     Add {
-        /// Package names or GitHub URLs to add (supports wildcards *)
+        /// Package names, GitHub URLs, or script paths/URLs to add (supports wildcards *)
         names: Vec<String>,
 
         /// Skip confirmation prompts
         #[arg(short = 'y', long)]
         yes: bool,
+
+        /// Custom command name (overrides the default executable name)
+        #[arg(short = 'n', long = "name")]
+        script_name: Option<String>,
     },
 
     /// List installed packages

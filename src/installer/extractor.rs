@@ -229,39 +229,185 @@ fn extract_zip(archive_path: &Path, dest_dir: &Path) -> Result<Vec<String>> {
     Ok(extracted_files)
 }
 
-/// Find the main executable in extracted files
-pub fn find_executable(extracted_files: &[String], package_name: &str) -> Option<String> {
-    // First, try to find a file with the package name
+/// Candidate executable with priority score
+#[derive(Debug, Clone)]
+pub struct ExecutableCandidate {
+    /// Relative path to the executable
+    pub path: String,
+    /// Priority score (higher is better)
+    pub score: u32,
+    /// Human-readable reason for this candidate
+    pub reason: String,
+}
+
+/// Find all possible executables and rank them by priority
+pub fn find_executable_candidates(
+    extracted_files: &[String],
+    package_name: &str,
+) -> Vec<ExecutableCandidate> {
+    let mut candidates = Vec::new();
+
     for file in extracted_files {
         let path = Path::new(file);
+
+        // Only consider executable files
+        let is_executable = if cfg!(windows) {
+            file.ends_with(".exe")
+        } else {
+            // On Unix, check if it's in bin/ or has no extension (common for binaries)
+            file.contains("bin/") || !file.contains('.')
+        };
+
+        if !is_executable {
+            continue;
+        }
+
+        // Skip test/debug/benchmark executables
+        let lower_file = file.to_lowercase();
+        if lower_file.contains("test")
+            || lower_file.contains("debug")
+            || lower_file.contains("bench")
+            || lower_file.contains("example") {
+            continue;
+        }
+
         if let Some(filename) = path.file_name().and_then(|s| s.to_str()) {
-            // Remove .exe extension for comparison
             let name_without_ext = filename.trim_end_matches(".exe");
+            let mut score = 0u32;
+            let mut reasons = Vec::new();
 
+            // Rule 1: Exact match with package name (highest priority)
             if name_without_ext == package_name {
-                return Some(file.clone());
+                score += 100;
+                reasons.push("exact name match");
+            }
+            // Rule 2: Partial match or package name contains file name
+            else if name_without_ext.contains(package_name) || package_name.contains(name_without_ext) {
+                score += 50;
+                reasons.push("partial name match");
+            }
+            // Rule 3: Common abbreviation patterns (e.g., ripgrep -> rg)
+            else if is_likely_abbreviation(package_name, name_without_ext) {
+                score += 40;
+                reasons.push("likely abbreviation");
+            }
+
+            // Rule 4: Located in bin/ directory
+            if file.contains("bin/") {
+                score += 30;
+                reasons.push("in bin/ directory");
+            }
+
+            // Rule 5: Located in target/release/ (Rust projects)
+            if file.contains("target/release/") {
+                score += 25;
+                reasons.push("in target/release/");
+            }
+
+            // Rule 6: Shallow directory depth (prefer files closer to root)
+            let depth = file.matches('/').count() + file.matches('\\').count();
+            if depth <= 1 {
+                score += 20;
+            } else if depth <= 2 {
+                score += 10;
+            }
+
+            // Rule 7: Simple filename (fewer special characters)
+            if !name_without_ext.contains('-') && !name_without_ext.contains('_') {
+                score += 5;
+                reasons.push("simple name");
+            }
+
+            // Only add if score is above threshold
+            if score > 0 {
+                let reason = if reasons.is_empty() {
+                    "potential executable".to_string()
+                } else {
+                    reasons.join(", ")
+                };
+
+                candidates.push(ExecutableCandidate {
+                    path: file.clone(),
+                    score,
+                    reason,
+                });
             }
         }
     }
 
-    // If not found, try to find any executable in bin/ directory
-    for file in extracted_files {
-        if file.contains("bin/") && (file.ends_with(".exe") || !file.contains('.')) {
-            return Some(file.clone());
+    // Sort by score (highest first)
+    candidates.sort_by(|a, b| b.score.cmp(&a.score));
+
+    candidates
+}
+
+/// Check if name2 is likely an abbreviation of name1
+fn is_likely_abbreviation(full_name: &str, abbrev: &str) -> bool {
+    // Simple heuristic: check if abbrev matches first letters of words in full_name
+    if abbrev.len() < 2 || abbrev.len() > full_name.len() {
+        return false;
+    }
+
+    // Extract first letters of each word/segment
+    let segments: Vec<&str> = full_name.split(&['-', '_'][..]).collect();
+    if segments.len() > 1 {
+        let first_letters: String = segments.iter()
+            .filter_map(|s| s.chars().next())
+            .collect();
+
+        if first_letters.to_lowercase() == abbrev.to_lowercase() {
+            return true;
         }
     }
 
-    // If still not found, return the first .exe file (Windows)
-    #[cfg(windows)]
-    {
-        for file in extracted_files {
-            if file.ends_with(".exe") {
-                return Some(file.clone());
-            }
-        }
-    }
+    // Check if abbrev is first N chars of full_name
+    full_name.to_lowercase().starts_with(&abbrev.to_lowercase())
+}
 
-    None
+/// Find the main executable in extracted files
+/// Returns the best candidate if found
+pub fn find_executable(extracted_files: &[String], package_name: &str) -> Option<String> {
+    let candidates = find_executable_candidates(extracted_files, package_name);
+    candidates.first().map(|c| c.path.clone())
+}
+
+/// Normalize a command name by removing platform-specific suffixes
+///
+/// Strategy: Check if filename contains platform keywords. If yes, remove everything
+/// from the first `-` or `_`. Finally, always remove `.exe` extension.
+///
+/// Examples:
+///   "cate-windows-x86_64.exe" -> "cate"
+///   "bat-v0.24-x86_64.exe" -> "bat"
+///   "git-lfs.exe" -> "git-lfs"
+///   "ripgrep.exe" -> "ripgrep"
+///   "tool-linux-aarch64" -> "tool"
+pub fn normalize_command_name(name: &str) -> String {
+    // Platform keywords to detect platform-specific suffixes
+    let platform_keywords = [
+        "windows", "linux", "darwin", "macos", "freebsd", "netbsd", "openbsd",
+        "x86_64", "aarch64", "arm64", "armv7", "i686", "x64", "x86",
+        "pc", "unknown", "gnu", "musl", "msvc",
+    ];
+
+    // Check if filename contains any platform keywords (case-insensitive)
+    let lower_name = name.to_lowercase();
+    let has_platform_suffix = platform_keywords.iter().any(|kw| lower_name.contains(kw));
+
+    let result = if has_platform_suffix {
+        // Find first `-` or `_` and remove everything from there
+        if let Some(pos) = name.find(|c| c == '-' || c == '_') {
+            &name[..pos]
+        } else {
+            name
+        }
+    } else {
+        // No platform keywords, keep original name
+        name
+    };
+
+    // Always remove .exe extension at the end
+    result.trim_end_matches(".exe").to_string()
 }
 
 #[cfg(test)]
@@ -278,5 +424,30 @@ mod tests {
 
         let exe = find_executable(&files, "rg");
         assert_eq!(exe, Some("ripgrep-15.1.0/bin/rg.exe".to_string()));
+    }
+
+    #[test]
+    fn test_normalize_command_name() {
+        // Files with platform suffixes - should remove from first - or _
+        assert_eq!(normalize_command_name("cate-windows-x86_64.exe"), "cate");
+        assert_eq!(normalize_command_name("bat-v0.24-x86_64.exe"), "bat");
+        assert_eq!(normalize_command_name("tool-linux-aarch64"), "tool");
+        assert_eq!(normalize_command_name("app-darwin-x86_64.exe"), "app");
+        assert_eq!(normalize_command_name("ripgrep-13.0.0-x86_64-pc-windows-msvc.exe"), "ripgrep");
+        assert_eq!(normalize_command_name("fd_v8.7.0_x86_64.exe"), "fd");
+
+        // Files without platform suffixes - should keep name but remove .exe
+        assert_eq!(normalize_command_name("ripgrep.exe"), "ripgrep");
+        assert_eq!(normalize_command_name("git-lfs.exe"), "git-lfs");
+        assert_eq!(normalize_command_name("gh-cli.exe"), "gh-cli");
+        assert_eq!(normalize_command_name("node-sass.exe"), "node-sass");
+
+        // Unix executables without .exe
+        assert_eq!(normalize_command_name("ripgrep"), "ripgrep");
+        assert_eq!(normalize_command_name("git-lfs"), "git-lfs");
+
+        // Edge cases
+        assert_eq!(normalize_command_name("tool.exe"), "tool");
+        assert_eq!(normalize_command_name("tool"), "tool");
     }
 }

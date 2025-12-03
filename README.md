@@ -8,12 +8,14 @@ Wenget simplifies the installation and management of command-line tools and appl
 
 - **🚀 One-line Installation**: Remote installation scripts for quick setup
 - **🔄 Auto-update**: Always installs the latest version from GitHub Releases
-- **📦 Bucket System**: Organize packages using bucket manifests
+- **📦 Bucket System**: Organize packages and scripts using bucket manifests
+- **📜 Script Support**: Install and manage PowerShell, Bash, and Python scripts from buckets
 - **🌐 Cross-platform**: Windows, macOS, Linux (multiple architectures)
 - **📁 Organized Storage**: All packages in `~/.wenget/` with proper structure
-- **🔍 Smart Search**: Search packages across all configured buckets
+- **🔍 Smart Search**: Search packages and scripts across all configured buckets
 - **⚡ Fast Downloads**: Multi-threaded downloads with caching
 - **🎯 Platform Detection**: Automatically selects the correct binary for your system
+- **🔧 Smart Command Naming**: Automatically removes platform suffixes from executable names
 
 ## Quick Install
 
@@ -119,7 +121,7 @@ wenget delete ripgrep
 
 ## Bucket System
 
-Buckets are collections of package manifests hosted online. The official Wenget bucket provides curated open-source tools.
+Buckets are collections of package and script manifests hosted online. The official Wenget bucket provides curated open-source tools.
 
 ### Official Bucket
 
@@ -129,7 +131,7 @@ wenget bucket add wenget https://raw.githubusercontent.com/superyngo/wenget-buck
 
 ### Creating Your Own Bucket
 
-You can create custom buckets to distribute your own package collections. See the [official Wenget bucket repository](https://github.com/superyngo/wenget-bucket) for a complete example.
+You can create custom buckets to distribute your own package and script collections. See the [official Wenget bucket repository](https://github.com/superyngo/wenget-bucket) for a complete example.
 
 #### Bucket Structure
 
@@ -137,14 +139,32 @@ Create a `manifest.json` with the following structure:
 
 ```json
 {
-  "name": "my-bucket",
-  "description": "My custom bucket",
-  "version": "1.0.0",
   "packages": [
     {
       "name": "my-tool",
-      "repo": "username/repo",
+      "repo": "https://github.com/username/repo",
       "description": "Tool description",
+      "homepage": "https://example.com",
+      "license": "MIT",
+      "platforms": {
+        "windows-x86_64": {
+          "url": "https://github.com/username/repo/releases/download/v1.0.0/tool-windows-x64.zip",
+          "size": 1234567
+        },
+        "linux-x86_64": {
+          "url": "https://github.com/username/repo/releases/download/v1.0.0/tool-linux-x64.tar.gz",
+          "size": 1234567
+        }
+      }
+    }
+  ],
+  "scripts": [
+    {
+      "name": "my-script",
+      "description": "Useful script",
+      "url": "https://raw.githubusercontent.com/username/repo/main/script.ps1",
+      "script_type": "powershell",
+      "repo": "https://github.com/username/repo",
       "homepage": "https://example.com",
       "license": "MIT"
     }
@@ -154,19 +174,26 @@ Create a `manifest.json` with the following structure:
 
 #### Required Fields
 
-- `name`: Unique bucket identifier
-- `description`: Brief description of the bucket
-- `packages`: Array of package definitions
-  - `name`: Package name (used in commands)
-  - `repo`: GitHub repository in `owner/repo` format
-  - `description`: Brief package description
+**For Packages:**
+- `name`: Package name (used in commands)
+- `repo`: GitHub repository URL
+- `description`: Brief package description
+- `platforms`: Platform-specific binary information
+  - `url`: Download URL for the binary
+  - `size`: File size in bytes
+
+**For Scripts:**
+- `name`: Script name (used in commands)
+- `description`: Brief script description
+- `url`: Direct URL to the script file
+- `script_type`: Script type (`powershell`, `bash`, `batch`, or `python`)
+- `repo`: Repository URL (for reference)
 
 #### Optional Fields
 
-- `version`: Bucket version (for tracking updates)
 - `homepage`: Project homepage URL
-- `license`: Package license
-- `tags`: Array of tags for categorization
+- `license`: Package/script license
+- `checksum`: SHA256 checksum for verification
 
 #### Hosting Your Bucket
 

@@ -48,7 +48,7 @@ pub fn run(names: Vec<String>, yes: bool) -> Result<()> {
     };
 
     // Use add command to upgrade (reinstall)
-    add::run(to_upgrade, yes)
+    add::run(to_upgrade, yes, None)
 }
 
 /// Find upgradeable packages by checking their sources
@@ -87,6 +87,11 @@ fn find_upgradeable(
             PackageSource::DirectRepo { url } => {
                 // Use the stored repo URL directly
                 url.clone()
+            }
+            PackageSource::Script { .. } => {
+                // Scripts don't support updates
+                log::debug!("Skipping script '{}' - scripts don't support updates", name);
+                continue;
             }
         };
 

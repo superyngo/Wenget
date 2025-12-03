@@ -1,21 +1,26 @@
 //! Add (Install) command implementation
 
-use crate::core::manifest::PackageSource;
+use crate::core::manifest::{PackageSource, ScriptType};
 use crate::core::{Config, InstalledPackage, Platform, WenPaths};
 use crate::downloader;
-use crate::installer::{create_shim, extract_archive, find_executable};
+use crate::installer::{
+    create_script_shim, create_shim, detect_script_type, download_script, extract_archive,
+    extract_script_name, find_executable_candidates, install_script, is_script_input,
+    normalize_command_name, read_local_script,
+};
 use crate::package_resolver::{PackageInput, PackageResolver, ResolvedPackage};
 use crate::providers::{GitHubProvider, SourceProvider};
 use anyhow::{Context, Result};
 use chrono::Utc;
 use colored::Colorize;
 use std::fs;
+use std::path::Path;
 
 #[cfg(unix)]
 use crate::installer::create_symlink;
 
 /// Install packages (smart detection: package names from cache or GitHub URLs)
-pub fn run(names: Vec<String>, yes: bool) -> Result<()> {
+pub fn run(names: Vec<String>, yes: bool, script_name: Option<String>) -> Result<()> {
     let config = Config::new()?;
     let paths = WenPaths::new()?;
 
@@ -34,16 +39,237 @@ pub fn run(names: Vec<String>, yes: bool) -> Result<()> {
         println!("  wenget add ripgrep              # Install from cache");
         println!("  wenget add 'rip*'               # Install matching packages (glob)");
         println!("  wenget add https://github.com/BurntSushi/ripgrep  # Install from URL");
+        println!("  wenget add ./script.ps1         # Install local script");
+        println!("  wenget add https://raw.githubusercontent.com/.../script.sh  # Install remote script");
         return Ok(());
     }
+
+    // Check if any input is a script
+    let script_inputs: Vec<&String> = names.iter().filter(|n| is_script_input(n)).collect();
+    let package_inputs: Vec<&String> = names.iter().filter(|n| !is_script_input(n)).collect();
+
+    // Handle script installations
+    if !script_inputs.is_empty() {
+        install_scripts(&config, &paths, &mut installed, script_inputs, yes, script_name.as_deref())?;
+    }
+
+    // Handle package installations (existing logic)
+    if !package_inputs.is_empty() {
+        install_packages(&config, &paths, &mut installed, package_inputs, yes, script_name.as_deref())?;
+    }
+
+    Ok(())
+}
+
+/// Install scripts from local paths or URLs
+fn install_scripts(
+    config: &Config,
+    paths: &WenPaths,
+    installed: &mut crate::core::InstalledManifest,
+    script_inputs: Vec<&String>,
+    yes: bool,
+    custom_name: Option<&str>,
+) -> Result<()> {
+    println!("{}", "Scripts to install:".bold());
+
+    let mut scripts_to_install: Vec<(String, String, ScriptType, String)> = Vec::new(); // (name, content, type, origin)
+
+    for input in script_inputs {
+        // Determine if local or remote
+        let is_url = input.starts_with("http://") || input.starts_with("https://");
+        
+        // Get script content
+        let content = if is_url {
+            match download_script(input) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("{} Failed to download {}: {}", "✗".red(), input, e);
+                    continue;
+                }
+            }
+        } else {
+            let path = Path::new(input);
+            match read_local_script(path) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("{} Failed to read {}: {}", "✗".red(), input, e);
+                    continue;
+                }
+            }
+        };
+
+        // Detect script type
+        let script_type = match detect_script_type(input, &content) {
+            Some(t) => t,
+            None => {
+                eprintln!("{} Cannot detect script type for: {}", "✗".red(), input);
+                continue;
+            }
+        };
+
+        // Check platform compatibility
+        if !script_type.is_supported_on_current_platform() {
+            println!(
+                "  {} {} ({}) - {}",
+                "⚠".yellow(),
+                input,
+                script_type.display_name(),
+                "not supported on this platform".yellow()
+            );
+            continue;
+        }
+
+        // Determine script name
+        let name = if let Some(custom) = custom_name {
+            custom.to_string()
+        } else {
+            match extract_script_name(input) {
+                Some(n) => n,
+                None => {
+                    eprintln!("{} Cannot extract name from: {}", "✗".red(), input);
+                    continue;
+                }
+            }
+        };
+
+        // Check if already installed
+        if installed.is_installed(&name) {
+            println!(
+                "  {} {} ({}) - {}",
+                "•".yellow(),
+                name,
+                script_type.display_name(),
+                "already installed, will be replaced".yellow()
+            );
+        } else {
+            println!(
+                "  {} {} ({}) {}",
+                "•".green(),
+                name,
+                script_type.display_name(),
+                "(new)".green()
+            );
+        }
+
+        scripts_to_install.push((name, content, script_type, input.clone()));
+    }
+
+    if scripts_to_install.is_empty() {
+        println!("{}", "No scripts to install".yellow());
+        return Ok(());
+    }
+
+    // Show security warning
+    println!();
+    println!(
+        "{}",
+        "⚠  Security Warning: Review scripts before running them!".yellow().bold()
+    );
+
+    // Confirm installation
+    if !yes {
+        print!("\nProceed with installation? [Y/n] ");
+        use std::io::{self, Write};
+        io::stdout().flush()?;
+
+        let mut response = String::new();
+        io::stdin().read_line(&mut response)?;
+        let response = response.trim().to_lowercase();
+
+        if !response.is_empty() && response != "y" && response != "yes" {
+            println!("Installation cancelled");
+            return Ok(());
+        }
+    }
+
+    println!();
+
+    let mut success_count = 0;
+    let mut fail_count = 0;
+
+    for (name, content, script_type, origin) in scripts_to_install {
+        println!("{} {} ({})...", "Installing".cyan(), name, script_type.display_name());
+
+        match install_single_script(paths, &name, &content, &script_type, &origin) {
+            Ok(inst_pkg) => {
+                installed.upsert_package(name.clone(), inst_pkg);
+                config.save_installed(installed)?;
+                println!("  {} Installed successfully", "✓".green());
+                success_count += 1;
+            }
+            Err(e) => {
+                println!("  {} {}", "✗".red(), e);
+                fail_count += 1;
+            }
+        }
+    }
+
+    println!();
+    println!("{}", "Summary:".bold());
+    if success_count > 0 {
+        println!("  {} {} script(s) installed", "✓".green(), success_count);
+    }
+    if fail_count > 0 {
+        println!("  {} {} script(s) failed", "✗".red(), fail_count);
+    }
+
+    Ok(())
+}
+
+/// Install a single script
+fn install_single_script(
+    paths: &WenPaths,
+    name: &str,
+    content: &str,
+    script_type: &ScriptType,
+    origin: &str,
+) -> Result<InstalledPackage> {
+    // Install script to app directory
+    let files = install_script(paths, name, content, script_type)?;
+
+    // Create shim
+    println!("  Creating launcher...");
+    create_script_shim(paths, name, script_type)?;
+
+    // Create installed package info
+    let inst_pkg = InstalledPackage {
+        version: "script".to_string(),
+        platform: format!("{}-script", script_type.display_name().to_lowercase()),
+        installed_at: Utc::now(),
+        install_path: paths.app_dir(name).to_string_lossy().to_string(),
+        files,
+        source: PackageSource::Script {
+            origin: origin.to_string(),
+            script_type: script_type.clone(),
+        },
+        description: format!("{} script from {}", script_type.display_name(), origin),
+        command_name: name.to_string(),
+    };
+
+    Ok(inst_pkg)
+}
+
+/// Install packages from cache or GitHub (existing logic)
+fn install_packages(
+    config: &Config,
+    paths: &WenPaths,
+    installed: &mut crate::core::InstalledManifest,
+    names: Vec<&String>,
+    yes: bool,
+    custom_name: Option<&str>,
+) -> Result<()> {
 
     // Get current platform
     let platform = Platform::current();
     let platform_ids = platform.possible_identifiers();
 
-    // Resolve all inputs and collect packages to install
+    // Load cache for script lookup
+    let cache = config.get_or_rebuild_cache()?;
+
+    // Resolve all inputs and collect packages/scripts to install
     let resolver = PackageResolver::new(Config::new()?)?;
     let mut packages_to_install: Vec<ResolvedPackage> = Vec::new();
+    let mut scripts_to_install: Vec<(String, String, ScriptType, String)> = Vec::new(); // (name, url, type, origin)
 
     for name in &names {
         let input = PackageInput::parse(name);
@@ -68,22 +294,57 @@ pub fn run(names: Vec<String>, yes: bool) -> Result<()> {
                     packages_to_install.push(pkg_resolved);
                 }
             }
-            Err(e) => {
-                eprintln!("{} {}: {}", "Error".red().bold(), name, e);
+            Err(_) => {
+                // If not found as package, check if it's a script in cache
+                if let Some(cached_script) = cache.find_script(name) {
+                    let script = &cached_script.script;
+
+                    // Check platform support
+                    if !script.script_type.is_supported_on_current_platform() {
+                        println!(
+                            "{} {} ({}) is not supported on current platform",
+                            "Warning:".yellow(),
+                            script.name,
+                            script.script_type.display_name()
+                        );
+                        continue;
+                    }
+
+                    // Prepare script for installation
+                    let source_name = match &cached_script.source {
+                        PackageSource::Bucket { name } => format!("bucket:{}", name),
+                        _ => "unknown".to_string(),
+                    };
+
+                    scripts_to_install.push((
+                        script.name.clone(),
+                        script.url.clone(),
+                        script.script_type.clone(),
+                        source_name,
+                    ));
+                } else {
+                    eprintln!("{} {}: Not found", "Error".red().bold(), name);
+                }
             }
         }
     }
 
-    if packages_to_install.is_empty() {
-        println!("{}", "No packages to install".yellow());
+    if packages_to_install.is_empty() && scripts_to_install.is_empty() {
+        println!("{}", "No packages or scripts to install".yellow());
         return Ok(());
     }
 
-    // Create GitHub provider to fetch versions
-    let github = GitHubProvider::new()?;
+    // Create GitHub provider to fetch versions (for packages)
+    let github = if !packages_to_install.is_empty() {
+        Some(GitHubProvider::new()?)
+    } else {
+        None
+    };
 
     // Show packages to install with versions and handle already-installed packages
-    println!("{}", "Packages to install:".bold());
+    if !packages_to_install.is_empty() {
+        println!("{}", "Packages to install:".bold());
+    }
 
     let mut to_install: Vec<ResolvedPackage> = Vec::new();
     let mut to_update: Vec<ResolvedPackage> = Vec::new();
@@ -93,9 +354,12 @@ pub fn run(names: Vec<String>, yes: bool) -> Result<()> {
         let repo = &resolved.package.repo;
 
         // Fetch latest version
-        let version = github
-            .fetch_latest_version(repo)
-            .unwrap_or_else(|_| "unknown".to_string());
+        let version = if let Some(ref gh) = github {
+            gh.fetch_latest_version(repo)
+                .unwrap_or_else(|_| "unknown".to_string())
+        } else {
+            "unknown".to_string()
+        };
 
         if installed.is_installed(pkg_name) {
             // Package already installed
@@ -132,10 +396,39 @@ pub fn run(names: Vec<String>, yes: bool) -> Result<()> {
         }
     }
 
-    // Check if there's anything to do
-    if to_install.is_empty() && to_update.is_empty() {
+    // Show scripts to install
+    let mut scripts_to_process: Vec<(String, String, ScriptType, String)> = Vec::new();
+
+    if !scripts_to_install.is_empty() {
         println!();
-        println!("{}", "All packages are already up to date".green());
+        println!("{}", "Scripts to install:".bold());
+
+        for (name, url, script_type, origin) in scripts_to_install {
+            if installed.is_installed(&name) {
+                println!(
+                    "  {} {} ({}) {}",
+                    "•".yellow(),
+                    name,
+                    script_type.display_name(),
+                    "(already installed, will update)".dimmed()
+                );
+            } else {
+                println!(
+                    "  {} {} ({}) {}",
+                    "•".green(),
+                    name,
+                    script_type.display_name(),
+                    "(new)".green()
+                );
+            }
+            scripts_to_process.push((name, url, script_type, origin));
+        }
+    }
+
+    // Check if there's anything to do
+    if to_install.is_empty() && to_update.is_empty() && scripts_to_process.is_empty() {
+        println!();
+        println!("{}", "All packages and scripts are already up to date".green());
         return Ok(());
     }
 
@@ -173,31 +466,36 @@ pub fn run(names: Vec<String>, yes: bool) -> Result<()> {
 
         // Try to fetch latest package info from GitHub API (includes latest download links)
         // If API rate limit is hit, fallback to cached package info
-        let (pkg_to_install, version, using_fallback) = match github.fetch_package(repo_url) {
-            Ok(latest_pkg) => {
-                // Successfully fetched from GitHub API - use latest download links
-                let version = github
-                    .fetch_latest_version(repo_url)
-                    .unwrap_or_else(|_| "unknown".to_string());
-                (latest_pkg, version, false)
-            }
-            Err(e) => {
-                // Failed to fetch from GitHub API (likely rate limit) - use cached package info
-                log::warn!(
-                    "Failed to fetch latest package info from GitHub API for {}: {}",
-                    pkg_name,
-                    e
-                );
-                println!(
-                    "  {} Using cached download links (GitHub API unavailable)",
-                    "⚠".yellow()
-                );
+        let (pkg_to_install, version, using_fallback) = if let Some(ref gh) = github {
+            match gh.fetch_package(repo_url) {
+                Ok(latest_pkg) => {
+                    // Successfully fetched from GitHub API - use latest download links
+                    let version = gh
+                        .fetch_latest_version(repo_url)
+                        .unwrap_or_else(|_| "unknown".to_string());
+                    (latest_pkg, version, false)
+                }
+                Err(e) => {
+                    // Failed to fetch from GitHub API (likely rate limit) - use cached package info
+                    log::warn!(
+                        "Failed to fetch latest package info from GitHub API for {}: {}",
+                        pkg_name,
+                        e
+                    );
+                    println!(
+                        "  {} Using cached download links (GitHub API unavailable)",
+                        "⚠".yellow()
+                    );
 
-                let version = github
-                    .fetch_latest_version(repo_url)
-                    .unwrap_or_else(|_| "unknown".to_string());
-                (resolved.package.clone(), version, true)
+                    let version = gh
+                        .fetch_latest_version(repo_url)
+                        .unwrap_or_else(|_| "unknown".to_string());
+                    (resolved.package.clone(), version, true)
+                }
             }
+        } else {
+            // No GitHub provider available, use cached package info
+            (resolved.package.clone(), "unknown".to_string(), true)
         };
 
         println!("{} {} v{}...", "Installing".cyan(), pkg_name, version);
@@ -215,6 +513,7 @@ pub fn run(names: Vec<String>, yes: bool) -> Result<()> {
             &platform_ids,
             &version,
             &resolved.source,
+            custom_name,
         ) {
             Ok(inst_pkg) => {
                 installed.upsert_package(pkg_name.clone(), inst_pkg);
@@ -249,6 +548,35 @@ pub fn run(names: Vec<String>, yes: bool) -> Result<()> {
         }
     }
 
+    // Install scripts from bucket cache
+    let mut script_success_count = 0;
+    let mut script_fail_count = 0;
+
+    for (name, url, script_type, origin) in scripts_to_process {
+        println!("{}", format!("Installing {} ({})...", name, script_type.display_name()).bold());
+
+        match install_script_from_bucket(
+            config,
+            paths,
+            installed,
+            &name,
+            &url,
+            script_type.clone(),
+            &origin,
+            custom_name,
+        ) {
+            Ok(_) => {
+                println!("  {} Installed successfully", "✓".green());
+                script_success_count += 1;
+            }
+            Err(e) => {
+                println!("  {} {}", "✗".red(), e);
+                script_fail_count += 1;
+            }
+        }
+        println!();
+    }
+
     // Summary
     println!("{}", "Summary:".bold());
     if success_count > 0 {
@@ -256,6 +584,12 @@ pub fn run(names: Vec<String>, yes: bool) -> Result<()> {
     }
     if fail_count > 0 {
         println!("  {} {} package(s) failed", "✗".red(), fail_count);
+    }
+    if script_success_count > 0 {
+        println!("  {} {} script(s) installed", "✓".green(), script_success_count);
+    }
+    if script_fail_count > 0 {
+        println!("  {} {} script(s) failed", "✗".red(), script_fail_count);
     }
 
     Ok(())
@@ -269,6 +603,7 @@ fn install_package(
     platform_ids: &[String],
     version: &str,
     source: &PackageSource,
+    custom_name: Option<&str>,
 ) -> Result<InstalledPackage> {
     // Find platform binary
     let (platform_id, binary) = platform_ids
@@ -305,9 +640,51 @@ fn install_package(
 
     let extracted_files = extract_archive(&download_path, &app_dir)?;
 
-    // Find executable
-    let exe_relative = find_executable(&extracted_files, &pkg.name)
-        .context("Failed to find executable in archive")?;
+    // Find executable candidates
+    let candidates = find_executable_candidates(&extracted_files, &pkg.name);
+
+    if candidates.is_empty() {
+        anyhow::bail!(
+            "Failed to find executable in archive. Extracted files:\n{}",
+            extracted_files.join("\n")
+        );
+    }
+
+    // Select the best executable
+    let exe_relative = if candidates.len() == 1 || (candidates.len() > 1 && candidates[0].score >= 80) {
+        // Auto-select if only one candidate or if the top candidate has high confidence
+        let selected = &candidates[0];
+        println!("  Found executable: {} ({})", selected.path, selected.reason);
+        selected.path.clone()
+    } else {
+        // Multiple candidates with similar scores - ask user to choose
+        println!("  Found multiple possible executables:");
+        for (i, candidate) in candidates.iter().enumerate() {
+            println!(
+                "    {}. {} (score: {}, {})",
+                i + 1,
+                candidate.path,
+                candidate.score,
+                candidate.reason
+            );
+        }
+
+        use std::io::{self, Write};
+        print!("\n  Select executable [1-{}]: ", candidates.len());
+        io::stdout().flush()?;
+
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+
+        let selection = input
+            .trim()
+            .parse::<usize>()
+            .ok()
+            .and_then(|n| if n > 0 && n <= candidates.len() { Some(n - 1) } else { None })
+            .context("Invalid selection")?;
+
+        candidates[selection].path.clone()
+    };
 
     let exe_path = app_dir.join(&exe_relative);
 
@@ -315,10 +692,25 @@ fn install_package(
         anyhow::bail!("Executable not found: {}", exe_path.display());
     }
 
-    println!("  Found executable: {}", exe_relative);
+    // Extract the actual command name from the executable path
+    let command_name = if let Some(custom) = custom_name {
+        // Use custom name if provided
+        custom.to_string()
+    } else {
+        // Auto-detect and normalize command name
+        let raw_name = exe_path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .context("Failed to extract command name")?;
 
-    // Create symlink/shim
-    let bin_path = paths.bin_shim_path(&pkg.name);
+        // Apply smart normalization to remove platform suffixes
+        normalize_command_name(raw_name)
+    };
+
+    println!("  Command will be available as: {}", command_name);
+
+    // Create symlink/shim using the actual executable name
+    let bin_path = paths.bin_shim_path(&command_name);
 
     println!("  Creating launcher at {}...", bin_path.display());
 
@@ -329,7 +721,7 @@ fn install_package(
 
     #[cfg(windows)]
     {
-        create_shim(&exe_path, &bin_path, &pkg.name)?;
+        create_shim(&exe_path, &bin_path, &command_name)?;
     }
 
     // Clean up download
@@ -344,6 +736,7 @@ fn install_package(
         files: extracted_files,
         source: source.clone(),
         description: pkg.description.clone(),
+        command_name,
     };
 
     Ok(inst_pkg)
@@ -373,4 +766,54 @@ fn update_cache_with_packages(
     config.save_cache(&cache)?;
 
     Ok(count)
+}
+
+/// Install a script from bucket cache
+fn install_script_from_bucket(
+    config: &Config,
+    paths: &WenPaths,
+    installed: &mut crate::core::InstalledManifest,
+    name: &str,
+    url: &str,
+    script_type: ScriptType,
+    origin: &str,
+    custom_name: Option<&str>,
+) -> Result<()> {
+    println!("  Downloading script from {}...", url);
+
+    // Download script content
+    let content = download_script(url)?;
+
+    // Determine the final command name
+    let command_name = custom_name.unwrap_or(name);
+
+    println!("  Installing script as '{}'...", command_name);
+
+    // Install script to app directory
+    let files = install_script(paths, command_name, &content, &script_type)?;
+
+    // Create shim
+    println!("  Creating launcher...");
+    create_script_shim(paths, command_name, &script_type)?;
+
+    // Create installed package info
+    let inst_pkg = InstalledPackage {
+        version: "script".to_string(),
+        platform: std::env::consts::OS.to_string(),
+        installed_at: Utc::now(),
+        install_path: paths.app_dir(command_name).display().to_string(),
+        files,
+        source: PackageSource::Script {
+            origin: origin.to_string(),
+            script_type: script_type.clone(),
+        },
+        description: format!("{} script from bucket", script_type.display_name()),
+        command_name: command_name.to_string(),
+    };
+
+    // Update installed manifest
+    installed.upsert_package(name.to_string(), inst_pkg);
+    config.save_installed(installed)?;
+
+    Ok(())
 }

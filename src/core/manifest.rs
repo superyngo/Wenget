@@ -10,6 +10,87 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Script type enumeration
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum ScriptType {
+    /// PowerShell script (.ps1)
+    PowerShell,
+    /// Windows Batch script (.bat, .cmd)
+    Batch,
+    /// Bash/Shell script (.sh)
+    Bash,
+    /// Python script (.py)
+    Python,
+}
+
+impl ScriptType {
+    /// Get the file extension for this script type
+    pub fn extension(&self) -> &str {
+        match self {
+            ScriptType::PowerShell => "ps1",
+            ScriptType::Batch => "cmd",
+            ScriptType::Bash => "sh",
+            ScriptType::Python => "py",
+        }
+    }
+
+    /// Get the display name for this script type
+    pub fn display_name(&self) -> &str {
+        match self {
+            ScriptType::PowerShell => "PowerShell",
+            ScriptType::Batch => "Batch",
+            ScriptType::Bash => "Bash",
+            ScriptType::Python => "Python",
+        }
+    }
+
+    /// Check if this script type is supported on the current platform
+    pub fn is_supported_on_current_platform(&self) -> bool {
+        match self {
+            ScriptType::PowerShell => {
+                // PowerShell is available on Windows natively, and on Linux/macOS via pwsh
+                if cfg!(target_os = "windows") {
+                    true
+                } else {
+                    // Check if pwsh is available
+                    std::process::Command::new("pwsh")
+                        .arg("--version")
+                        .output()
+                        .is_ok()
+                }
+            }
+            ScriptType::Batch => {
+                // Batch scripts only work on Windows
+                cfg!(target_os = "windows")
+            }
+            ScriptType::Bash => {
+                // Bash is available on Linux and macOS, and on Windows via WSL/Git Bash
+                if cfg!(target_os = "windows") {
+                    // Check if bash is available (Git Bash, WSL, etc.)
+                    std::process::Command::new("bash")
+                        .arg("--version")
+                        .output()
+                        .is_ok()
+                } else {
+                    true
+                }
+            }
+            ScriptType::Python => {
+                // Check if python is available
+                std::process::Command::new("python")
+                    .arg("--version")
+                    .output()
+                    .is_ok()
+                    || std::process::Command::new("python3")
+                        .arg("--version")
+                        .output()
+                        .is_ok()
+            }
+        }
+    }
+}
+
 /// Platform-specific binary information
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PlatformBinary {
@@ -50,11 +131,46 @@ pub struct Package {
     pub platforms: HashMap<String, PlatformBinary>,
 }
 
+/// Script item metadata (for bucket scripts)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScriptItem {
+    /// Script name (used as identifier)
+    pub name: String,
+
+    /// Short description
+    pub description: String,
+
+    /// Direct URL to the script file
+    pub url: String,
+
+    /// Script type
+    pub script_type: ScriptType,
+
+    /// Repository URL (for reference)
+    pub repo: String,
+
+    /// Optional SHA256 checksum
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checksum: Option<String>,
+
+    /// Homepage URL (optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub homepage: Option<String>,
+
+    /// License (optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub license: Option<String>,
+}
+
 /// Source manifest (sources.json)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SourceManifest {
     /// List of available packages
     pub packages: Vec<Package>,
+
+    /// List of available scripts
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scripts: Vec<ScriptItem>,
 }
 
 impl SourceManifest {
@@ -62,6 +178,7 @@ impl SourceManifest {
     pub fn new() -> Self {
         Self {
             packages: Vec::new(),
+            scripts: Vec::new(),
         }
     }
 
@@ -71,6 +188,15 @@ impl SourceManifest {
         self.packages
             .iter()
             .filter(|p| p.platforms.contains_key(platform))
+            .collect()
+    }
+
+    /// Get scripts that are supported on the current platform
+    #[allow(dead_code)]
+    pub fn scripts_for_current_platform(&self) -> Vec<&ScriptItem> {
+        self.scripts
+            .iter()
+            .filter(|s| s.script_type.is_supported_on_current_platform())
             .collect()
     }
 }
@@ -89,6 +215,13 @@ pub enum PackageSource {
     Bucket { name: String },
     /// Package installed directly from a GitHub repository URL
     DirectRepo { url: String },
+    /// Script installed from local path or URL
+    Script {
+        /// Original source (local path or URL)
+        origin: String,
+        /// Script type
+        script_type: ScriptType,
+    },
 }
 
 /// Installed package information
@@ -114,6 +247,9 @@ pub struct InstalledPackage {
 
     /// Package description
     pub description: String,
+
+    /// Command name (the name used to invoke the tool)
+    pub command_name: String,
 }
 
 /// Installed manifest (installed.json)
@@ -188,6 +324,7 @@ mod tests {
                 name: "test-bucket".to_string(),
             },
             description: "Test package".to_string(),
+            command_name: "test".to_string(),
         };
 
         manifest.upsert_package("test".to_string(), package);

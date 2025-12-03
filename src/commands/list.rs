@@ -1,5 +1,6 @@
 //! List command implementation
 
+use crate::core::manifest::PackageSource;
 use crate::core::{Config, Platform};
 use anyhow::Result;
 use colored::Colorize;
@@ -34,13 +35,14 @@ fn list_installed_packages(config: &Config) -> Result<()> {
     println!("{}", "Installed packages".bold());
     println!();
     println!(
-        "{:<20} {:<10} {:<10} {}",
+        "{:<20} {:<15} {:<10} {:<12} {}",
         "NAME".bold(),
+        "COMMAND".bold(),
         "VERSION".bold(),
         "SOURCE".bold(),
         "DESCRIPTION".bold()
     );
-    println!("{}", "─".repeat(80));
+    println!("{}", "─".repeat(100));
 
     // Convert to sorted vector for consistent display
     let mut packages: Vec<_> = manifest.packages.iter().collect();
@@ -50,20 +52,24 @@ fn list_installed_packages(config: &Config) -> Result<()> {
     for (name, pkg) in packages {
         // Get source display
         let source_display = match &pkg.source {
-            crate::core::manifest::PackageSource::Bucket { name } => name.clone(),
-            crate::core::manifest::PackageSource::DirectRepo { .. } => "url".to_string(),
+            PackageSource::Bucket { name } => name.clone(),
+            PackageSource::DirectRepo { .. } => "url".to_string(),
+            PackageSource::Script { script_type, .. } => {
+                format!("{}", script_type.display_name().to_lowercase())
+            }
         };
 
         // Truncate description if too long
-        let description = if pkg.description.len() > 37 {
-            format!("{}...", &pkg.description[..34])
+        let description = if pkg.description.len() > 30 {
+            format!("{}...", &pkg.description[..27])
         } else {
             pkg.description.clone()
         };
 
         println!(
-            "{:<20} {:<10} {:<10} {}",
+            "{:<20} {:<15} {:<10} {:<12} {}",
             name.green(),
+            pkg.command_name.yellow(),
             pkg.version,
             source_display.cyan(),
             description
