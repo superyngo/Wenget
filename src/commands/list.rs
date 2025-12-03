@@ -105,7 +105,14 @@ fn list_all_packages(config: &Config) -> Result<()> {
         })
         .collect();
 
-    if packages.is_empty() {
+    // Filter scripts that support current platform
+    let scripts: Vec<_> = manifest
+        .scripts
+        .iter()
+        .filter(|script| script.script_type.is_supported_on_current_platform())
+        .collect();
+
+    if packages.is_empty() && scripts.is_empty() {
         println!("{}", "No packages available in buckets".yellow());
         println!("Add a bucket with: wenget bucket add <name> <url>");
         return Ok(());
@@ -117,7 +124,7 @@ fn list_all_packages(config: &Config) -> Result<()> {
     // Print header
     println!("{}", "Available packages".bold());
     println!();
-    println!("{:<30} {}", "NAME".bold(), "DESCRIPTION".bold());
+    println!("{:<30} {:<12} {}", "NAME".bold(), "TYPE".bold(), "DESCRIPTION".bold());
     println!("{}", "─".repeat(80));
 
     // Print packages
@@ -133,30 +140,66 @@ fn list_all_packages(config: &Config) -> Result<()> {
                 1
             };
 
-            let description = if pkg.description.len() > 48 {
-                format!("{}...", &pkg.description[..45])
+            let description = if pkg.description.len() > 36 {
+                format!("{}...", &pkg.description[..33])
             } else {
                 pkg.description.clone()
             };
 
             print!("{} {}", pkg.name, "(installed)".green());
             print!("{}", " ".repeat(padding));
-            println!("{}", description);
+            println!("{:<12} {}", "binary".cyan(), description);
         } else {
-            let description = if pkg.description.len() > 48 {
-                format!("{}...", &pkg.description[..45])
+            let description = if pkg.description.len() > 36 {
+                format!("{}...", &pkg.description[..33])
             } else {
                 pkg.description.clone()
             };
 
-            println!("{:<30} {}", pkg.name, description);
+            println!("{:<30} {:<12} {}", pkg.name, "binary".cyan(), description);
+        }
+    }
+
+    // Print scripts
+    for script in &scripts {
+        let script_type_display = format!("{}", script.script_type.display_name().to_lowercase());
+
+        if installed.is_installed(&script.name) {
+            // For installed scripts, calculate padding manually to account for "(installed)"
+            let name_width = 30;
+            let installed_suffix = " (installed)";
+            let visible_length = script.name.len() + installed_suffix.len();
+            let padding = if visible_length < name_width {
+                name_width - visible_length
+            } else {
+                1
+            };
+
+            let description = if script.description.len() > 36 {
+                format!("{}...", &script.description[..33])
+            } else {
+                script.description.clone()
+            };
+
+            print!("{} {}", script.name, "(installed)".green());
+            print!("{}", " ".repeat(padding));
+            println!("{:<12} {}", script_type_display.magenta(), description);
+        } else {
+            let description = if script.description.len() > 36 {
+                format!("{}...", &script.description[..33])
+            } else {
+                script.description.clone()
+            };
+
+            println!("{:<30} {:<12} {}", script.name, script_type_display.magenta(), description);
         }
     }
 
     println!();
     println!(
-        "Total: {} package(s) available ({} installed)",
+        "Total: {} package(s), {} script(s) available ({} installed)",
         packages.len(),
+        scripts.len(),
         installed.packages.len()
     );
 

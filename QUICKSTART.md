@@ -28,22 +28,18 @@ wenget init
 
 After initialization, **restart your terminal** for PATH changes to take effect.
 
-### 2. Import Package Sources
-Import our curated list of essential CLI tools:
+### 2. Add the Official Bucket
+Add the official Wenget bucket with curated packages and scripts:
 ```bash
-# Recommended: JSON format (faster, no API calls)
-wenget source import sources-essential.json
-
-# Alternative: txt format (will fetch from GitHub API)
-wenget source import sources-essential.txt
+wenget bucket add wenget https://raw.githubusercontent.com/superyngo/wenget-bucket/main/manifest.json
 ```
 
-**💡 Tip:** JSON format is recommended as it contains complete package info and doesn't require GitHub API calls!
+**💡 Tip:** The init command automatically adds the official bucket, so you can skip this step if you've just initialized!
 
-### 3. View Available Packages
-See what packages are available for your platform:
+### 3. View Available Packages and Scripts
+See what packages and scripts are available for your platform:
 ```bash
-wenget source list
+wenget list --all
 ```
 
 ### 4. Install Your First Package
@@ -80,68 +76,68 @@ wenget add hyperfine starship
 
 ## 📖 Common Commands
 
-### Source Management
+### Bucket Management
 ```bash
-# List available packages from sources
-wenget source list
-
-# Show package information
-wenget source info ripgrep
-
-# Refresh package metadata
-wenget source refresh
-
-# Add a specific package source
-wenget source add https://github.com/user/repo
-
-# Export your sources list
-wenget source export -o my-sources.txt        # txt format (URLs)
-wenget source export -o my-sources.json -f json  # JSON format (full info)
-```
-
-### Bucket Management (Remote Sources)
-```bash
-# Add a bucket (curated package collections)
-wenget bucket add official https://url/to/manifest.json
+# Add a bucket (curated package and script collections)
+wenget bucket add mybucket https://url/to/manifest.json
 
 # List all buckets
 wenget bucket list
 
 # Remove a bucket
-wenget bucket del official
+wenget bucket del mybucket
 
 # Refresh cache from buckets
 wenget bucket refresh
 ```
 
-### Package Management
+### Package and Script Management
 ```bash
-# Install packages
+# Install packages and scripts
 wenget add ripgrep fd bat
+wenget add mini-nano  # Install a script from bucket
 
 # List installed packages
 wenget list
 
-# Search for packages (in sources)
+# List all available packages and scripts
+wenget list --all
+
+# Search for packages and scripts
 wenget search grep
+
+# Show detailed information
+wenget info ripgrep
 
 # Update installed packages
 wenget update ripgrep
 wenget update all
 
+# Update Wenget itself
+wenget update self
+
 # Remove packages
 wenget del ripgrep
 ```
 
+### Script Installation
+```bash
+# Install from local file
+wenget add ./my-script.ps1
+
+# Install from URL
+wenget add https://raw.githubusercontent.com/user/repo/main/script.sh
+
+# Install from bucket
+wenget add script-name
+```
+
 ## 💡 Pro Tips
 
-### 1. Use Wildcards
+### 1. Use Wildcards for Search
 ```bash
-# Install multiple packages matching a pattern
-wenget add *grep
-
-# Update all packages from a specific author
-wenget update sharkdp/*
+# Search for packages matching a pattern
+wenget search *grep
 ```
 
 ### 2. Auto-confirm Installations
@@ -151,15 +147,22 @@ wenget add ripgrep fd bat -y
 ```
 
 ### 3. Check Before Installing
-Always check package info before installing:
+Always check package or script info before installing:
 ```bash
-wenget source info ripgrep
+wenget info ripgrep
+wenget info mini-nano
 ```
 
-### 4. Keep Sources Updated
-Regularly update your package sources to get the latest versions:
+### 4. Mix Packages and Scripts
+Install packages and scripts together:
 ```bash
-wenget source update
+wenget add ripgrep ./my-script.ps1 bat
+```
+
+### 5. Keep Your Tools Updated
+Regularly update your installed packages:
+```bash
+wenget update all
 ```
 
 ## 🌟 Tool Showcase
@@ -259,22 +262,27 @@ btm --basic
 3. Restart terminal
 
 ### Package fails to install?
-1. Check platform support: `wenget source info <package>`
-2. Update sources: `wenget source update`
+1. Check platform support: `wenget info <package>`
+2. Refresh cache: `wenget bucket refresh`
 3. Check GitHub releases manually
+
+### Script not working?
+1. Verify script type is supported on your platform
+2. Check if required interpreter is installed (PowerShell, Python, Bash)
+3. Review security warnings before running scripts
 
 ## 📚 Learn More
 
-- [Full Command Reference](SOURCES.md)
-- [Package Sources](SOURCES.md)
+- [README](README.md) - Full documentation
+- [CHANGELOG](CHANGELOG.md) - Version history
 - [Report Issues](https://github.com/superyngo/Wenget/issues)
 
 ## 🎉 What's Next?
 
-1. Explore more packages: `wenget source list`
+1. Explore more packages: `wenget list --all`
 2. Install tools that match your workflow
-3. Share your sources list: `wenget source export`
-4. Contribute packages to the community!
+3. Try installing scripts from buckets
+4. Create your own bucket for custom packages!
 
 ---
 
