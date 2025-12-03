@@ -265,6 +265,7 @@ impl BinarySelector {
             ".apk",
             ".dmg",
             ".pkg",
+            ".msi",
             ".sha256",
             ".sha512",
             ".asc",
@@ -411,9 +412,10 @@ mod tests {
         // Test fallback detection for gitui-style filenames
         let test_cases = vec![
             ("gitui-win.tar.gz", Platform::new(Os::Windows, Arch::X86_64), true),
-            ("gitui-win.msi", Platform::new(Os::Windows, Arch::X86_64), true),
             ("gitui-mac.tar.gz", Platform::new(Os::MacOS, Arch::Aarch64), true),
             ("gitui-linux-x86_64.tar.gz", Platform::new(Os::Linux, Arch::X86_64), true),
+            // .msi files should be excluded
+            ("gitui-win.msi", Platform::new(Os::Windows, Arch::X86_64), false),
         ];
 
         for (filename, platform, should_match) in test_cases {
