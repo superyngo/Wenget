@@ -10,7 +10,6 @@ use colored::Colorize;
 /// Show package and script information
 pub fn run(names: Vec<String>) -> Result<()> {
     let config = Config::new()?;
-    let resolver = PackageResolver::new(Config::new()?)?;
 
     if names.is_empty() {
         println!("{}", "No package names or URLs provided".yellow());
@@ -26,8 +25,11 @@ pub fn run(names: Vec<String>) -> Result<()> {
     // Load installed packages for status checking
     let installed = config.get_or_create_installed()?;
 
-    // Load cache for script lookup
+    // Load cache once for both script lookup and package resolution
     let cache = config.get_or_rebuild_cache()?;
+
+    // Create resolver with shared cache reference
+    let resolver = PackageResolver::new(&config, &cache)?;
 
     let mut total_found = 0;
 

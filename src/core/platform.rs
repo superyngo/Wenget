@@ -13,6 +13,7 @@ pub enum Os {
     Windows,
     Linux,
     MacOS,
+    FreeBSD,
 }
 
 impl Os {
@@ -24,17 +25,33 @@ impl Os {
             Os::Linux
         } else if cfg!(target_os = "macos") {
             Os::MacOS
+        } else if cfg!(target_os = "freebsd") {
+            Os::FreeBSD
         } else {
             panic!("Unsupported operating system")
         }
     }
 
     /// Get OS keywords for matching
+    /// Note: "msvc" is a compiler keyword, not an OS keyword
     pub fn keywords(&self) -> &[&str] {
         match self {
-            Os::Windows => &["windows", "win64", "win32", "pc-windows", "msvc", "win"],
+            Os::Windows => &["windows", "win64", "win32", "pc-windows", "win"],
             Os::Linux => &["linux", "unknown-linux"],
             Os::MacOS => &["darwin", "macos", "apple", "osx", "mac"],
+            Os::FreeBSD => &["freebsd"],
+        }
+    }
+
+    /// Get the default architecture for this OS when none is specified
+    /// - Windows/Linux: default to x86_64
+    /// - Darwin: default to aarch64 (Apple Silicon, Rosetta 2 handles x86_64)
+    /// - FreeBSD: no default (requires explicit arch)
+    pub fn default_arch(&self) -> Option<Arch> {
+        match self {
+            Os::Windows | Os::Linux => Some(Arch::X86_64),
+            Os::MacOS => Some(Arch::Aarch64),
+            Os::FreeBSD => None,
         }
     }
 
@@ -44,6 +61,7 @@ impl Os {
             Os::Windows => "windows",
             Os::Linux => "linux",
             Os::MacOS => "macos",
+            Os::FreeBSD => "freebsd",
         }
     }
 }
@@ -90,6 +108,65 @@ impl Arch {
             Arch::I686 => "i686",
             Arch::Aarch64 => "aarch64",
             Arch::Armv7 => "armv7",
+        }
+    }
+
+    /// Resolve the "x86" keyword based on OS context
+    /// Darwin: x86 -> x86_64 (32-bit Mac is obsolete)
+    /// Others: x86 -> i686
+    pub fn resolve_x86_keyword(os: Os) -> Self {
+        match os {
+            Os::MacOS => Arch::X86_64,
+            _ => Arch::I686,
+        }
+    }
+}
+
+/// Compiler/libc variant for platform-specific binaries
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Compiler {
+    /// GNU libc (glibc)
+    Gnu,
+    /// musl libc (static linking, Alpine-compatible)
+    Musl,
+    /// Microsoft Visual C++
+    Msvc,
+}
+
+impl Compiler {
+    /// Get compiler keywords for matching
+    pub fn keywords(&self) -> &[&str] {
+        match self {
+            Compiler::Gnu => &["gnu", "glibc"],
+            Compiler::Musl => &["musl"],
+            Compiler::Msvc => &["msvc"],
+        }
+    }
+
+    /// Get priority for this compiler on a given OS
+    /// Higher values = preferred
+    pub fn priority(&self, os: Os) -> u8 {
+        match os {
+            Os::Linux => match self {
+                Compiler::Musl => 3,
+                Compiler::Gnu => 2,
+                Compiler::Msvc => 1,
+            },
+            Os::Windows => match self {
+                Compiler::Msvc => 3,
+                Compiler::Gnu => 2,
+                Compiler::Musl => 1,
+            },
+            Os::MacOS | Os::FreeBSD => 1, // Uniform priority
+        }
+    }
+
+    /// Convert to platform string component
+    pub fn as_str(&self) -> &str {
+        match self {
+            Compiler::Gnu => "gnu",
+            Compiler::Musl => "musl",
+            Compiler::Msvc => "msvc",
         }
     }
 }

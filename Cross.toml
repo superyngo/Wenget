@@ -1,0 +1,8 @@
+[build]
+pre-build = []
+
+[build.env]
+volumes = []
+passthrough = [
+    "RUST_BACKTRACE",
+]

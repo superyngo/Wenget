@@ -265,11 +265,11 @@ fn install_packages(
     let platform = Platform::current();
     let platform_ids = platform.possible_identifiers();
 
-    // Load cache for script lookup
+    // Load cache once for both script lookup and package resolution
     let cache = config.get_or_rebuild_cache()?;
 
     // Resolve all inputs and collect packages/scripts to install
-    let resolver = PackageResolver::new(Config::new()?)?;
+    let resolver = PackageResolver::new(config, &cache)?;
     let mut packages_to_install: Vec<ResolvedPackage> = Vec::new();
     let mut scripts_to_install: Vec<(String, String, ScriptType, String)> = Vec::new(); // (name, url, type, origin)
 

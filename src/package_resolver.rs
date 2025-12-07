@@ -5,6 +5,7 @@
 //! - Fetching package information from cache or GitHub
 //! - Determining the bucket source of cached packages
 
+use crate::cache::ManifestCache;
 use crate::core::manifest::{Package, PackageSource};
 use crate::core::Config;
 use crate::providers::{GitHubProvider, SourceProvider};
@@ -36,14 +37,29 @@ impl PackageInput {
 
 /// Normalize GitHub URL to standard format
 fn normalize_github_url(url: &str) -> String {
-    let url = url.trim();
+    let mut url = url.trim().to_string();
+
+    // Upgrade http:// to https://
+    if url.starts_with("http://github.com/") {
+        url = url.replacen("http://", "https://", 1);
+    }
 
     // Add https:// if missing
     if url.starts_with("github.com/") {
-        return format!("https://{}", url);
+        url = format!("https://{}", url);
     }
 
-    url.to_string()
+    // Remove trailing slash
+    while url.ends_with('/') {
+        url.pop();
+    }
+
+    // Remove .git suffix
+    if url.ends_with(".git") {
+        url.truncate(url.len() - 4);
+    }
+
+    url
 }
 
 /// Result of package resolution with source information
@@ -63,16 +79,17 @@ impl ResolvedPackage {
 }
 
 /// Package resolver for fetching package information
-pub struct PackageResolver {
-    config: Config,
+pub struct PackageResolver<'a> {
+    config: &'a Config,
+    cache: &'a ManifestCache,
     github: GitHubProvider,
 }
 
-impl PackageResolver {
-    /// Create a new package resolver
-    pub fn new(config: Config) -> Result<Self> {
+impl<'a> PackageResolver<'a> {
+    /// Create a new package resolver with pre-loaded cache
+    pub fn new(config: &'a Config, cache: &'a ManifestCache) -> Result<Self> {
         let github = GitHubProvider::new()?;
-        Ok(Self { config, github })
+        Ok(Self { config, cache, github })
     }
 
     /// Resolve package(s) from input
@@ -93,20 +110,17 @@ impl PackageResolver {
     /// Resolve package from cache (supports glob patterns)
     /// Falls back to checking installed packages if not found in cache
     fn resolve_from_cache(&self, name: &str) -> Result<Vec<ResolvedPackage>> {
-        // Load cache
-        let cache = self.config.get_or_rebuild_cache()?;
-
         // Filter packages by name pattern
         let matches: Vec<_> = if name.contains('*') {
             // Glob pattern matching
-            cache
+            self.cache
                 .packages
                 .values()
                 .filter(|cached| glob_match(&cached.package.name, name))
                 .collect()
         } else {
             // Exact name matching
-            cache
+            self.cache
                 .packages
                 .values()
                 .filter(|cached| cached.package.name == name)
@@ -134,7 +148,35 @@ impl PackageResolver {
             }
         }
 
-        Err(anyhow!("No packages found matching: {}", name))
+        // Provide more detailed error message
+        let cache_pkg_count = self.cache.packages.len();
+        let bucket_count = self.cache.sources.len();
+
+        if cache_pkg_count == 0 {
+            if bucket_count == 0 {
+                Err(anyhow!(
+                    "No packages found matching '{}'. No buckets configured. Run 'wenget bucket add' to add a bucket.",
+                    name
+                ))
+            } else {
+                Err(anyhow!(
+                    "No packages found matching '{}'. Cache is empty. Run 'wenget bucket refresh' to rebuild cache.",
+                    name
+                ))
+            }
+        } else if name.contains('*') {
+            Err(anyhow!(
+                "No packages found matching pattern '{}'. {} packages available in cache.",
+                name,
+                cache_pkg_count
+            ))
+        } else {
+            Err(anyhow!(
+                "Package '{}' not found. Use 'wenget search {}' to find similar packages.",
+                name,
+                name
+            ))
+        }
     }
 
     /// Resolve package from GitHub URL
@@ -158,6 +200,13 @@ impl PackageResolver {
 }
 
 /// Simple glob pattern matching (supports * wildcard)
+///
+/// Examples:
+/// - `glob_match("ripgrep", "rip*")` -> true
+/// - `glob_match("ripgrep", "*grep")` -> true
+/// - `glob_match("ripgrep", "r*g*p")` -> true
+/// - `glob_match("ripgrep", "*")` -> true
+/// - `glob_match("ab", "a*b*")` -> true
 fn glob_match(text: &str, pattern: &str) -> bool {
     // Split pattern by '*'
     let parts: Vec<&str> = pattern.split('*').collect();
@@ -168,25 +217,41 @@ fn glob_match(text: &str, pattern: &str) -> bool {
     }
 
     let mut pos = 0;
+    let mut first_non_empty = true;
 
     for (i, part) in parts.iter().enumerate() {
         if part.is_empty() {
             continue;
         }
 
-        if i == 0 {
-            // First part must match start
+        let is_last = i == parts.len() - 1;
+        let is_first_match = first_non_empty;
+        first_non_empty = false;
+
+        if is_first_match && !pattern.starts_with('*') {
+            // First non-empty part and pattern doesn't start with '*'
+            // -> must match at the start
             if !text.starts_with(part) {
                 return false;
             }
             pos = part.len();
-        } else if i == parts.len() - 1 {
-            // Last part must match end
+        } else if is_last && !pattern.ends_with('*') {
+            // Last non-empty part and pattern doesn't end with '*'
+            // -> must match at the end
             if !text[pos..].ends_with(part) {
                 return false;
             }
+            // Also check that the part can be found after current position
+            if let Some(found_pos) = text[pos..].rfind(part) {
+                // Ensure the found position allows the suffix match
+                if pos + found_pos + part.len() != text.len() {
+                    return false;
+                }
+            } else {
+                return false;
+            }
         } else {
-            // Middle parts must exist in order
+            // Middle parts or parts with trailing wildcard - just need to exist in order
             if let Some(found_pos) = text[pos..].find(part) {
                 pos += found_pos + part.len();
             } else {
@@ -216,10 +281,15 @@ mod tests {
             PackageInput::parse("github.com/user/repo"),
             PackageInput::DirectUrl(_)
         ));
+        assert!(matches!(
+            PackageInput::parse("http://github.com/user/repo"),
+            PackageInput::DirectUrl(_)
+        ));
     }
 
     #[test]
     fn test_normalize_github_url() {
+        // Basic cases
         assert_eq!(
             normalize_github_url("github.com/user/repo"),
             "https://github.com/user/repo"
@@ -228,18 +298,82 @@ mod tests {
             normalize_github_url("https://github.com/user/repo"),
             "https://github.com/user/repo"
         );
+
+        // HTTP upgrade to HTTPS
+        assert_eq!(
+            normalize_github_url("http://github.com/user/repo"),
+            "https://github.com/user/repo"
+        );
+
+        // Trailing slash removal
+        assert_eq!(
+            normalize_github_url("https://github.com/user/repo/"),
+            "https://github.com/user/repo"
+        );
+        assert_eq!(
+            normalize_github_url("https://github.com/user/repo///"),
+            "https://github.com/user/repo"
+        );
+
+        // .git suffix removal
+        assert_eq!(
+            normalize_github_url("https://github.com/user/repo.git"),
+            "https://github.com/user/repo"
+        );
+
+        // Combined: trailing slash and .git
+        assert_eq!(
+            normalize_github_url("github.com/user/repo.git"),
+            "https://github.com/user/repo"
+        );
+
+        // Whitespace trimming
+        assert_eq!(
+            normalize_github_url("  https://github.com/user/repo  "),
+            "https://github.com/user/repo"
+        );
     }
 
     #[test]
     fn test_glob_match() {
+        // Exact match
         assert!(glob_match("ripgrep", "ripgrep"));
-        assert!(glob_match("ripgrep", "rip*"));
-        assert!(glob_match("ripgrep", "*grep"));
-        assert!(glob_match("ripgrep", "r*p*p"));
-        assert!(glob_match("ripgrep", "*"));
 
+        // Trailing wildcard
+        assert!(glob_match("ripgrep", "rip*"));
+        assert!(glob_match("ripgrep", "ripgrep*"));
+        assert!(glob_match("ab", "a*"));
+
+        // Leading wildcard
+        assert!(glob_match("ripgrep", "*grep"));
+        assert!(glob_match("ripgrep", "*ripgrep"));
+        assert!(glob_match("ab", "*b"));
+
+        // Middle wildcard
+        assert!(glob_match("ripgrep", "r*p"));
+        assert!(glob_match("ripgrep", "rip*rep"));
+
+        // Multiple wildcards
+        assert!(glob_match("ripgrep", "r*p*p"));
+        assert!(glob_match("ripgrep", "*i*g*"));
+        assert!(glob_match("ab", "a*b*"));
+        assert!(glob_match("abc", "a*b*c"));
+        assert!(glob_match("aXbYc", "a*b*c"));
+
+        // Match all
+        assert!(glob_match("ripgrep", "*"));
+        assert!(glob_match("", "*"));
+
+        // No match cases
         assert!(!glob_match("ripgrep", "rip"));
         assert!(!glob_match("ripgrep", "grep"));
         assert!(!glob_match("ripgrep", "bat*"));
+        assert!(!glob_match("ripgrep", "*bat"));
+        assert!(!glob_match("abc", "a*d*c"));
+
+        // Edge cases
+        assert!(glob_match("aaa", "a*a"));
+        assert!(glob_match("abab", "*ab"));
+        assert!(glob_match("abab", "ab*"));
     }
 }
