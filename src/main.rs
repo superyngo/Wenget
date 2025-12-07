@@ -52,7 +52,11 @@ fn main() {
             commands::run_bucket(bucket_cmd)
         }
 
-        Commands::Add { names, yes, script_name } => commands::run_add(names, yes, script_name),
+        Commands::Add {
+            names,
+            yes,
+            script_name,
+        } => commands::run_add(names, yes, script_name),
 
         Commands::List { all } => commands::run_list(all),
 

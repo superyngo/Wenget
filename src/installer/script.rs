@@ -14,7 +14,7 @@ use std::path::Path;
 /// Detect script type from file extension
 pub fn detect_script_type_from_extension(filename: &str) -> Option<ScriptType> {
     let filename_lower = filename.to_lowercase();
-    
+
     if filename_lower.ends_with(".ps1") {
         Some(ScriptType::PowerShell)
     } else if filename_lower.ends_with(".bat") || filename_lower.ends_with(".cmd") {
@@ -32,13 +32,13 @@ pub fn detect_script_type_from_extension(filename: &str) -> Option<ScriptType> {
 pub fn detect_script_type_from_shebang(content: &str) -> Option<ScriptType> {
     let first_line = content.lines().next()?;
     let first_line = first_line.trim();
-    
+
     if !first_line.starts_with("#!") {
         return None;
     }
-    
+
     let shebang = first_line.to_lowercase();
-    
+
     if shebang.contains("bash") || shebang.contains("/sh") {
         Some(ScriptType::Bash)
     } else if shebang.contains("python") {
@@ -56,7 +56,7 @@ pub fn detect_script_type(filename: &str, content: &str) -> Option<ScriptType> {
     if let Some(script_type) = detect_script_type_from_extension(filename) {
         return Some(script_type);
     }
-    
+
     // Then try shebang
     detect_script_type_from_shebang(content)
 }
@@ -66,11 +66,14 @@ pub fn is_script_input(input: &str) -> bool {
     // Check if it's a local file with script extension
     let script_extensions = [".ps1", ".bat", ".cmd", ".sh", ".py"];
     let input_lower = input.to_lowercase();
-    
-    if script_extensions.iter().any(|ext| input_lower.ends_with(ext)) {
+
+    if script_extensions
+        .iter()
+        .any(|ext| input_lower.ends_with(ext))
+    {
         return true;
     }
-    
+
     // Check if it's a raw content URL (GitHub raw, pastebin, etc.)
     if input.starts_with("http://") || input.starts_with("https://") {
         // Common raw content hosts
@@ -80,17 +83,20 @@ pub fn is_script_input(input: &str) -> bool {
             "pastebin.com/raw",
             "paste.rs",
         ];
-        
+
         if raw_hosts.iter().any(|host| input.contains(host)) {
             return true;
         }
-        
+
         // Check URL path for script extensions
-        if script_extensions.iter().any(|ext| input_lower.ends_with(ext)) {
+        if script_extensions
+            .iter()
+            .any(|ext| input_lower.ends_with(ext))
+        {
             return true;
         }
     }
-    
+
     false
 }
 
@@ -99,24 +105,30 @@ pub fn extract_script_name(input: &str) -> Option<String> {
     // Get the filename from path or URL
     let filename = if input.starts_with("http://") || input.starts_with("https://") {
         // Parse URL to get filename
-        input.split('/').last()?
+        input.split('/').next_back()?
     } else {
         // Local file path
         Path::new(input).file_name()?.to_str()?
     };
-    
+
     // Remove query string if present (for URLs)
     let filename = filename.split('?').next()?;
-    
+
     // Remove extension to get name
     let name = Path::new(filename).file_stem()?.to_str()?;
-    
+
     // Sanitize name (remove special characters)
     let sanitized: String = name
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect();
-    
+
     if sanitized.is_empty() {
         None
     } else {
@@ -127,12 +139,12 @@ pub fn extract_script_name(input: &str) -> Option<String> {
 /// Download script content from URL
 pub fn download_script(url: &str) -> Result<String> {
     use crate::utils::HttpClient;
-    
+
     let client = HttpClient::new()?;
     let content = client
         .get_text(url)
         .with_context(|| format!("Failed to download script from {}", url))?;
-    
+
     Ok(content)
 }
 
@@ -150,19 +162,19 @@ pub fn install_script(
     script_type: &ScriptType,
 ) -> Result<Vec<String>> {
     let app_dir = paths.app_dir(name);
-    
+
     // Create app directory
     fs::create_dir_all(&app_dir)
         .with_context(|| format!("Failed to create app directory: {}", app_dir.display()))?;
-    
+
     // Determine script filename
     let script_filename = format!("{}.{}", name, script_type.extension());
     let script_path = app_dir.join(&script_filename);
-    
+
     // Write script content
     fs::write(&script_path, content)
         .with_context(|| format!("Failed to write script: {}", script_path.display()))?;
-    
+
     // Make script executable on Unix
     #[cfg(unix)]
     {
@@ -171,30 +183,26 @@ pub fn install_script(
         perms.set_mode(0o755);
         fs::set_permissions(&script_path, perms)?;
     }
-    
+
     Ok(vec![script_filename])
 }
 
 /// Create a shim for a script
-pub fn create_script_shim(
-    paths: &WenPaths,
-    name: &str,
-    script_type: &ScriptType,
-) -> Result<()> {
+pub fn create_script_shim(paths: &WenPaths, name: &str, script_type: &ScriptType) -> Result<()> {
     let app_dir = paths.app_dir(name);
     let script_filename = format!("{}.{}", name, script_type.extension());
     let script_path = app_dir.join(&script_filename);
-    
+
     #[cfg(windows)]
     {
         create_script_shim_windows(paths, name, &script_path, script_type)?;
     }
-    
+
     #[cfg(unix)]
     {
         create_script_shim_unix(paths, name, &script_path, script_type)?;
     }
-    
+
     Ok(())
 }
 
@@ -207,12 +215,12 @@ fn create_script_shim_windows(
     script_type: &ScriptType,
 ) -> Result<()> {
     let shim_path = paths.bin_dir().join(format!("{}.cmd", name));
-    
+
     // Calculate relative path from shim to script
     let relative_path = pathdiff::diff_paths(script_path, paths.bin_dir())
         .context("Failed to calculate relative path")?;
     let relative_path_str = relative_path.display().to_string().replace('/', "\\");
-    
+
     let shim_content = match script_type {
         ScriptType::PowerShell => {
             format!(
@@ -221,31 +229,22 @@ fn create_script_shim_windows(
             )
         }
         ScriptType::Batch => {
-            format!(
-                "@echo off\r\ncall \"%~dp0{}\" %*\r\n",
-                relative_path_str
-            )
+            format!("@echo off\r\ncall \"%~dp0{}\" %*\r\n", relative_path_str)
         }
         ScriptType::Bash => {
-            format!(
-                "@echo off\r\nbash \"%~dp0{}\" %*\r\n",
-                relative_path_str
-            )
+            format!("@echo off\r\nbash \"%~dp0{}\" %*\r\n", relative_path_str)
         }
         ScriptType::Python => {
-            format!(
-                "@echo off\r\npython \"%~dp0{}\" %*\r\n",
-                relative_path_str
-            )
+            format!("@echo off\r\npython \"%~dp0{}\" %*\r\n", relative_path_str)
         }
     };
-    
+
     // Ensure bin directory exists
     fs::create_dir_all(paths.bin_dir())?;
-    
+
     fs::write(&shim_path, shim_content)
         .with_context(|| format!("Failed to create shim: {}", shim_path.display()))?;
-    
+
     Ok(())
 }
 
@@ -258,9 +257,9 @@ fn create_script_shim_unix(
     script_type: &ScriptType,
 ) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
-    
+
     let shim_path = paths.bin_dir().join(name);
-    
+
     // For bash scripts, we can create a symlink directly
     // For other types, we create a wrapper script
     match script_type {
@@ -269,7 +268,7 @@ fn create_script_shim_unix(
             if shim_path.exists() {
                 fs::remove_file(&shim_path)?;
             }
-            
+
             // Create symlink
             std::os::unix::fs::symlink(script_path, &shim_path)
                 .with_context(|| format!("Failed to create symlink: {}", shim_path.display()))?;
@@ -278,28 +277,35 @@ fn create_script_shim_unix(
             // Create wrapper script
             let wrapper_content = match script_type {
                 ScriptType::PowerShell => {
-                    format!("#!/bin/sh\nexec pwsh -NoProfile -File \"{}\" \"$@\"\n", script_path.display())
+                    format!(
+                        "#!/bin/sh\nexec pwsh -NoProfile -File \"{}\" \"$@\"\n",
+                        script_path.display()
+                    )
                 }
                 ScriptType::Python => {
-                    format!("#!/bin/sh\nexec python3 \"{}\" \"$@\"\n", script_path.display())
+                    format!(
+                        "#!/bin/sh\nexec python3 \"{}\" \"$@\"\n",
+                        script_path.display()
+                    )
                 }
                 ScriptType::Batch => {
                     // Batch scripts don't work on Unix, but we provide a placeholder
-                    "#!/bin/sh\necho 'Batch scripts are not supported on this platform'\nexit 1\n".to_string()
+                    "#!/bin/sh\necho 'Batch scripts are not supported on this platform'\nexit 1\n"
+                        .to_string()
                 }
                 ScriptType::Bash => unreachable!(),
             };
-            
+
             fs::write(&shim_path, wrapper_content)
                 .with_context(|| format!("Failed to create wrapper: {}", shim_path.display()))?;
-            
+
             // Make executable
             let mut perms = fs::metadata(&shim_path)?.permissions();
             perms.set_mode(0o755);
             fs::set_permissions(&shim_path, perms)?;
         }
     }
-    
+
     Ok(())
 }
 
@@ -346,10 +352,7 @@ mod tests {
             detect_script_type_from_shebang("#!/usr/bin/env pwsh\nWrite-Host 'hello'"),
             Some(ScriptType::PowerShell)
         );
-        assert_eq!(
-            detect_script_type_from_shebang("echo hello"),
-            None
-        );
+        assert_eq!(detect_script_type_from_shebang("echo hello"), None);
     }
 
     #[test]
@@ -357,15 +360,23 @@ mod tests {
         assert!(is_script_input("script.ps1"));
         assert!(is_script_input("./script.sh"));
         assert!(is_script_input("C:\\scripts\\tool.bat"));
-        assert!(is_script_input("https://raw.githubusercontent.com/user/repo/main/script.sh"));
+        assert!(is_script_input(
+            "https://raw.githubusercontent.com/user/repo/main/script.sh"
+        ));
         assert!(!is_script_input("https://github.com/user/repo"));
         assert!(!is_script_input("ripgrep"));
     }
 
     #[test]
     fn test_extract_script_name() {
-        assert_eq!(extract_script_name("script.ps1"), Some("script".to_string()));
-        assert_eq!(extract_script_name("./my-tool.sh"), Some("my-tool".to_string()));
+        assert_eq!(
+            extract_script_name("script.ps1"),
+            Some("script".to_string())
+        );
+        assert_eq!(
+            extract_script_name("./my-tool.sh"),
+            Some("my-tool".to_string())
+        );
         assert_eq!(
             extract_script_name("https://example.com/path/to/script.py"),
             Some("script".to_string())

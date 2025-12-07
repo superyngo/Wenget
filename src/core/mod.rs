@@ -9,4 +9,5 @@ pub mod platform;
 pub use config::Config;
 pub use manifest::{InstalledManifest, InstalledPackage, Package, PlatformBinary};
 pub use paths::WenPaths;
-pub use platform::{BinaryAsset, BinarySelector, Platform};
+#[allow(unused_imports)]
+pub use platform::{Arch, BinaryAsset, BinarySelector, Compiler, FileExtension, Os, Platform};

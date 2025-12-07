@@ -138,8 +138,7 @@ impl ManifestCache {
     /// Add a script to cache
     pub fn add_script(&mut self, script: ScriptItem, source: PackageSource) {
         let name = script.name.clone();
-        self.scripts
-            .insert(name, CachedScript { script, source });
+        self.scripts.insert(name, CachedScript { script, source });
     }
 
     /// Get all packages as Vec (for compatibility with SourceManifest)
@@ -152,10 +151,7 @@ impl ManifestCache {
 
     /// Get all scripts as Vec
     pub fn get_scripts(&self) -> Vec<ScriptItem> {
-        self.scripts
-            .values()
-            .map(|cs| cs.script.clone())
-            .collect()
+        self.scripts.values().map(|cs| cs.script.clone()).collect()
     }
 
     /// Convert cache to SourceManifest for compatibility

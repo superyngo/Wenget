@@ -40,7 +40,9 @@ pub fn run(names: Vec<String>, yes: bool, script_name: Option<String>) -> Result
         println!("  wenget add 'rip*'               # Install matching packages (glob)");
         println!("  wenget add https://github.com/BurntSushi/ripgrep  # Install from URL");
         println!("  wenget add ./script.ps1         # Install local script");
-        println!("  wenget add https://raw.githubusercontent.com/.../script.sh  # Install remote script");
+        println!(
+            "  wenget add https://raw.githubusercontent.com/.../script.sh  # Install remote script"
+        );
         return Ok(());
     }
 
@@ -50,12 +52,26 @@ pub fn run(names: Vec<String>, yes: bool, script_name: Option<String>) -> Result
 
     // Handle script installations
     if !script_inputs.is_empty() {
-        install_scripts(&config, &paths, &mut installed, script_inputs, yes, script_name.as_deref())?;
+        install_scripts(
+            &config,
+            &paths,
+            &mut installed,
+            script_inputs,
+            yes,
+            script_name.as_deref(),
+        )?;
     }
 
     // Handle package installations (existing logic)
     if !package_inputs.is_empty() {
-        install_packages(&config, &paths, &mut installed, package_inputs, yes, script_name.as_deref())?;
+        install_packages(
+            &config,
+            &paths,
+            &mut installed,
+            package_inputs,
+            yes,
+            script_name.as_deref(),
+        )?;
     }
 
     Ok(())
@@ -77,7 +93,7 @@ fn install_scripts(
     for input in script_inputs {
         // Determine if local or remote
         let is_url = input.starts_with("http://") || input.starts_with("https://");
-        
+
         // Get script content
         let content = if is_url {
             match download_script(input) {
@@ -163,7 +179,9 @@ fn install_scripts(
     println!();
     println!(
         "{}",
-        "⚠  Security Warning: Review scripts before running them!".yellow().bold()
+        "⚠  Security Warning: Review scripts before running them!"
+            .yellow()
+            .bold()
     );
 
     // Confirm installation
@@ -188,7 +206,12 @@ fn install_scripts(
     let mut fail_count = 0;
 
     for (name, content, script_type, origin) in scripts_to_install {
-        println!("{} {} ({})...", "Installing".cyan(), name, script_type.display_name());
+        println!(
+            "{} {} ({})...",
+            "Installing".cyan(),
+            name,
+            script_type.display_name()
+        );
 
         match install_single_script(paths, &name, &content, &script_type, &origin) {
             Ok(inst_pkg) => {
@@ -260,7 +283,6 @@ fn install_packages(
     yes: bool,
     custom_name: Option<&str>,
 ) -> Result<()> {
-
     // Get current platform
     let platform = Platform::current();
     let platform_ids = platform.possible_identifiers();
@@ -430,7 +452,10 @@ fn install_packages(
     // Check if there's anything to do
     if to_install.is_empty() && to_update.is_empty() && scripts_to_process.is_empty() {
         println!();
-        println!("{}", "All packages and scripts are already up to date".green());
+        println!(
+            "{}",
+            "All packages and scripts are already up to date".green()
+        );
         return Ok(());
     }
 
@@ -509,8 +534,8 @@ fn install_packages(
         }
 
         match install_package(
-            &config,
-            &paths,
+            config,
+            paths,
             &pkg_to_install,
             &platform_ids,
             &version,
@@ -519,7 +544,7 @@ fn install_packages(
         ) {
             Ok(inst_pkg) => {
                 installed.upsert_package(pkg_name.clone(), inst_pkg);
-                config.save_installed(&installed)?;
+                config.save_installed(installed)?;
 
                 // Collect package for cache update if fetched from GitHub API
                 if !using_fallback {
@@ -539,7 +564,7 @@ fn install_packages(
 
     // Update cache with latest package info from GitHub API
     if !packages_to_cache.is_empty() {
-        match update_cache_with_packages(&config, packages_to_cache) {
+        match update_cache_with_packages(config, packages_to_cache) {
             Ok(count) => {
                 log::info!("Updated cache with {} latest package(s)", count);
             }
@@ -555,7 +580,10 @@ fn install_packages(
     let mut script_fail_count = 0;
 
     for (name, url, script_type, origin) in scripts_to_process {
-        println!("{}", format!("Installing {} ({})...", name, script_type.display_name()).bold());
+        println!(
+            "{}",
+            format!("Installing {} ({})...", name, script_type.display_name()).bold()
+        );
 
         match install_script_from_bucket(
             config,
@@ -588,7 +616,11 @@ fn install_packages(
         println!("  {} {} package(s) failed", "✗".red(), fail_count);
     }
     if script_success_count > 0 {
-        println!("  {} {} script(s) installed", "✓".green(), script_success_count);
+        println!(
+            "  {} {} script(s) installed",
+            "✓".green(),
+            script_success_count
+        );
     }
     if script_fail_count > 0 {
         println!("  {} {} script(s) failed", "✗".red(), script_fail_count);
@@ -653,40 +685,50 @@ fn install_package(
     }
 
     // Select the best executable
-    let exe_relative = if candidates.len() == 1 || (candidates.len() > 1 && candidates[0].score >= 80) {
-        // Auto-select if only one candidate or if the top candidate has high confidence
-        let selected = &candidates[0];
-        println!("  Found executable: {} ({})", selected.path, selected.reason);
-        selected.path.clone()
-    } else {
-        // Multiple candidates with similar scores - ask user to choose
-        println!("  Found multiple possible executables:");
-        for (i, candidate) in candidates.iter().enumerate() {
+    let exe_relative =
+        if candidates.len() == 1 || (candidates.len() > 1 && candidates[0].score >= 80) {
+            // Auto-select if only one candidate or if the top candidate has high confidence
+            let selected = &candidates[0];
             println!(
-                "    {}. {} (score: {}, {})",
-                i + 1,
-                candidate.path,
-                candidate.score,
-                candidate.reason
+                "  Found executable: {} ({})",
+                selected.path, selected.reason
             );
-        }
+            selected.path.clone()
+        } else {
+            // Multiple candidates with similar scores - ask user to choose
+            println!("  Found multiple possible executables:");
+            for (i, candidate) in candidates.iter().enumerate() {
+                println!(
+                    "    {}. {} (score: {}, {})",
+                    i + 1,
+                    candidate.path,
+                    candidate.score,
+                    candidate.reason
+                );
+            }
 
-        use std::io::{self, Write};
-        print!("\n  Select executable [1-{}]: ", candidates.len());
-        io::stdout().flush()?;
+            use std::io::{self, Write};
+            print!("\n  Select executable [1-{}]: ", candidates.len());
+            io::stdout().flush()?;
 
-        let mut input = String::new();
-        io::stdin().read_line(&mut input)?;
+            let mut input = String::new();
+            io::stdin().read_line(&mut input)?;
 
-        let selection = input
-            .trim()
-            .parse::<usize>()
-            .ok()
-            .and_then(|n| if n > 0 && n <= candidates.len() { Some(n - 1) } else { None })
-            .context("Invalid selection")?;
+            let selection = input
+                .trim()
+                .parse::<usize>()
+                .ok()
+                .and_then(|n| {
+                    if n > 0 && n <= candidates.len() {
+                        Some(n - 1)
+                    } else {
+                        None
+                    }
+                })
+                .context("Invalid selection")?;
 
-        candidates[selection].path.clone()
-    };
+            candidates[selection].path.clone()
+        };
 
     let exe_path = app_dir.join(&exe_relative);
 

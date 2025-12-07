@@ -267,7 +267,8 @@ pub fn find_executable_candidates(
         if lower_file.contains("test")
             || lower_file.contains("debug")
             || lower_file.contains("bench")
-            || lower_file.contains("example") {
+            || lower_file.contains("example")
+        {
             continue;
         }
 
@@ -282,7 +283,9 @@ pub fn find_executable_candidates(
                 reasons.push("exact name match");
             }
             // Rule 2: Partial match or package name contains file name
-            else if name_without_ext.contains(package_name) || package_name.contains(name_without_ext) {
+            else if name_without_ext.contains(package_name)
+                || package_name.contains(name_without_ext)
+            {
                 score += 50;
                 reasons.push("partial name match");
             }
@@ -351,9 +354,7 @@ fn is_likely_abbreviation(full_name: &str, abbrev: &str) -> bool {
     // Extract first letters of each word/segment
     let segments: Vec<&str> = full_name.split(&['-', '_'][..]).collect();
     if segments.len() > 1 {
-        let first_letters: String = segments.iter()
-            .filter_map(|s| s.chars().next())
-            .collect();
+        let first_letters: String = segments.iter().filter_map(|s| s.chars().next()).collect();
 
         if first_letters.to_lowercase() == abbrev.to_lowercase() {
             return true;
@@ -385,9 +386,8 @@ pub fn find_executable(extracted_files: &[String], package_name: &str) -> Option
 pub fn normalize_command_name(name: &str) -> String {
     // Platform keywords to detect platform-specific suffixes
     let platform_keywords = [
-        "windows", "linux", "darwin", "macos", "freebsd", "netbsd", "openbsd",
-        "x86_64", "aarch64", "arm64", "armv7", "i686", "x64", "x86",
-        "pc", "unknown", "gnu", "musl", "msvc",
+        "windows", "linux", "darwin", "macos", "freebsd", "netbsd", "openbsd", "x86_64", "aarch64",
+        "arm64", "armv7", "i686", "x64", "x86", "pc", "unknown", "gnu", "musl", "msvc",
     ];
 
     // Check if filename contains any platform keywords (case-insensitive)
@@ -396,7 +396,7 @@ pub fn normalize_command_name(name: &str) -> String {
 
     let result = if has_platform_suffix {
         // Find first `-` or `_` and remove everything from there
-        if let Some(pos) = name.find(|c| c == '-' || c == '_') {
+        if let Some(pos) = name.find(['-', '_']) {
             &name[..pos]
         } else {
             name
@@ -433,7 +433,10 @@ mod tests {
         assert_eq!(normalize_command_name("bat-v0.24-x86_64.exe"), "bat");
         assert_eq!(normalize_command_name("tool-linux-aarch64"), "tool");
         assert_eq!(normalize_command_name("app-darwin-x86_64.exe"), "app");
-        assert_eq!(normalize_command_name("ripgrep-13.0.0-x86_64-pc-windows-msvc.exe"), "ripgrep");
+        assert_eq!(
+            normalize_command_name("ripgrep-13.0.0-x86_64-pc-windows-msvc.exe"),
+            "ripgrep"
+        );
         assert_eq!(normalize_command_name("fd_v8.7.0_x86_64.exe"), "fd");
 
         // Files without platform suffixes - should keep name but remove .exe

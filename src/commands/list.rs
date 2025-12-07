@@ -55,7 +55,7 @@ fn list_installed_packages(config: &Config) -> Result<()> {
             PackageSource::Bucket { name } => name.clone(),
             PackageSource::DirectRepo { .. } => "url".to_string(),
             PackageSource::Script { script_type, .. } => {
-                format!("{}", script_type.display_name().to_lowercase())
+                script_type.display_name().to_lowercase().to_string()
             }
         };
 
@@ -124,7 +124,12 @@ fn list_all_packages(config: &Config) -> Result<()> {
     // Print header
     println!("{}", "Available packages".bold());
     println!();
-    println!("{:<30} {:<12} {}", "NAME".bold(), "TYPE".bold(), "DESCRIPTION".bold());
+    println!(
+        "{:<30} {:<12} {}",
+        "NAME".bold(),
+        "TYPE".bold(),
+        "DESCRIPTION".bold()
+    );
     println!("{}", "─".repeat(80));
 
     // Print packages
@@ -162,7 +167,7 @@ fn list_all_packages(config: &Config) -> Result<()> {
 
     // Print scripts
     for script in &scripts {
-        let script_type_display = format!("{}", script.script_type.display_name().to_lowercase());
+        let script_type_display = script.script_type.display_name().to_lowercase().to_string();
 
         if installed.is_installed(&script.name) {
             // For installed scripts, calculate padding manually to account for "(installed)"
@@ -191,7 +196,12 @@ fn list_all_packages(config: &Config) -> Result<()> {
                 script.description.clone()
             };
 
-            println!("{:<30} {:<12} {}", script.name, script_type_display.magenta(), description);
+            println!(
+                "{:<30} {:<12} {}",
+                script.name,
+                script_type_display.magenta(),
+                description
+            );
         }
     }
 

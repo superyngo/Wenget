@@ -112,7 +112,10 @@ fn display_package_info(
         crate::core::manifest::PackageSource::DirectRepo { url: _ } => {
             println!("{:<16} {}", "Source:".bold(), "Direct URL".yellow());
         }
-        crate::core::manifest::PackageSource::Script { origin, script_type } => {
+        crate::core::manifest::PackageSource::Script {
+            origin,
+            script_type,
+        } => {
             println!(
                 "{:<16} {} ({} from {})",
                 "Source:".bold(),
@@ -136,7 +139,11 @@ fn display_package_info(
             "Installed".green(),
             inst_pkg.version
         );
-        println!("{:<16} {}", "Command name:".bold(), inst_pkg.command_name.yellow());
+        println!(
+            "{:<16} {}",
+            "Command name:".bold(),
+            inst_pkg.command_name.yellow()
+        );
         println!("{:<16} {}", "Installed at:".bold(), inst_pkg.installed_at);
         println!("{:<16} {}", "Platform:".bold(), inst_pkg.platform);
         println!("{:<16} {}", "Install path:".bold(), inst_pkg.install_path);
@@ -175,7 +182,11 @@ fn display_script_info(
     println!("{}", "─".repeat(60));
 
     // Basic info
-    println!("{:<16} {}", "Script type:".bold(), script.script_type.display_name());
+    println!(
+        "{:<16} {}",
+        "Script type:".bold(),
+        script.script_type.display_name()
+    );
     println!("{:<16} {}", "URL:".bold(), script.url);
     println!("{:<16} {}", "Repository:".bold(), script.repo);
 
@@ -197,7 +208,10 @@ fn display_script_info(
         crate::core::manifest::PackageSource::DirectRepo { url: _ } => {
             println!("{:<16} {}", "Source:".bold(), "Direct URL".yellow());
         }
-        crate::core::manifest::PackageSource::Script { origin, script_type } => {
+        crate::core::manifest::PackageSource::Script {
+            origin,
+            script_type,
+        } => {
             println!(
                 "{:<16} {} ({} from {})",
                 "Source:".bold(),
@@ -210,12 +224,12 @@ fn display_script_info(
 
     // Installation status
     if let Some(inst_pkg) = installed.get_package(&script.name) {
+        println!("{:<16} {}", "Status:".bold(), "Installed".green());
         println!(
             "{:<16} {}",
-            "Status:".bold(),
-            "Installed".green()
+            "Command name:".bold(),
+            inst_pkg.command_name.yellow()
         );
-        println!("{:<16} {}", "Command name:".bold(), inst_pkg.command_name.yellow());
         println!("{:<16} {}", "Installed at:".bold(), inst_pkg.installed_at);
         println!("{:<16} {}", "Install path:".bold(), inst_pkg.install_path);
     } else {

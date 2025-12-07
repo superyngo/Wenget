@@ -5,6 +5,44 @@ All notable changes to Wenget will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2025-12-07
+
+### Added
+- **Advanced platform detection system** - Refactored binary matching logic for better compatibility
+  - New 4-component parsing: file extension + OS + architecture + compiler/libc
+  - `Compiler` enum supporting GNU, musl, and MSVC variants
+  - Context-aware `x86` keyword resolution (macOS → x86_64, others → i686)
+  - FreeBSD support with explicit architecture requirement
+  - Compiler priority system: Linux prefers musl > gnu, Windows prefers msvc > gnu
+
+### Improved
+- **Default architecture handling** - Intelligent fallback for ambiguous binaries
+  - Windows/Linux default to x86_64 when architecture not specified
+  - macOS defaults to aarch64 (Rosetta 2 can run x86_64 binaries)
+  - FreeBSD requires explicit architecture (no default)
+  - Explicit architecture matches scored higher than defaults
+
+### Changed
+- **Platform detection scoring** - New 4-component scoring algorithm
+  - OS match: +100 (mandatory)
+  - Explicit arch match: +50
+  - Default arch match: +25
+  - Compiler priority: +10/20/30 based on OS preference
+  - File format: +2 to +5
+
+### Technical
+- Complete refactor of `src/core/platform.rs` with `ParsedAsset` struct
+- Added `FileExtension` enum for archive format detection
+- Updated `Platform` struct with optional compiler field
+- Added 17 comprehensive test cases for platform detection
+- Removed unsupported architectures: s390x, ppc64, ppc64le, riscv64, mips
+- Code formatting and clippy linting improvements
+
+### Backward Compatible
+- Platform string format unchanged: {os}-{arch} or {os}-{arch}-{compiler}
+- Existing manifests continue to work
+- New compiler-specific keys are additive
+
 ## [0.5.3] - 2025-12-03
 
 ### Added

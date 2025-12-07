@@ -89,7 +89,11 @@ impl<'a> PackageResolver<'a> {
     /// Create a new package resolver with pre-loaded cache
     pub fn new(config: &'a Config, cache: &'a ManifestCache) -> Result<Self> {
         let github = GitHubProvider::new()?;
-        Ok(Self { config, cache, github })
+        Ok(Self {
+            config,
+            cache,
+            github,
+        })
     }
 
     /// Resolve package(s) from input
