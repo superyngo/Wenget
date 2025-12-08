@@ -37,18 +37,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Platform detection scoring** - New 4-component scoring algorithm
+
   - OS match: +100 (mandatory)
   - Explicit arch match: +50
   - Default arch match: +25
   - Compiler priority: +10/20/30 based on OS preference
   - File format: +2 to +5
 
-### Technical
-
 - Complete refactor of `src/core/platform.rs` with `ParsedAsset` struct
 - Added `FileExtension` enum for archive format detection
-- Updated `Platform` struct with optional compiler field
 - Added 17 comprehensive test cases for platform detection
+
+## [0.6.3] - 2025-12-08
+
+### Fixed
+
+- 修復 Linux 平台 update self 功能
 - Removed unsupported architectures: s390x, ppc64, ppc64le, riscv64, mips
 - Code formatting and clippy linting improvements
 

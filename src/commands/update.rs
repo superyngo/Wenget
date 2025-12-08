@@ -275,23 +275,39 @@ del /f /q "%~f0"
 
 /// Replace executable on Unix (Linux/macOS)
 ///
-/// On Unix, we can directly replace the running executable
+/// Unix locks running executables, so we use a multi-step process:
+/// 1. Rename current exe to .old
+/// 2. Copy new exe to original location
+/// 3. The old file can be removed on next cleanup
 #[cfg(not(windows))]
 fn replace_exe_unix(current_exe: &std::path::PathBuf, new_exe: &std::path::PathBuf) -> Result<()> {
     use std::fs;
+
+    let old_exe = current_exe.with_extension("old");
+
+    // Remove any existing .old file
+    if old_exe.exists() {
+        let _ = fs::remove_file(&old_exe);
+    }
+
+    // Rename current executable (this allows the process to keep running from the old inode)
+    fs::rename(current_exe, &old_exe)?;
+
+    // Copy new executable to the original location
+    fs::copy(new_exe, current_exe)?;
 
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
 
         // Ensure new executable has correct permissions
-        let mut perms = fs::metadata(new_exe)?.permissions();
+        let mut perms = fs::metadata(current_exe)?.permissions();
         perms.set_mode(0o755);
-        fs::set_permissions(new_exe, perms)?;
+        fs::set_permissions(current_exe, perms)?;
     }
 
-    // Copy new executable over current one
-    fs::copy(new_exe, current_exe)?;
+    // Optionally clean up old file immediately (best effort)
+    let _ = fs::remove_file(&old_exe);
 
     Ok(())
 }
