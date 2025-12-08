@@ -391,19 +391,22 @@ pub fn find_executable_candidates(
         let mut score = 0u32;
         let mut reasons = Vec::new();
 
+        // Check executable permission (Unix only)
+        #[cfg(unix)]
+        let has_exec_perm = if let Some(dir) = extract_dir {
+            let full_path = dir.join(file);
+            has_executable_permission(&full_path)
+        } else {
+            false
+        };
+        #[cfg(not(unix))]
+        let has_exec_perm = false;
+
         // Rule 0: Has executable permission (Unix) - strong signal
         #[cfg(unix)]
-        {
-            let has_exec_perm = if let Some(dir) = extract_dir {
-                let full_path = dir.join(file);
-                has_executable_permission(&full_path)
-            } else {
-                false
-            };
-            if has_exec_perm {
-                score += 35;
-                reasons.push("has exec permission");
-            }
+        if has_exec_perm {
+            score += 35;
+            reasons.push("has exec permission");
         }
         // Suppress unused warning on non-Unix
         #[cfg(not(unix))]
@@ -453,10 +456,8 @@ pub fn find_executable_candidates(
         }
 
         // Only add if score is above threshold (or has exec permission on Unix)
-        #[cfg(unix)]
+        // Note: has_exec_perm is always false on non-Unix, so this works cross-platform
         let should_add = score > 0 || has_exec_perm;
-        #[cfg(not(unix))]
-        let should_add = score > 0;
 
         if should_add {
             let reason = if reasons.is_empty() {
