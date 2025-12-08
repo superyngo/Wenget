@@ -48,10 +48,52 @@ impl Config {
         self.paths.is_initialized() && self.paths.installed_json().exists()
     }
 
-    /// Load installed manifest
+    /// Load installed manifest with automatic repair on parse errors
     pub fn load_installed(&self) -> Result<InstalledManifest> {
+        use super::repair::{
+            create_backup, print_repair_warning, try_parse_json, RepairAction, RepairSeverity,
+        };
+
         let path = self.paths.installed_json();
-        Self::load_json(&path).context("Failed to load installed.json")
+
+        // Handle missing file
+        if !path.exists() {
+            return Ok(InstalledManifest::new());
+        }
+
+        // Read file content
+        let content = fs::read_to_string(&path)
+            .with_context(|| format!("Failed to read file: {}", path.display()))?;
+
+        // Try to parse JSON
+        match try_parse_json::<InstalledManifest>(&content, &path) {
+            Ok(manifest) => Ok(manifest),
+            Err(parse_error) => {
+                log::error!("CRITICAL: Failed to parse installed.json: {}", parse_error);
+
+                // This is critical - create backup
+                let backup_path = create_backup(&path).ok();
+
+                // Create new empty manifest
+                let new_manifest = InstalledManifest::new();
+
+                // Save the new manifest
+                self.save_installed(&new_manifest)?;
+
+                // Notify user with critical warning
+                let action = RepairAction::ResetToEmpty {
+                    backup_path: backup_path.clone(),
+                };
+                print_repair_warning(
+                    "installed.json",
+                    &action,
+                    RepairSeverity::Critical,
+                    Some("Your installed package records were corrupted. Wenget cannot track previously installed packages. You may need to reinstall them."),
+                );
+
+                Ok(new_manifest)
+            }
+        }
     }
 
     /// Save installed manifest
@@ -60,7 +102,8 @@ impl Config {
         Self::save_json(&path, manifest).context("Failed to save installed.json")
     }
 
-    /// Generic JSON loader
+    /// Generic JSON loader (without repair - for internal use)
+    #[allow(dead_code)]
     fn load_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
         let content = fs::read_to_string(path)
             .with_context(|| format!("Failed to read file: {}", path.display()))?;

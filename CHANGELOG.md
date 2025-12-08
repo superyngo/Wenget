@@ -5,9 +5,20 @@ All notable changes to Wenget will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2025-12-08
+
+### Fixed
+
+- Code quality improvements
+  - Fixed clippy warnings for dead code in tests
+  - Fixed pointer argument linting (PathBuf → Path)
+  - Added allow attributes where appropriate
+- Enhanced code formatting compliance with cargo fmt
+
 ## [0.6.0] - 2025-12-07
 
 ### Added
+
 - **Advanced platform detection system** - Refactored binary matching logic for better compatibility
   - New 4-component parsing: file extension + OS + architecture + compiler/libc
   - `Compiler` enum supporting GNU, musl, and MSVC variants
@@ -16,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Compiler priority system: Linux prefers musl > gnu, Windows prefers msvc > gnu
 
 ### Improved
+
 - **Default architecture handling** - Intelligent fallback for ambiguous binaries
   - Windows/Linux default to x86_64 when architecture not specified
   - macOS defaults to aarch64 (Rosetta 2 can run x86_64 binaries)
@@ -23,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Explicit architecture matches scored higher than defaults
 
 ### Changed
+
 - **Platform detection scoring** - New 4-component scoring algorithm
   - OS match: +100 (mandatory)
   - Explicit arch match: +50
@@ -31,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - File format: +2 to +5
 
 ### Technical
+
 - Complete refactor of `src/core/platform.rs` with `ParsedAsset` struct
 - Added `FileExtension` enum for archive format detection
 - Updated `Platform` struct with optional compiler field
@@ -39,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Code formatting and clippy linting improvements
 
 ### Backward Compatible
+
 - Platform string format unchanged: {os}-{arch} or {os}-{arch}-{compiler}
 - Existing manifests continue to work
 - New compiler-specific keys are additive
@@ -46,6 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.5.3] - 2025-12-03
 
 ### Added
+
 - **Fallback platform detection** - Intelligent handling of release files with ambiguous names
   - Added fallback OS keywords: "win", "mac", "osx", "msvc" for broader matching
   - Automatic architecture assumption when explicit info is missing:
@@ -56,18 +72,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Enables detection of packages like `gitui-win.tar.gz` and `app-mac.zip`
 
 ### Fixed
+
 - **Platform detection for ambiguous filenames** - Files like `gitui-win.tar.gz` are now correctly detected
   - Previously required explicit architecture in filename (e.g., `win64`, `x86_64`)
   - Now supports generic OS-only filenames with intelligent fallback
   - Maintains preference for explicitly-named binaries over fallback matches
 
 ### Changed
+
 - **.msi file handling** - Removed support for .msi installer packages
   - .msi files now properly excluded from binary selection
   - Focuses on portable archive formats (tar.gz, zip, exe)
   - Avoids conflicts with Windows installer packages that need special handling
 
 ### Technical
+
 - Enhanced `BinarySelector::score_asset()` with 2-tier detection logic
 - Added `test_fallback_detection_gitui()` test case for validation
 - Scoring system: Exact match (OS+Arch=150) > Fallback (OS=100, Fallback Arch=25) > No match
@@ -75,12 +94,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.5.2] - 2025-12-03
 
 ### Improved
+
 - **Script installation UX** - Now displays "Command will be available as:" message during script installation
   - Consistent with package installation behavior
   - Shows the command name that will be used to invoke the script
   - Applied to both direct script installations and bucket script installations
 
 ### Changed
+
 - **Script filtering in list --all** - Improved platform compatibility filtering
   - Added `is_os_compatible()` method for basic OS compatibility checking
   - Scripts now filtered by native OS support without executing interpreter checks
@@ -90,18 +111,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Unix-like systems show Bash/Python scripts only
 
 ### Technical
+
 - Script filtering now uses compile-time platform checks instead of runtime interpreter checks
 - More efficient `list --all` command with no external command execution
 
 ## [0.5.1] - 2025-12-03
 
 ### Fixed
+
 - **Script display in list command** - `list --all` now correctly shows scripts from buckets
   - Added TYPE column to distinguish between binaries and scripts
   - Scripts filtered by platform compatibility (PowerShell, Bash, Python, Batch)
   - Fixed issue where scripts were being filtered out due to missing platform field
 
 ### Changed
+
 - **List output format** - Added TYPE column showing "binary" for packages and script type for scripts
   - Binary packages shown in cyan
   - Script types shown in magenta (powershell, bash, python, batch)
@@ -110,12 +134,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.5.0] - 2025-12-02
 
 ### Added
+
 - **Bucket Script Support** - Install and manage scripts directly from buckets
+
   - Support for PowerShell (.ps1), Bash (.sh), Batch (.bat/.cmd), and Python (.py) scripts
   - Automatic script type detection and platform compatibility checking
   - Scripts displayed separately in search results with type badges
 
 - **Script Installation** - Multiple installation methods
+
   - Install from local files: `wenget add ./script.ps1`
   - Install from URLs: `wenget add https://example.com/script.sh`
   - Install from buckets: `wenget add script-name`
@@ -127,15 +154,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Custom naming support: `--name custom-command`
 
 ### Enhanced
+
 - **Search Command** - Now searches both packages and scripts
+
   - Separate sections for "Binary Packages" and "Scripts"
   - Shows script type and description for each result
 
 - **Info Command** - Extended to support scripts
+
   - Displays script-specific metadata (type, URL, platform support)
   - Shows installation status for both packages and scripts
 
 - **List Command** - Enhanced display format
+
   - Shows command name alongside package name
   - Improved column alignment and truncation
   - Better visual distinction between installed and available items
@@ -147,7 +178,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Separate success/failure counts for packages and scripts
 
 ### Improved
+
 - **Cache System** - Script awareness
+
   - Scripts cached alongside packages for fast searches
   - Script-specific cache invalidation
   - Platform compatibility filtering
@@ -158,6 +191,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Detailed installation failure reasons
 
 ### Technical
+
 - **Architecture** - New script management infrastructure
   - `ScriptItem` type for bucket scripts
   - `ScriptType` enum with platform detection
@@ -167,6 +201,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.4.0] - 2025-12-01
 
 ### Added
+
 - **Self-update capability** - `wenget update self` command to upgrade Wenget itself
   - Automatic version detection from GitHub releases
   - Platform-specific binary selection
@@ -174,17 +209,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Automatic cleanup of old versions
 
 ### Improved
+
 - **Windows**: Special handling for locked executables with background cleanup script
 - **Unix/Linux/macOS**: Direct executable replacement with permission management
 - **Error handling**: Comprehensive error messages and validation
 
 ### Documentation
+
 - Updated README with self-update instructions
 - Added usage examples for the new command
 
 ## [0.3.0] - 2025-11-25
 
 ### Changed
+
 - **Remove `source` command** - Eliminated sources.json and all source management
 - **Smart `add` command** - Auto-detects package names vs GitHub URLs
 - **New `info` command** - Query package details (supports names and URLs)
@@ -194,6 +232,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Improved UX** - Better alignment and formatting in list output
 
 ### Breaking Changes
+
 - `source` command removed entirely
 - installed.json format changed (added description field)
 - Old installed.json files need migration (reinstall packages)
@@ -201,16 +240,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.0] - 2025-01-21
 
 ### Added
+
 - Installation scripts for Windows and Unix
 - Improved init bucket checking
 
 ### Fixed
+
 - Self-deletion when executable is inside .wenget
 - Shim absolute path issues
 
 ## [0.1.0] - 2025-01-21
 
 ### Added
+
 - Initial release
 - Basic package management
 - Bucket system

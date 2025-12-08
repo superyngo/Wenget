@@ -94,6 +94,13 @@ pub enum Commands {
         #[arg(short = 'y', long)]
         yes: bool,
     },
+
+    /// Repair corrupted configuration files
+    Repair {
+        /// Force rebuild all configuration files (not just corrupted ones)
+        #[arg(short, long)]
+        force: bool,
+    },
 }
 
 #[derive(Subcommand)]

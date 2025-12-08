@@ -674,8 +674,8 @@ fn install_package(
 
     let extracted_files = extract_archive(&download_path, &app_dir)?;
 
-    // Find executable candidates
-    let candidates = find_executable_candidates(&extracted_files, &pkg.name);
+    // Find executable candidates (pass app_dir for Unix permission checks)
+    let candidates = find_executable_candidates(&extracted_files, &pkg.name, Some(&app_dir));
 
     if candidates.is_empty() {
         anyhow::bail!(
@@ -813,6 +813,7 @@ fn update_cache_with_packages(
 }
 
 /// Install a script from bucket cache
+#[allow(clippy::too_many_arguments)]
 fn install_script_from_bucket(
     config: &Config,
     paths: &WenPaths,

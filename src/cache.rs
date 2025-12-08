@@ -94,17 +94,45 @@ impl ManifestCache {
         }
     }
 
-    /// Load cache from file
+    /// Load cache from file with automatic repair on parse errors
     pub fn load(path: &PathBuf) -> Result<Self> {
+        use crate::core::repair::{
+            print_repair_warning, try_parse_json, RepairAction, RepairSeverity,
+        };
+
+        // Handle missing file (existing behavior)
         if !path.exists() {
             return Ok(Self::new());
         }
 
+        // Read file content
         let content = fs::read_to_string(path)
             .with_context(|| format!("Failed to read cache: {}", path.display()))?;
 
-        serde_json::from_str(&content)
-            .with_context(|| format!("Failed to parse cache: {}", path.display()))
+        // Try to parse JSON
+        match try_parse_json::<Self>(&content, path) {
+            Ok(cache) => Ok(cache),
+            Err(parse_error) => {
+                log::warn!("Failed to parse manifest-cache.json: {}", parse_error);
+
+                // Delete corrupted cache file
+                let _ = fs::remove_file(path);
+
+                // Notify user (informational - cache will be rebuilt automatically)
+                let action = RepairAction::Rebuilt {
+                    source: "configured buckets".to_string(),
+                };
+                print_repair_warning(
+                    "manifest-cache.json",
+                    &action,
+                    RepairSeverity::Info,
+                    Some("Cache will be rebuilt from buckets on next operation."),
+                );
+
+                // Return empty cache (will trigger rebuild)
+                Ok(Self::new())
+            }
+        }
     }
 
     /// Save cache to file

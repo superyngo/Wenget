@@ -49,17 +49,52 @@ impl BucketConfig {
         }
     }
 
-    /// Load bucket config from file
+    /// Load bucket config from file with automatic repair on parse errors
     pub fn load(path: &PathBuf) -> Result<Self> {
+        use crate::core::repair::{
+            create_backup, print_repair_warning, try_parse_json, RepairAction, RepairSeverity,
+        };
+
+        // Handle missing file (existing behavior)
         if !path.exists() {
             return Ok(Self::new());
         }
 
+        // Read file content
         let content = fs::read_to_string(path)
             .with_context(|| format!("Failed to read bucket config: {}", path.display()))?;
 
-        serde_json::from_str(&content)
-            .with_context(|| format!("Failed to parse bucket config: {}", path.display()))
+        // Try to parse JSON
+        match try_parse_json::<Self>(&content, path) {
+            Ok(config) => Ok(config),
+            Err(parse_error) => {
+                log::warn!("Failed to parse buckets.json: {}", parse_error);
+
+                // Create backup of corrupted file
+                let backup_path = create_backup(path).ok();
+
+                // Create new empty config
+                let new_config = Self::new();
+
+                // Save the new config
+                let json_content = serde_json::to_string_pretty(&new_config)
+                    .context("Failed to serialize bucket config")?;
+                fs::write(path, json_content).with_context(|| {
+                    format!("Failed to write bucket config: {}", path.display())
+                })?;
+
+                // Notify user
+                let action = RepairAction::ResetToEmpty { backup_path };
+                print_repair_warning(
+                    "buckets.json",
+                    &action,
+                    RepairSeverity::Warning,
+                    Some("Your bucket configuration was reset. Re-add buckets with 'wenget bucket add'."),
+                );
+
+                Ok(new_config)
+            }
+        }
     }
 
     /// Save bucket config to file

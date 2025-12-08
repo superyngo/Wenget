@@ -240,25 +240,140 @@ pub struct ExecutableCandidate {
     pub reason: String,
 }
 
+/// Check if a filename should be excluded as a non-executable documentation/config file
+fn is_excluded_file(filename: &str, file_path: &str) -> bool {
+    let lower_name = filename.to_lowercase();
+    let lower_path = file_path.to_lowercase();
+
+    // Exclude documentation files by extension
+    let doc_extensions = [
+        ".md", ".txt", ".rst", ".html", ".htm", ".pdf", ".doc", ".docx", ".1", ".2", ".3", ".4",
+        ".5", ".6", ".7", ".8", // man pages
+    ];
+    if doc_extensions.iter().any(|ext| lower_name.ends_with(ext)) {
+        return true;
+    }
+
+    // Exclude license/readme files by name pattern
+    let excluded_names = [
+        "license",
+        "licence",
+        "copying",
+        "unlicense",
+        "notice",
+        "readme",
+        "changelog",
+        "changes",
+        "history",
+        "authors",
+        "contributors",
+        "credits",
+        "thanks",
+        "todo",
+        "news",
+    ];
+    if excluded_names.iter().any(|name| lower_name.contains(name)) {
+        return true;
+    }
+
+    // Exclude config/data files by extension
+    let config_extensions = [
+        ".yml", ".yaml", ".toml", ".json", ".xml", ".ini", ".cfg", ".conf",
+    ];
+    if config_extensions
+        .iter()
+        .any(|ext| lower_name.ends_with(ext))
+    {
+        return true;
+    }
+
+    // Exclude shell completion files (usually in complete/ or completions/ directory)
+    let completion_extensions = [".fish", ".bash", ".zsh", ".ps1"];
+    let in_completion_dir = lower_path.contains("complete") || lower_path.contains("completion");
+    if in_completion_dir
+        && completion_extensions
+            .iter()
+            .any(|ext| lower_name.ends_with(ext))
+    {
+        return true;
+    }
+
+    // Exclude files starting with underscore in completion directories (e.g., _rg for zsh)
+    if in_completion_dir && lower_name.starts_with('_') {
+        return true;
+    }
+
+    false
+}
+
+/// Check if a file could be an executable based on its filename
+fn could_be_executable(filename: &str, file_path: &str) -> bool {
+    let lower_name = filename.to_lowercase();
+
+    if cfg!(windows) {
+        // On Windows, must have .exe extension
+        lower_name.ends_with(".exe")
+    } else {
+        // On Unix: check if in bin/ directory OR has no extension in filename
+        let in_bin_dir = file_path.contains("bin/");
+
+        // Check if filename has an extension (only check the filename, not the path!)
+        let has_extension = filename.contains('.') && !filename.starts_with('.');
+
+        // Executable scripts
+        let script_extensions = [".sh"];
+        let is_script = script_extensions
+            .iter()
+            .any(|ext| lower_name.ends_with(ext));
+
+        in_bin_dir || !has_extension || is_script
+    }
+}
+
+/// Check if a file has executable permission on Unix
+#[cfg(unix)]
+fn has_executable_permission(file_path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    if let Ok(metadata) = fs::metadata(file_path) {
+        let mode = metadata.permissions().mode();
+        mode & 0o111 != 0
+    } else {
+        false
+    }
+}
+
+#[cfg(not(unix))]
+#[allow(dead_code)]
+fn has_executable_permission(_file_path: &Path) -> bool {
+    // On Windows, we rely on .exe extension, not permissions
+    true
+}
+
 /// Find all possible executables and rank them by priority
+/// `extract_dir` is the directory where files were extracted to (used for permission checks)
 pub fn find_executable_candidates(
     extracted_files: &[String],
     package_name: &str,
+    extract_dir: Option<&Path>,
 ) -> Vec<ExecutableCandidate> {
     let mut candidates = Vec::new();
 
     for file in extracted_files {
         let path = Path::new(file);
 
-        // Only consider executable files
-        let is_executable = if cfg!(windows) {
-            file.ends_with(".exe")
-        } else {
-            // On Unix, check if it's in bin/ or has no extension (common for binaries)
-            file.contains("bin/") || !file.contains('.')
+        // Get just the filename (not the full path)
+        let filename = match path.file_name().and_then(|s| s.to_str()) {
+            Some(name) => name,
+            None => continue,
         };
 
-        if !is_executable {
+        // Skip excluded files (docs, licenses, configs, etc.)
+        if is_excluded_file(filename, file) {
+            continue;
+        }
+
+        // Check if this could be an executable
+        if !could_be_executable(filename, file) {
             continue;
         }
 
@@ -272,69 +387,89 @@ pub fn find_executable_candidates(
             continue;
         }
 
-        if let Some(filename) = path.file_name().and_then(|s| s.to_str()) {
-            let name_without_ext = filename.trim_end_matches(".exe");
-            let mut score = 0u32;
-            let mut reasons = Vec::new();
+        let name_without_ext = filename.trim_end_matches(".exe");
+        let mut score = 0u32;
+        let mut reasons = Vec::new();
 
-            // Rule 1: Exact match with package name (highest priority)
-            if name_without_ext == package_name {
-                score += 100;
-                reasons.push("exact name match");
+        // Rule 0: Has executable permission (Unix) - strong signal
+        #[cfg(unix)]
+        {
+            let has_exec_perm = if let Some(dir) = extract_dir {
+                let full_path = dir.join(file);
+                has_executable_permission(&full_path)
+            } else {
+                false
+            };
+            if has_exec_perm {
+                score += 35;
+                reasons.push("has exec permission");
             }
-            // Rule 2: Partial match or package name contains file name
-            else if name_without_ext.contains(package_name)
-                || package_name.contains(name_without_ext)
-            {
-                score += 50;
-                reasons.push("partial name match");
-            }
-            // Rule 3: Common abbreviation patterns (e.g., ripgrep -> rg)
-            else if is_likely_abbreviation(package_name, name_without_ext) {
-                score += 40;
-                reasons.push("likely abbreviation");
-            }
+        }
+        // Suppress unused warning on non-Unix
+        #[cfg(not(unix))]
+        let _ = extract_dir;
 
-            // Rule 4: Located in bin/ directory
-            if file.contains("bin/") {
-                score += 30;
-                reasons.push("in bin/ directory");
-            }
+        // Rule 1: Exact match with package name (highest priority)
+        if name_without_ext == package_name {
+            score += 100;
+            reasons.push("exact name match");
+        }
+        // Rule 2: Partial match or package name contains file name
+        else if name_without_ext.contains(package_name) || package_name.contains(name_without_ext)
+        {
+            score += 50;
+            reasons.push("partial name match");
+        }
+        // Rule 3: Common abbreviation patterns (e.g., ripgrep -> rg)
+        else if is_likely_abbreviation(package_name, name_without_ext) {
+            score += 40;
+            reasons.push("likely abbreviation");
+        }
 
-            // Rule 5: Located in target/release/ (Rust projects)
-            if file.contains("target/release/") {
-                score += 25;
-                reasons.push("in target/release/");
-            }
+        // Rule 4: Located in bin/ directory
+        if file.contains("bin/") {
+            score += 30;
+            reasons.push("in bin/ directory");
+        }
 
-            // Rule 6: Shallow directory depth (prefer files closer to root)
-            let depth = file.matches('/').count() + file.matches('\\').count();
-            if depth <= 1 {
-                score += 20;
-            } else if depth <= 2 {
-                score += 10;
-            }
+        // Rule 5: Located in target/release/ (Rust projects)
+        if file.contains("target/release/") {
+            score += 25;
+            reasons.push("in target/release/");
+        }
 
-            // Rule 7: Simple filename (fewer special characters)
-            if !name_without_ext.contains('-') && !name_without_ext.contains('_') {
-                score += 5;
-                reasons.push("simple name");
-            }
+        // Rule 6: Shallow directory depth (prefer files closer to root)
+        let depth = file.matches('/').count() + file.matches('\\').count();
+        if depth <= 1 {
+            score += 20;
+        } else if depth <= 2 {
+            score += 10;
+        }
 
-            // Only add if score is above threshold
-            if score > 0 {
-                let reason = if reasons.is_empty() {
-                    "potential executable".to_string()
-                } else {
-                    reasons.join(", ")
-                };
+        // Rule 7: Simple filename (fewer special characters)
+        if !name_without_ext.contains('-') && !name_without_ext.contains('_') {
+            score += 5;
+            reasons.push("simple name");
+        }
 
-                candidates.push(ExecutableCandidate {
-                    path: file.clone(),
-                    score,
-                    reason,
-                });
-            }
+        // Only add if score is above threshold (or has exec permission on Unix)
+        #[cfg(unix)]
+        let should_add = score > 0 || has_exec_perm;
+        #[cfg(not(unix))]
+        let should_add = score > 0;
+
+        if should_add {
+            let reason = if reasons.is_empty() {
+                "potential executable".to_string()
+            } else {
+                reasons.join(", ")
+            };
+
+            candidates.push(ExecutableCandidate {
+                path: file.clone(),
+                score,
+                reason,
+            });
         }
     }
 
@@ -368,7 +503,7 @@ fn is_likely_abbreviation(full_name: &str, abbrev: &str) -> bool {
 /// Find the main executable in extracted files
 /// Returns the best candidate if found
 pub fn find_executable(extracted_files: &[String], package_name: &str) -> Option<String> {
-    let candidates = find_executable_candidates(extracted_files, package_name);
+    let candidates = find_executable_candidates(extracted_files, package_name, None);
     candidates.first().map(|c| c.path.clone())
 }
 
@@ -424,6 +559,111 @@ mod tests {
 
         let exe = find_executable(&files, "rg");
         assert_eq!(exe, Some("ripgrep-15.1.0/bin/rg.exe".to_string()));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_find_executable_ripgrep_linux() {
+        // This is the actual file list from ripgrep Linux release
+        let files = vec![
+            "ripgrep-15.1.0-aarch64-unknown-linux-gnu/doc/CHANGELOG.md".to_string(),
+            "ripgrep-15.1.0-aarch64-unknown-linux-gnu/doc/FAQ.md".to_string(),
+            "ripgrep-15.1.0-aarch64-unknown-linux-gnu/doc/GUIDE.md".to_string(),
+            "ripgrep-15.1.0-aarch64-unknown-linux-gnu/doc/rg.1".to_string(),
+            "ripgrep-15.1.0-aarch64-unknown-linux-gnu/UNLICENSE".to_string(),
+            "ripgrep-15.1.0-aarch64-unknown-linux-gnu/README.md".to_string(),
+            "ripgrep-15.1.0-aarch64-unknown-linux-gnu/LICENSE-MIT".to_string(),
+            "ripgrep-15.1.0-aarch64-unknown-linux-gnu/COPYING".to_string(),
+            "ripgrep-15.1.0-aarch64-unknown-linux-gnu/complete/_rg.ps1".to_string(),
+            "ripgrep-15.1.0-aarch64-unknown-linux-gnu/complete/_rg".to_string(),
+            "ripgrep-15.1.0-aarch64-unknown-linux-gnu/complete/rg.fish".to_string(),
+            "ripgrep-15.1.0-aarch64-unknown-linux-gnu/complete/rg.bash".to_string(),
+            "ripgrep-15.1.0-aarch64-unknown-linux-gnu/rg".to_string(),
+        ];
+
+        let exe = find_executable(&files, "ripgrep");
+        // Should find 'rg' even though package name is 'ripgrep'
+        // rg is an abbreviation of ripgrep (r + g from rip-grep)
+        assert_eq!(
+            exe,
+            Some("ripgrep-15.1.0-aarch64-unknown-linux-gnu/rg".to_string())
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_find_executable_ripgrep_windows() {
+        // Windows version with .exe extension
+        let files = vec![
+            "ripgrep-15.1.0-x86_64-pc-windows-msvc/doc/CHANGELOG.md".to_string(),
+            "ripgrep-15.1.0-x86_64-pc-windows-msvc/doc/FAQ.md".to_string(),
+            "ripgrep-15.1.0-x86_64-pc-windows-msvc/UNLICENSE".to_string(),
+            "ripgrep-15.1.0-x86_64-pc-windows-msvc/README.md".to_string(),
+            "ripgrep-15.1.0-x86_64-pc-windows-msvc/LICENSE-MIT".to_string(),
+            "ripgrep-15.1.0-x86_64-pc-windows-msvc/COPYING".to_string(),
+            "ripgrep-15.1.0-x86_64-pc-windows-msvc/complete/_rg.ps1".to_string(),
+            "ripgrep-15.1.0-x86_64-pc-windows-msvc/rg.exe".to_string(),
+        ];
+
+        let exe = find_executable(&files, "ripgrep");
+        // Should find 'rg.exe' even though package name is 'ripgrep'
+        assert_eq!(
+            exe,
+            Some("ripgrep-15.1.0-x86_64-pc-windows-msvc/rg.exe".to_string())
+        );
+    }
+
+    #[test]
+    fn test_is_excluded_file() {
+        // Documentation files
+        assert!(is_excluded_file("README.md", "foo/README.md"));
+        assert!(is_excluded_file("CHANGELOG.md", "doc/CHANGELOG.md"));
+        assert!(is_excluded_file("rg.1", "doc/rg.1")); // man page
+
+        // License files
+        assert!(is_excluded_file("LICENSE", "foo/LICENSE"));
+        assert!(is_excluded_file("LICENSE-MIT", "foo/LICENSE-MIT"));
+        assert!(is_excluded_file("COPYING", "foo/COPYING"));
+        assert!(is_excluded_file("UNLICENSE", "foo/UNLICENSE"));
+
+        // Completion files in completion directory
+        assert!(is_excluded_file("rg.fish", "complete/rg.fish"));
+        assert!(is_excluded_file("rg.bash", "completions/rg.bash"));
+        assert!(is_excluded_file("_rg", "complete/_rg")); // zsh completion
+        assert!(is_excluded_file("_rg.ps1", "complete/_rg.ps1"));
+
+        // NOT excluded: regular executables
+        assert!(!is_excluded_file("rg", "foo/rg"));
+        assert!(!is_excluded_file("ripgrep", "foo/ripgrep"));
+        assert!(!is_excluded_file("tool.sh", "bin/tool.sh"));
+    }
+
+    #[test]
+    fn test_could_be_executable() {
+        // Windows
+        #[cfg(windows)]
+        {
+            assert!(could_be_executable("tool.exe", "foo/tool.exe"));
+            assert!(!could_be_executable("tool", "foo/tool"));
+        }
+
+        // Unix
+        #[cfg(unix)]
+        {
+            // No extension = could be executable
+            assert!(could_be_executable("rg", "foo/rg"));
+            assert!(could_be_executable("ripgrep", "foo/ripgrep"));
+
+            // In bin/ = could be executable
+            assert!(could_be_executable("tool", "bin/tool"));
+
+            // Script = could be executable
+            assert!(could_be_executable("run.sh", "foo/run.sh"));
+
+            // Has extension = not executable (unless script)
+            assert!(!could_be_executable("rg.fish", "foo/rg.fish"));
+            assert!(!could_be_executable("config.toml", "foo/config.toml"));
+        }
     }
 
     #[test]

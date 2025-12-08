@@ -67,6 +67,8 @@ fn main() {
         Commands::Update { names, yes } => commands::run_update(names, yes),
 
         Commands::Del { names, yes, force } => commands::run_delete(names, yes, force),
+
+        Commands::Repair { force } => commands::run_repair(force),
     };
 
     // Handle errors
