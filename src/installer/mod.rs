@@ -15,7 +15,6 @@ pub use script::{
     create_script_shim, detect_script_type, download_script, extract_script_name, install_script,
     read_local_script,
 };
-pub use shim::create_shim;
 
 #[cfg(unix)]
 pub use symlink::create_symlink;

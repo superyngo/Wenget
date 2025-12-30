@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use std::env;
 use std::io::{self, Write as IoWrite};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 #[cfg(not(windows))]
 use std::fs::{self, OpenOptions};
@@ -332,7 +332,7 @@ fn setup_path_unix(bin_dir: &str) -> Result<()> {
 
 /// Detect available shell configuration files
 #[cfg(not(windows))]
-fn detect_shell_configs(home: &PathBuf) -> Vec<PathBuf> {
+fn detect_shell_configs(home: &std::path::Path) -> Vec<PathBuf> {
     let mut configs = Vec::new();
 
     // Check for common shell configs

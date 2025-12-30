@@ -170,7 +170,6 @@ fn extract_tar_archive<R: std::io::Read>(
 /// Check if a tar entry is executable
 #[cfg(unix)]
 fn is_executable<R: std::io::Read>(entry: &mut tar::Entry<R>) -> Result<bool> {
-    use std::os::unix::fs::PermissionsExt;
     let mode = entry.header().mode()?;
     Ok(mode & 0o111 != 0)
 }
