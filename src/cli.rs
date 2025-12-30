@@ -4,10 +4,19 @@ use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(name = "wenget")]
-#[command(author = "Wenget Team")]
+#[command(author = env!("CARGO_PKG_AUTHORS"))]
 #[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(about = "A cross-platform package manager for GitHub binaries", long_about = None)]
 #[command(propagate_version = true)]
+#[command(help_template = "\
+{name} {version} by {author}
+
+{about-with-newline}
+{usage-heading}
+    {usage}
+
+{all-args}{after-help}
+")]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,
@@ -25,7 +34,7 @@ pub enum Commands {
         command: BucketCommands,
     },
 
-    /// Add (install) packages from cache or GitHub URL
+    /// Install packages or scripts from buckets ,GitHub repo, URLs, or local files
     #[command(visible_alias = "install")]
     #[command(visible_alias = "a")]
     Add {
@@ -53,14 +62,14 @@ pub enum Commands {
         all: bool,
     },
 
-    /// Show package information from cache or GitHub URL
+    /// Show package information from buckets or GitHub repo
     #[command(visible_alias = "i")]
     Info {
         /// Package names or GitHub URLs to show (supports wildcards * for cache queries)
         names: Vec<String>,
     },
 
-    /// Search for packages
+    /// Search for packages in buckets
     #[command(visible_alias = "s")]
     Search {
         /// Package names to search (supports wildcards *)
