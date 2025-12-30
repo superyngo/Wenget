@@ -48,6 +48,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `FileExtension` enum for archive format detection
 - Added 17 comprehensive test cases for platform detection
 
+## [0.7.0] - 2025-12-30
+
+### Added
+
+- **Platform Selection** - Explicit platform selection for installations
+  - Added `-p`/`--platform` flag to `add` command
+  - Allows installing binaries for specific platforms (e.g., `linux-x64`)
+  - Supports both package and manual URL installations
+
+- **Universal Installation Support** - Complete "Install anything" capability
+  - **Local Binaries**: Install local `.exe` or binary files directly (`wenget add ./mytool.exe`)
+  - **Local Archives**: Install from local `.zip`/`.tar.gz` (`wenget add ./tools.zip`)
+  - **Direct URLs**: Install binaries/archives from any URL (`wenget add https://example.com/tool.zip`)
+  - All installations generate shims and integrate seamlessly
+
+- **UX Enhancements**
+  - **Command Aliases**: Added convenient short aliases
+    - `i` for `info`
+    - `rm`, `uninstall` for `del`
+  - **Source Visibility**: `wenget list --all` now shows the `SOURCE` column
+    - Identify packages from Buckets, Direct URLs, or Scripts instantly
+
 ## [0.6.3] - 2025-12-08
 
 ### Fixed

@@ -5,7 +5,10 @@ use crate::core::{Config, InstalledPackage, Platform, WenPaths};
 use crate::downloader;
 use crate::installer::{
     create_script_shim, create_shim, detect_script_type, download_script, extract_archive,
-    extract_script_name, find_executable_candidates, install_script, is_script_input,
+    extract_script_name, find_executable_candidates,
+    input_detector::{detect_input_type, InputType},
+    install_script,
+    local::install_local_file,
     normalize_command_name, read_local_script,
 };
 use crate::package_resolver::{PackageInput, PackageResolver, ResolvedPackage};
@@ -20,7 +23,12 @@ use std::path::Path;
 use crate::installer::create_symlink;
 
 /// Install packages (smart detection: package names from cache or GitHub URLs)
-pub fn run(names: Vec<String>, yes: bool, script_name: Option<String>) -> Result<()> {
+pub fn run(
+    names: Vec<String>,
+    yes: bool,
+    script_name: Option<String>,
+    platform: Option<String>,
+) -> Result<()> {
     let config = Config::new()?;
     let paths = WenPaths::new()?;
 
@@ -43,12 +51,24 @@ pub fn run(names: Vec<String>, yes: bool, script_name: Option<String>) -> Result
         println!(
             "  wenget add https://raw.githubusercontent.com/.../script.sh  # Install remote script"
         );
+        println!("  wenget add ripgrep -p linux-x64 # Install for specific platform");
         return Ok(());
     }
 
-    // Check if any input is a script
-    let script_inputs: Vec<&String> = names.iter().filter(|n| is_script_input(n)).collect();
-    let package_inputs: Vec<&String> = names.iter().filter(|n| !is_script_input(n)).collect();
+    // Categorize inputs
+    let mut script_inputs = Vec::new();
+    let mut local_inputs = Vec::new();
+    let mut url_inputs = Vec::new();
+    let mut package_inputs = Vec::new();
+
+    for name in &names {
+        match detect_input_type(name) {
+            InputType::Script => script_inputs.push(name),
+            InputType::LocalFile => local_inputs.push(name),
+            InputType::DirectUrl => url_inputs.push(name),
+            InputType::PackageName => package_inputs.push(name),
+        }
+    }
 
     // Handle script installations
     if !script_inputs.is_empty() {
@@ -57,6 +77,30 @@ pub fn run(names: Vec<String>, yes: bool, script_name: Option<String>) -> Result
             &paths,
             &mut installed,
             script_inputs,
+            yes,
+            script_name.as_deref(),
+        )?;
+    }
+
+    // Handle local file installations
+    if !local_inputs.is_empty() {
+        install_local_files(
+            &config,
+            &paths,
+            &mut installed,
+            local_inputs,
+            yes,
+            script_name.as_deref(),
+        )?;
+    }
+
+    // Handle direct URL installations
+    if !url_inputs.is_empty() {
+        install_from_urls(
+            &config,
+            &paths,
+            &mut installed,
+            url_inputs,
             yes,
             script_name.as_deref(),
         )?;
@@ -71,6 +115,7 @@ pub fn run(names: Vec<String>, yes: bool, script_name: Option<String>) -> Result
             package_inputs,
             yes,
             script_name.as_deref(),
+            platform.as_deref(),
         )?;
     }
 
@@ -274,6 +319,171 @@ fn install_single_script(
     Ok(inst_pkg)
 }
 
+/// Install local binary or archive files
+fn install_local_files(
+    config: &Config,
+    paths: &WenPaths,
+    installed: &mut crate::core::InstalledManifest,
+    files: Vec<&String>,
+    yes: bool,
+    custom_name: Option<&str>,
+) -> Result<()> {
+    println!("{}", "Local files to install:".bold());
+
+    for file in &files {
+        println!("  • {}", file);
+    }
+
+    if !yes {
+        print!("\nProceed with installation? [Y/n] ");
+        use std::io::{self, Write};
+        io::stdout().flush()?;
+
+        let mut response = String::new();
+        io::stdin().read_line(&mut response)?;
+        let response = response.trim().to_lowercase();
+
+        if !response.is_empty() && response != "y" && response != "yes" {
+            println!("Installation cancelled");
+            return Ok(());
+        }
+    }
+
+    println!();
+
+    let mut success_count = 0;
+    let mut fail_count = 0;
+
+    for file in files {
+        println!("{} {}...", "Installing".cyan(), file);
+        let path = Path::new(file);
+
+        match install_local_file(paths, path, custom_name, None) {
+            Ok(inst_pkg) => {
+                let name = inst_pkg.command_name.clone();
+                installed.upsert_package(name.clone(), inst_pkg);
+                config.save_installed(installed)?;
+                println!("  {} Installed successfully as {}", "✓".green(), name);
+                success_count += 1;
+            }
+            Err(e) => {
+                println!("  {} Failed to install {}: {}", "✗".red(), file, e);
+                fail_count += 1;
+            }
+        }
+        println!();
+    }
+
+    println!("{}", "Summary:".bold());
+    if success_count > 0 {
+        println!("  {} {} file(s) installed", "✓".green(), success_count);
+    }
+    if fail_count > 0 {
+        println!("  {} {} file(s) failed", "✗".red(), fail_count);
+    }
+
+    Ok(())
+}
+
+/// Install binary or archive from direct URLs
+fn install_from_urls(
+    config: &Config,
+    paths: &WenPaths,
+    installed: &mut crate::core::InstalledManifest,
+    urls: Vec<&String>,
+    yes: bool,
+    custom_name: Option<&str>,
+) -> Result<()> {
+    println!("{}", "URLs to install:".bold());
+
+    for url in &urls {
+        println!("  • {}", url);
+    }
+
+    if !yes {
+        print!("\nProceed with installation? [Y/n] ");
+        use std::io::{self, Write};
+        io::stdout().flush()?;
+
+        let mut response = String::new();
+        io::stdin().read_line(&mut response)?;
+        let response = response.trim().to_lowercase();
+
+        if !response.is_empty() && response != "y" && response != "yes" {
+            println!("Installation cancelled");
+            return Ok(());
+        }
+    }
+
+    println!();
+
+    let mut success_count = 0;
+    let mut fail_count = 0;
+
+    // Create temp dir for downloads
+    let temp_dir = paths.cache_dir().join("downloads");
+    fs::create_dir_all(&temp_dir)?;
+
+    for url in urls {
+        println!("{} {}...", "Downloading".cyan(), url);
+
+        let filename = match url.split('/').next_back() {
+            Some(name) => name,
+            None => {
+                println!("  {} Invalid URL", "✗".red());
+                fail_count += 1;
+                continue;
+            }
+        };
+
+        // Handle query parameters in URL
+        let filename = filename.split('?').next().unwrap_or(filename);
+        let download_path = temp_dir.join(filename);
+
+        match downloader::download_file(url, &download_path) {
+            Ok(_) => {
+                println!("  {} Downloaded", "✓".green());
+                println!("{} {}...", "Installing".cyan(), filename);
+
+                match install_local_file(paths, &download_path, custom_name, Some(url.to_string()))
+                {
+                    Ok(inst_pkg) => {
+                        let name = inst_pkg.command_name.clone();
+                        installed.upsert_package(name.clone(), inst_pkg);
+                        config.save_installed(installed)?;
+                        println!("  {} Installed successfully as {}", "✓".green(), name);
+                        success_count += 1;
+                    }
+                    Err(e) => {
+                        println!("  {} Failed to install {}: {}", "✗".red(), filename, e);
+                        fail_count += 1;
+                    }
+                }
+            }
+            Err(e) => {
+                println!("  {} Failed to download {}: {}", "✗".red(), url, e);
+                fail_count += 1;
+            }
+        }
+
+        // Clean up downloaded file
+        if download_path.exists() {
+            let _ = fs::remove_file(&download_path);
+        }
+        println!();
+    }
+
+    println!("{}", "Summary:".bold());
+    if success_count > 0 {
+        println!("  {} {} URL(s) installed", "✓".green(), success_count);
+    }
+    if fail_count > 0 {
+        println!("  {} {} URL(s) failed", "✗".red(), fail_count);
+    }
+
+    Ok(())
+}
+
 /// Install packages from cache or GitHub (existing logic)
 fn install_packages(
     config: &Config,
@@ -282,10 +492,17 @@ fn install_packages(
     names: Vec<&String>,
     yes: bool,
     custom_name: Option<&str>,
+    custom_platform: Option<&str>,
 ) -> Result<()> {
-    // Get current platform
-    let platform = Platform::current();
-    let platform_ids = platform.possible_identifiers();
+    // Get platform - use custom if provided, otherwise detect current
+    let platform_ids = if let Some(custom_plat) = custom_platform {
+        // User specified a platform
+        vec![custom_plat.to_string()]
+    } else {
+        // Auto-detect current platform
+        let platform = Platform::current();
+        platform.possible_identifiers()
+    };
 
     // Load cache once for both script lookup and package resolution
     let cache = config.get_or_rebuild_cache()?;

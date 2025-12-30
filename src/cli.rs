@@ -39,6 +39,10 @@ pub enum Commands {
         /// Custom command name (overrides the default executable name)
         #[arg(short = 'n', long = "name")]
         script_name: Option<String>,
+
+        /// Specify target platform (e.g., windows-x64, linux-x64, darwin-arm64)
+        #[arg(short = 'p', long = "platform")]
+        platform: Option<String>,
     },
 
     /// List installed packages
@@ -50,6 +54,7 @@ pub enum Commands {
     },
 
     /// Show package information from cache or GitHub URL
+    #[command(visible_alias = "i")]
     Info {
         /// Package names or GitHub URLs to show (supports wildcards * for cache queries)
         names: Vec<String>,
@@ -75,6 +80,8 @@ pub enum Commands {
 
     /// Delete (remove) installed packages
     #[command(visible_alias = "remove")]
+    #[command(visible_alias = "rm")]
+    #[command(visible_alias = "uninstall")]
     Del {
         /// Package names to delete (supports wildcards *)
         names: Vec<String>,
