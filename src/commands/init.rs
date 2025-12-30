@@ -6,7 +6,10 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use std::env;
 use std::io::{self, Write as IoWrite};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+
+#[cfg(windows)]
+use std::path::Path;
 
 #[cfg(not(windows))]
 use std::fs::{self, OpenOptions};

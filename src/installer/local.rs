@@ -10,9 +10,10 @@ use crate::installer::symlink::create_symlink;
 
 use crate::core::manifest::PackageSource;
 use crate::core::{InstalledPackage, WenPaths};
-use crate::installer::{
-    create_shim, extract_archive, find_executable_candidates, normalize_command_name,
-};
+use crate::installer::{extract_archive, find_executable_candidates, normalize_command_name};
+
+#[cfg(windows)]
+use crate::installer::create_shim;
 
 /// Install a local file (archive or binary)
 pub fn install_local_file(
