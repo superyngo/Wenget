@@ -56,7 +56,8 @@ fn main() {
             names,
             yes,
             script_name,
-        } => commands::run_add(names, yes, script_name),
+            platform,
+        } => commands::run_add(names, yes, script_name, platform),
 
         Commands::List { all } => commands::run_list(all),
 
