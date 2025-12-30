@@ -275,39 +275,68 @@ del /f /q "%~f0"
 
 /// Replace executable on Unix (Linux/macOS)
 ///
-/// Unix locks running executables, so we use a multi-step process:
-/// 1. Rename current exe to .old
-/// 2. Copy new exe to original location
-/// 3. The old file can be removed on next cleanup
+/// This function uses a robust strategy to replace the running executable:
+/// 1. The new executable is made executable (`chmod 755`).
+/// 2. The current running executable is renamed to `*.old`.
+/// 3. An atomic `fs::rename` is attempted to move the new executable into place.
+/// 4. If `rename` fails (e.g., cross-device link), it falls back to `fs::copy`.
+/// 5. The `*.old` file is removed on a best-effort basis.
 #[cfg(not(windows))]
 fn replace_exe_unix(current_exe: &std::path::PathBuf, new_exe: &std::path::PathBuf) -> Result<()> {
     use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+
+    // Set permissions on the new executable before doing anything else.
+    fs::set_permissions(new_exe, fs::Permissions::from_mode(0o755))?;
 
     let old_exe = current_exe.with_extension("old");
 
-    // Remove any existing .old file
+    // Remove any existing .old file to avoid confusion.
     if old_exe.exists() {
         let _ = fs::remove_file(&old_exe);
     }
 
-    // Rename current executable (this allows the process to keep running from the old inode)
-    fs::rename(current_exe, &old_exe)?;
-
-    // Copy new executable to the original location
-    fs::copy(new_exe, current_exe)?;
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-
-        // Ensure new executable has correct permissions
-        let mut perms = fs::metadata(current_exe)?.permissions();
-        perms.set_mode(0o755);
-        fs::set_permissions(current_exe, perms)?;
+    // 1. Rename the currently running executable.
+    if let Err(e) = fs::rename(current_exe, &old_exe) {
+        return Err(anyhow::anyhow!(
+            "Failed to rename running executable: {}. Try running with sudo.",
+            e
+        ));
     }
 
-    // Optionally clean up old file immediately (best effort)
-    let _ = fs::remove_file(&old_exe);
+    // 2. Move the new executable into place. Try atomic rename first.
+    if let Err(rename_err) = fs::rename(new_exe, current_exe) {
+        // Rename failed, likely a cross-device link error (EXDEV). Fall back to copying.
+        log::warn!(
+            "Atomic rename failed: {}. Falling back to copy.",
+            rename_err
+        );
+        match fs::copy(new_exe, current_exe) {
+            Ok(_) => {
+                // Permissions may not be preserved by `copy`, so set them again.
+                fs::set_permissions(current_exe, fs::Permissions::from_mode(0o755))?;
+            }
+            Err(copy_err) => {
+                // Copy failed. Try to restore the original executable.
+                log::error!("Failed to copy new executable: {}", copy_err);
+                if let Err(restore_err) = fs::rename(&old_exe, current_exe) {
+                    log::error!(
+                        "CRITICAL: Failed to restore original executable: {}",
+                        restore_err
+                    );
+                }
+                return Err(copy_err.into());
+            }
+        }
+    }
+
+    // 3. Clean up the old executable (best-effort).
+    if let Err(e) = fs::remove_file(&old_exe) {
+        log::warn!(
+            "Failed to remove old executable: {}. It can be removed manually.",
+            e
+        );
+    }
 
     Ok(())
 }

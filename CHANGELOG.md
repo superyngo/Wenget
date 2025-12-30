@@ -48,6 +48,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `FileExtension` enum for archive format detection
 - Added 17 comprehensive test cases for platform detection
 
+## [0.7.1] - 2025-12-30
+
+### Fixed
+
+- **Linux Self-Update** - Resolved "Text file busy" error on Alpine Linux and other Unix systems
+  - Implemented robust atomic rename strategy for updating the running executable
+  - Added fallback mechanism to copy if rename fails (cross-filesystem)
+  - Improved permission handling and error recovery during updates
+- **Code Maintenance**
+  - Fixed various clippy warnings and unused imports
+  - Improved code hygiene in installer and command modules
+
 ## [0.7.0] - 2025-12-30
 
 ### Added

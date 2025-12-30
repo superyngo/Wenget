@@ -4,7 +4,7 @@ use crate::core::manifest::{PackageSource, ScriptType};
 use crate::core::{Config, InstalledPackage, Platform, WenPaths};
 use crate::downloader;
 use crate::installer::{
-    create_script_shim, create_shim, detect_script_type, download_script, extract_archive,
+    create_script_shim, detect_script_type, download_script, extract_archive,
     extract_script_name, find_executable_candidates,
     input_detector::{detect_input_type, InputType},
     install_script,
