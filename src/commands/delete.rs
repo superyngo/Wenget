@@ -9,7 +9,6 @@ use std::fs;
 use std::io::{self, Write as IoWrite};
 use std::path::Path;
 
-#[cfg(not(windows))]
 /// Delete installed packages
 pub fn run(names: Vec<String>, yes: bool, force: bool) -> Result<()> {
     // Check for self-deletion request

@@ -1,6 +1,7 @@
 //! Shim creation for Windows
 
-use anyhow::Result;
+use anyhow::{Context, Result};
+use std::fs;
 use std::path::Path;
 
 /// Create a .cmd shim (Windows only)
