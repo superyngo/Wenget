@@ -93,7 +93,6 @@ impl ScriptType {
     /// Check basic OS compatibility without executing commands (for listing)
     /// This is faster than is_supported_on_current_platform and doesn't require
     /// the interpreter to be installed
-    #[allow(dead_code)]
     pub fn is_os_compatible(&self) -> bool {
         match self {
             ScriptType::PowerShell => {
@@ -211,14 +210,46 @@ pub struct ScriptItem {
 }
 
 impl ScriptItem {
-    /// Get the best compatible script for the current platform
+    /// Get the best compatible script for the current platform (for display/listing)
     ///
     /// Priority order:
     /// - Windows: PowerShell > Batch > Python > Bash
     /// - Unix: Bash > Python > PowerShell
     ///
+    /// Note: This uses `is_os_compatible()` for basic OS-level filtering,
+    /// which doesn't check if the actual interpreter is installed.
+    /// For installation, use `get_installable_script()` instead.
+    ///
     /// Returns the script type and its platform info if a compatible one is found.
     pub fn get_compatible_script(&self) -> Option<(ScriptType, &ScriptPlatform)> {
+        let preference_order = if cfg!(target_os = "windows") {
+            vec![
+                ScriptType::PowerShell,
+                ScriptType::Batch,
+                ScriptType::Python,
+                ScriptType::Bash,
+            ]
+        } else {
+            vec![ScriptType::Bash, ScriptType::Python, ScriptType::PowerShell]
+        };
+
+        for script_type in preference_order {
+            if script_type.is_os_compatible() {
+                if let Some(platform) = self.platforms.get(&script_type) {
+                    return Some((script_type, platform));
+                }
+            }
+        }
+        None
+    }
+
+    /// Get the best installable script for the current platform (checks if interpreter exists)
+    ///
+    /// This is more thorough than `get_compatible_script()` as it actually checks
+    /// if the required interpreter is installed on the system.
+    ///
+    /// Returns the script type and its platform info if an installable one is found.
+    pub fn get_installable_script(&self) -> Option<(ScriptType, &ScriptPlatform)> {
         let preference_order = if cfg!(target_os = "windows") {
             vec![
                 ScriptType::PowerShell,
