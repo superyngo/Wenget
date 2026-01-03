@@ -74,8 +74,11 @@ The codebase follows a layered architecture:
 3. **Core Functionality** (`src/core/`)
    - `config.rs`: Central configuration and state management
    - `manifest.rs`: Package and script manifest structures
-   - `paths.rs`: Directory structure management (`~/.wenget/`)
+   - `paths.rs`: Directory structure management (user/system-level)
    - `platform.rs`: Platform detection and binary selection logic
+   - `privilege.rs`: Elevated privilege detection (root/Administrator)
+   - `registry.rs`: Windows registry PATH modification
+   - `repair.rs`: JSON corruption detection and auto-repair
 
 4. **Package Resolution** (`src/package_resolver.rs`)
    - Determines if input is a package name or GitHub URL
@@ -123,7 +126,7 @@ The codebase follows a layered architecture:
 
 ### Directory Structure
 
-All Wenget data lives in `~/.wenget/`:
+**User-level (`~/.wenget/`):**
 ```
 ~/.wenget/
 ├── apps/              # Installed binaries (each in own subdirectory)
@@ -134,6 +137,12 @@ All Wenget data lives in `~/.wenget/`:
 ├── buckets.json       # Bucket configuration
 └── installed.json     # Installed package metadata
 ```
+
+**System-level (when running as root/Administrator):**
+- Linux: `/opt/wenget/` with symlinks in `/usr/local/bin/`
+- Windows: `%ProgramW6432%\wenget\` with bin added to system PATH
+
+The `WenPaths` struct in `src/core/paths.rs` auto-detects privilege level via `is_elevated()` from `privilege.rs`.
 
 ## Important Implementation Details
 
@@ -159,6 +168,16 @@ Packages can come from three sources (see `PackageSource` enum in `src/core/mani
 - Bucket-based installs don't consume API calls (use cached data)
 - Direct URL installs consume ~2 API calls per package
 - `wenget update` checks each installed package for updates
+
+### Self-Update
+- `wenget update self` updates Wenget itself
+- Windows: Uses background cleanup script to handle locked executable
+- Unix: Atomic rename with fallback
+
+### Auto-Repair
+- Corrupted JSON files (installed.json, buckets.json, manifest-cache.json) are automatically detected
+- `repair.rs` creates backups before attempting repair
+- Graceful degradation when config files are unreadable
 
 ## Testing Notes
 
@@ -187,3 +206,5 @@ The `Cargo.toml` has aggressive optimization for small binary size:
 - Cache must be rebuilt when buckets are added/removed
 - Platform detection requires exact platform string matching for manifest entries
 - Shims on Windows must handle spaces in paths correctly
+- System-level vs user-level paths are auto-detected via `privilege.rs`
+- Self-deletion (`wenget del self`) has special handling when executable is inside .wenget

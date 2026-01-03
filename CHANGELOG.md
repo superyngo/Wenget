@@ -5,6 +5,55 @@ All notable changes to Wenget will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-01-03
+
+### Added
+
+- **Multi-Platform Variant Support** - Bucket manifests now include ALL platform variants
+  - `bucket create` now collects all available platform variants (musl, gnu, msvc, etc.) instead of selecting only the highest-scored one
+  - Manifests can now contain both `linux-x86_64-musl` and `linux-x86_64-gnu` simultaneously
+  - Enables users to choose their preferred variant during installation
+
+- **Smart Platform Fallback System** - Intelligent platform matching with cross-compatibility
+  - Automatically suggests compatible fallback platforms when exact match isn't available
+  - **Architecture Fallback**:
+    - 64-bit systems can install 32-bit binaries (with user confirmation)
+    - macOS ARM (Apple Silicon) can install x86_64 binaries via Rosetta 2 (with user confirmation)
+    - Windows ARM can install x86_64 binaries via emulation (with user confirmation)
+  - **Compiler/libc Fallback**:
+    - Linux systems can use musl binaries on glibc systems (automatic, statically linked)
+    - Linux systems can use glibc binaries on musl systems (with user confirmation)
+    - Windows systems can use different compiler variants (automatic)
+  - Clear user prompts explaining the fallback type and compatibility implications
+  - Preserves existing scoring-based platform preference system
+
+- **New Platform Matching API**
+  - Added `FallbackType` enum to categorize different fallback scenarios
+  - Added `PlatformMatch` struct to provide detailed matching information
+  - Added `Platform::find_best_match()` for intelligent platform selection
+  - Added `BinarySelector::select_all_for_platform()` to retrieve all matching variants
+  - Added `ScriptItem::get_installable_script()` for proper interpreter verification during installation
+
+### Changed
+
+- **Enhanced `extract_platforms()`** - Now returns all platform variants instead of only the best match
+- **Improved Installation Flow** - Uses new `find_best_match()` API for smarter platform selection
+- **Better User Experience** - Informative messages when using fallback platforms
+
+### Fixed
+
+- **Script Platform Compatibility** - Fixed incorrect script platform detection on Windows
+  - `list --all` and `info` commands no longer show Bash scripts as compatible on Windows unless Bash is actually installed
+  - Separated `is_os_compatible()` (for display) from `is_supported_on_current_platform()` (for installation verification)
+  - Installation now properly checks if script interpreter exists before allowing installation
+
+### Technical
+
+- Added comprehensive test coverage for multi-platform and fallback scenarios
+- Added `#[allow(dead_code)]` annotations for future-facing APIs
+- Fixed all clippy warnings and code formatting issues
+- Updated internal platform matching logic to support multiple variants per OS/architecture combination
+
 ## [0.8.0] - 2026-01-03
 
 ### Added

@@ -497,14 +497,13 @@ fn install_packages(
     custom_name: Option<&str>,
     custom_platform: Option<&str>,
 ) -> Result<()> {
-    // Get platform - use custom if provided, otherwise detect current
-    let platform_ids = if let Some(custom_plat) = custom_platform {
-        // User specified a platform
-        vec![custom_plat.to_string()]
+    // Get current platform
+    let current_platform = if let Some(_custom_plat) = custom_platform {
+        // TODO: Parse custom platform string into Platform struct
+        // For now, use fallback to platform_ids logic
+        Platform::current()
     } else {
-        // Auto-detect current platform
-        let platform = Platform::current();
-        platform.possible_identifiers()
+        Platform::current()
     };
 
     // Load cache once for both script lookup and package resolution
@@ -512,7 +511,8 @@ fn install_packages(
 
     // Resolve all inputs and collect packages/scripts to install
     let resolver = PackageResolver::new(config, &cache)?;
-    let mut packages_to_install: Vec<ResolvedPackage> = Vec::new();
+    let mut packages_to_install: Vec<(ResolvedPackage, crate::core::platform::PlatformMatch)> =
+        Vec::new();
     let mut scripts_to_install: Vec<(String, String, ScriptType, String)> = Vec::new(); // (name, url, type, origin)
 
     for name in &names {
@@ -521,21 +521,81 @@ fn install_packages(
         match resolver.resolve(&input) {
             Ok(resolved) => {
                 for pkg_resolved in resolved {
-                    // Check platform support
-                    let platform_matches = platform_ids
-                        .iter()
-                        .any(|id| pkg_resolved.package.platforms.contains_key(id));
+                    // Use smart platform matching
+                    let matches = if let Some(custom_plat) = custom_platform {
+                        // If custom platform specified, try direct match
+                        if pkg_resolved.package.platforms.contains_key(custom_plat) {
+                            vec![crate::core::platform::PlatformMatch {
+                                platform_id: custom_plat.to_string(),
+                                is_exact: true,
+                                fallback_type: None,
+                                score: 1000,
+                            }]
+                        } else {
+                            vec![]
+                        }
+                    } else {
+                        current_platform.find_best_match(&pkg_resolved.package.platforms)
+                    };
 
-                    if !platform_matches {
+                    if matches.is_empty() {
                         println!(
-                            "{} {} does not support current platform",
+                            "{} {} does not support platform {}",
                             "Warning:".yellow(),
-                            pkg_resolved.package.name
+                            pkg_resolved.package.name,
+                            current_platform
+                        );
+                        println!(
+                            "  Available platforms: {}",
+                            pkg_resolved
+                                .package
+                                .platforms
+                                .keys()
+                                .cloned()
+                                .collect::<Vec<_>>()
+                                .join(", ")
                         );
                         continue;
                     }
 
-                    packages_to_install.push(pkg_resolved);
+                    let best_match = &matches[0];
+
+                    // Check if fallback requires confirmation
+                    if let Some(fallback_type) = &best_match.fallback_type {
+                        if fallback_type.requires_confirmation() && !yes {
+                            println!(
+                                "{} {} - no exact match for {}, but {} is available",
+                                "⚠".yellow(),
+                                pkg_resolved.package.name,
+                                current_platform,
+                                best_match.platform_id
+                            );
+                            println!("  This is a fallback: {}", fallback_type.description());
+                            print!("  Install anyway? [y/N] ");
+
+                            use std::io::{self, Write};
+                            io::stdout().flush()?;
+
+                            let mut response = String::new();
+                            io::stdin().read_line(&mut response)?;
+                            let response = response.trim().to_lowercase();
+
+                            if response != "y" && response != "yes" {
+                                println!("  Skipped");
+                                continue;
+                            }
+                        } else if !yes {
+                            // Fallback doesn't require confirmation, but inform user
+                            println!(
+                                "{} Using fallback: {} ({})",
+                                "ℹ".cyan(),
+                                best_match.platform_id,
+                                fallback_type.description()
+                            );
+                        }
+                    }
+
+                    packages_to_install.push((pkg_resolved, best_match.clone()));
                 }
             }
             Err(_) => {
@@ -543,8 +603,8 @@ fn install_packages(
                 if let Some(cached_script) = cache.find_script(name) {
                     let script = &cached_script.script;
 
-                    // Get compatible script for current platform
-                    if let Some((script_type, platform_info)) = script.get_compatible_script() {
+                    // Get installable script for current platform (checks if interpreter exists)
+                    if let Some((script_type, platform_info)) = script.get_installable_script() {
                         // Prepare script for installation
                         let source_name = match &cached_script.source {
                             PackageSource::Bucket { name } => format!("bucket:{}", name),
@@ -589,10 +649,10 @@ fn install_packages(
         println!("{}", "Packages to install:".bold());
     }
 
-    let mut to_install: Vec<ResolvedPackage> = Vec::new();
-    let mut to_update: Vec<ResolvedPackage> = Vec::new();
+    let mut to_install: Vec<(ResolvedPackage, crate::core::platform::PlatformMatch)> = Vec::new();
+    let mut to_update: Vec<(ResolvedPackage, crate::core::platform::PlatformMatch)> = Vec::new();
 
-    for resolved in packages_to_install {
+    for (resolved, platform_match) in packages_to_install {
         let pkg_name = &resolved.package.name;
         let repo = &resolved.package.repo;
 
@@ -624,7 +684,7 @@ fn install_packages(
                     "upgrade to".yellow(),
                     version.green()
                 );
-                to_update.push(resolved);
+                to_update.push((resolved, platform_match));
             }
         } else {
             // New installation
@@ -635,7 +695,7 @@ fn install_packages(
                 version,
                 "(new)".green()
             );
-            to_install.push(resolved);
+            to_install.push((resolved, platform_match));
         }
     }
 
@@ -706,7 +766,7 @@ fn install_packages(
     // Collect packages to update in cache (packages fetched from GitHub API)
     let mut packages_to_cache: Vec<(crate::core::Package, PackageSource)> = Vec::new();
 
-    for resolved in all_packages {
+    for (resolved, platform_match) in all_packages {
         let pkg_name = &resolved.package.name;
         let repo_url = &resolved.package.repo;
 
@@ -756,7 +816,7 @@ fn install_packages(
             config,
             paths,
             &pkg_to_install,
-            &platform_ids,
+            &platform_match,
             &version,
             &resolved.source,
             custom_name,
@@ -853,16 +913,25 @@ fn install_package(
     _config: &Config,
     paths: &WenPaths,
     pkg: &crate::core::Package,
-    platform_ids: &[String],
+    platform_match: &crate::core::platform::PlatformMatch,
     version: &str,
     source: &PackageSource,
     custom_name: Option<&str>,
 ) -> Result<InstalledPackage> {
-    // Find platform binary
-    let (platform_id, binary) = platform_ids
-        .iter()
-        .find_map(|id| pkg.platforms.get(id).map(|b| (id, b)))
-        .context("No binary found for current platform")?;
+    // Find platform binary using the matched platform_id
+    let binary = pkg
+        .platforms
+        .get(&platform_match.platform_id)
+        .context("Platform binary not found")?;
+
+    // Log if using fallback
+    if let Some(fallback_type) = &platform_match.fallback_type {
+        log::info!(
+            "Using fallback platform {} ({})",
+            platform_match.platform_id,
+            fallback_type.description()
+        );
+    }
 
     // Download binary
     println!("  Downloading from {}...", binary.url);
@@ -993,7 +1062,7 @@ fn install_package(
     // Create installed package info
     let inst_pkg = InstalledPackage {
         version: version.to_string(),
-        platform: platform_id.clone(),
+        platform: platform_match.platform_id.clone(),
         installed_at: Utc::now(),
         install_path: app_dir.to_string_lossy().to_string(),
         files: extracted_files,

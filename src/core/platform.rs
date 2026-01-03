@@ -7,6 +7,60 @@
 
 use std::collections::HashMap;
 
+/// Types of fallback compatibility
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)] // Some variants used in tests and future features
+pub enum FallbackType {
+    /// Using musl on a GNU system (compatible - musl is statically linked)
+    MuslOnGnu,
+    /// Using GNU on a musl system (may require glibc installation)
+    GnuOnMusl,
+    /// 32-bit binary on 64-bit system
+    Arch32On64,
+    /// x86_64 on ARM via emulation (Rosetta 2, Windows 11)
+    X64OnArm,
+    /// Different compiler variant on Windows
+    WindowsCompilerVariant,
+}
+
+impl FallbackType {
+    /// Get user-friendly description of the fallback
+    pub fn description(&self) -> &str {
+        match self {
+            FallbackType::MuslOnGnu => "musl-linked binary (statically linked, should work)",
+            FallbackType::GnuOnMusl => "glibc-linked binary (may require glibc installation)",
+            FallbackType::Arch32On64 => "32-bit binary on 64-bit system",
+            FallbackType::X64OnArm => "x86_64 binary via emulation (Rosetta 2 / Windows 11)",
+            FallbackType::WindowsCompilerVariant => "different compiler variant",
+        }
+    }
+
+    /// Whether this fallback should require user confirmation
+    pub fn requires_confirmation(&self) -> bool {
+        match self {
+            FallbackType::MuslOnGnu => false,              // Generally works
+            FallbackType::GnuOnMusl => true,               // May not work
+            FallbackType::Arch32On64 => true,              // User might want 64-bit
+            FallbackType::X64OnArm => true,                // Performance impact
+            FallbackType::WindowsCompilerVariant => false, // Usually works
+        }
+    }
+}
+
+/// Result of platform matching with compatibility information
+#[derive(Debug, Clone)]
+pub struct PlatformMatch {
+    /// The platform identifier that matched
+    pub platform_id: String,
+    /// Whether this is an exact match or fallback
+    #[allow(dead_code)] // Used for future features and debugging
+    pub is_exact: bool,
+    /// Type of fallback if not exact
+    pub fallback_type: Option<FallbackType>,
+    /// Score for this match (higher = better)
+    pub score: usize,
+}
+
 /// Supported operating systems
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Os {
@@ -391,6 +445,91 @@ impl Platform {
 
         identifiers
     }
+
+    /// Find best matching platform from available options
+    ///
+    /// Returns matches in priority order:
+    /// 1. Exact match with preferred compiler
+    /// 2. Exact match with different compiler
+    /// 3. Compatible fallback (with confirmation if needed)
+    pub fn find_best_match(
+        &self,
+        available_platforms: &HashMap<String, crate::core::manifest::PlatformBinary>,
+    ) -> Vec<PlatformMatch> {
+        let mut matches = Vec::new();
+
+        // Phase 1: Try exact matches (same OS + arch)
+        let exact_ids = self.possible_identifiers();
+        for (priority, id) in exact_ids.iter().enumerate() {
+            if available_platforms.contains_key(id) {
+                matches.push(PlatformMatch {
+                    platform_id: id.clone(),
+                    is_exact: true,
+                    fallback_type: None,
+                    score: 1000 - priority, // Higher priority = higher score
+                });
+            }
+        }
+
+        // Phase 2: If no exact matches, try fallbacks
+        if matches.is_empty() {
+            let fallback_ids = self.fallback_identifiers();
+            for (id, fallback_type) in fallback_ids {
+                if available_platforms.contains_key(&id) {
+                    let score = match fallback_type {
+                        FallbackType::MuslOnGnu => 500,
+                        FallbackType::GnuOnMusl => 400,
+                        FallbackType::WindowsCompilerVariant => 450,
+                        FallbackType::Arch32On64 => 300,
+                        FallbackType::X64OnArm => 200,
+                    };
+                    matches.push(PlatformMatch {
+                        platform_id: id,
+                        is_exact: false,
+                        fallback_type: Some(fallback_type),
+                        score,
+                    });
+                }
+            }
+        }
+
+        // Sort by score descending
+        matches.sort_by(|a, b| b.score.cmp(&a.score));
+        matches
+    }
+
+    /// Get fallback platform identifiers for cross-compatibility
+    fn fallback_identifiers(&self) -> Vec<(String, FallbackType)> {
+        let mut fallbacks = Vec::new();
+
+        match (self.os, self.arch) {
+            // Linux x86_64: can run i686 binaries
+            (Os::Linux, Arch::X86_64) => {
+                fallbacks.push(("linux-i686".to_string(), FallbackType::Arch32On64));
+                fallbacks.push(("linux-i686-musl".to_string(), FallbackType::Arch32On64));
+                fallbacks.push(("linux-i686-gnu".to_string(), FallbackType::Arch32On64));
+            }
+            // macOS ARM: can run x86_64 via Rosetta 2
+            (Os::MacOS, Arch::Aarch64) => {
+                fallbacks.push(("macos-x86_64".to_string(), FallbackType::X64OnArm));
+            }
+            // Windows x86_64: can run i686 binaries
+            (Os::Windows, Arch::X86_64) => {
+                fallbacks.push(("windows-i686".to_string(), FallbackType::Arch32On64));
+                fallbacks.push(("windows-i686-msvc".to_string(), FallbackType::Arch32On64));
+                fallbacks.push(("windows-i686-gnu".to_string(), FallbackType::Arch32On64));
+            }
+            // Windows ARM: can run x86_64 via emulation (Windows 11)
+            (Os::Windows, Arch::Aarch64) => {
+                fallbacks.push(("windows-x86_64".to_string(), FallbackType::X64OnArm));
+                fallbacks.push(("windows-x86_64-msvc".to_string(), FallbackType::X64OnArm));
+                fallbacks.push(("windows-i686".to_string(), FallbackType::X64OnArm));
+            }
+            _ => {}
+        }
+
+        fallbacks
+    }
 }
 
 impl std::fmt::Display for Platform {
@@ -428,6 +567,7 @@ impl BinarySelector {
     ///
     /// # Returns
     /// The best matching asset, or None if no suitable asset found
+    #[allow(dead_code)] // Kept for backward compatibility and future use
     pub fn select_for_platform(assets: &[BinaryAsset], platform: Platform) -> Option<BinaryAsset> {
         let mut scored_assets: Vec<(usize, &BinaryAsset)> = assets
             .iter()
@@ -441,6 +581,55 @@ impl BinarySelector {
         scored_assets.sort_by(|a, b| b.0.cmp(&a.0));
 
         scored_assets.first().map(|(_, asset)| (*asset).clone())
+    }
+
+    /// Select ALL matching binary assets for a given platform, with scores
+    ///
+    /// Returns a vector of (score, BinaryAsset, Compiler) tuples, sorted by score descending.
+    /// Unlike `select_for_platform()`, this returns ALL matching assets, not just the best.
+    ///
+    /// # Arguments
+    /// * `assets` - List of available assets
+    /// * `platform` - Target platform
+    ///
+    /// # Returns
+    /// Vector of (score, asset, compiler_variant) sorted by score (highest first)
+    pub fn select_all_for_platform(
+        assets: &[BinaryAsset],
+        platform: Platform,
+    ) -> Vec<(usize, BinaryAsset, Option<Compiler>)> {
+        let mut scored_assets: Vec<(usize, BinaryAsset, Option<Compiler>)> = assets
+            .iter()
+            .filter_map(|asset| {
+                let score = Self::score_asset(&asset.name, platform)?;
+                let compiler = Self::detect_compiler_from_filename(&asset.name);
+                Some((score, asset.clone(), compiler))
+            })
+            .collect();
+
+        // Sort by score (highest first)
+        scored_assets.sort_by(|a, b| b.0.cmp(&a.0));
+        scored_assets
+    }
+
+    /// Extract compiler from filename (helper method)
+    ///
+    /// # Arguments
+    /// * `filename` - The asset filename to analyze
+    ///
+    /// # Returns
+    /// The detected compiler variant, or None if not detected
+    fn detect_compiler_from_filename(filename: &str) -> Option<Compiler> {
+        let lower = filename.to_lowercase();
+        if lower.contains("musl") {
+            Some(Compiler::Musl)
+        } else if lower.contains("msvc") {
+            Some(Compiler::Msvc)
+        } else if lower.contains("gnu") || lower.contains("glibc") {
+            Some(Compiler::Gnu)
+        } else {
+            None
+        }
     }
 
     /// Score an asset filename based on how well it matches the platform
@@ -549,7 +738,10 @@ impl BinarySelector {
 
     /// Extract platform information from available assets
     ///
-    /// Returns a map of platform identifiers to assets
+    /// Returns a map of platform identifiers to assets.
+    /// Now includes ALL matching variants, not just the highest-scored one.
+    /// For example, if both musl and gnu variants exist for linux-x86_64,
+    /// both will be included in the result.
     pub fn extract_platforms(assets: &[BinaryAsset]) -> HashMap<String, BinaryAsset> {
         let mut platforms = HashMap::new();
 
@@ -573,27 +765,19 @@ impl BinarySelector {
         ];
 
         for platform in test_platforms {
-            if let Some(asset) = Self::select_for_platform(assets, platform) {
-                let asset_lower = asset.name.to_lowercase();
+            // NEW: Get ALL matching assets, not just the best one
+            let all_matches = Self::select_all_for_platform(assets, platform);
 
-                // Determine compiler variant from the asset
-                let compiler = if asset_lower.contains("musl") {
-                    Some(Compiler::Musl)
-                } else if asset_lower.contains("msvc") {
-                    Some(Compiler::Msvc)
-                } else if asset_lower.contains("gnu") || asset_lower.contains("glibc") {
-                    Some(Compiler::Gnu)
-                } else {
-                    None
-                };
-
-                // Build platform identifier
+            for (_score, asset, compiler) in all_matches {
+                // Build platform identifier with compiler variant
                 let platform_id = match compiler {
                     Some(c) => format!("{}-{}", platform, c.as_str()),
                     None => platform.to_string(),
                 };
 
-                platforms.insert(platform_id, asset);
+                // Only insert if we don't already have this exact platform_id
+                // (handles case where multiple assets match same platform without compiler info)
+                platforms.entry(platform_id).or_insert(asset);
             }
         }
 
@@ -958,5 +1142,122 @@ mod tests {
         assert_eq!(Arch::resolve_x86_keyword(Os::MacOS), Arch::X86_64);
         assert_eq!(Arch::resolve_x86_keyword(Os::Linux), Arch::I686);
         assert_eq!(Arch::resolve_x86_keyword(Os::Windows), Arch::I686);
+    }
+
+    #[test]
+    fn test_extract_all_platform_variants() {
+        // Test that both musl and gnu variants are extracted
+        let assets = vec![
+            BinaryAsset {
+                name: "app-linux-x86_64-gnu.tar.gz".to_string(),
+                url: "https://example.com/gnu.tar.gz".to_string(),
+                size: 1000000,
+            },
+            BinaryAsset {
+                name: "app-linux-x86_64-musl.tar.gz".to_string(),
+                url: "https://example.com/musl.tar.gz".to_string(),
+                size: 1000000,
+            },
+        ];
+
+        let platforms = BinarySelector::extract_platforms(&assets);
+
+        // Both should be present
+        assert!(
+            platforms.contains_key("linux-x86_64-musl"),
+            "Should include musl variant"
+        );
+        assert!(
+            platforms.contains_key("linux-x86_64-gnu"),
+            "Should include gnu variant"
+        );
+        assert_eq!(platforms.len(), 2, "Should have exactly 2 platforms");
+    }
+
+    #[test]
+    fn test_platform_fallback_matching() {
+        use crate::core::manifest::PlatformBinary;
+
+        let mut available = std::collections::HashMap::new();
+        available.insert(
+            "linux-i686".to_string(),
+            PlatformBinary {
+                url: "test".to_string(),
+                size: 0,
+                checksum: None,
+            },
+        );
+
+        let platform = Platform::new(Os::Linux, Arch::X86_64);
+        let matches = platform.find_best_match(&available);
+
+        assert_eq!(matches.len(), 1);
+        assert!(!matches[0].is_exact);
+        assert_eq!(matches[0].fallback_type, Some(FallbackType::Arch32On64));
+    }
+
+    #[test]
+    fn test_macos_rosetta_fallback() {
+        use crate::core::manifest::PlatformBinary;
+
+        let mut available = std::collections::HashMap::new();
+        available.insert(
+            "macos-x86_64".to_string(),
+            PlatformBinary {
+                url: "test".to_string(),
+                size: 0,
+                checksum: None,
+            },
+        );
+
+        let platform = Platform::new(Os::MacOS, Arch::Aarch64);
+        let matches = platform.find_best_match(&available);
+
+        assert_eq!(matches.len(), 1);
+        assert!(!matches[0].is_exact);
+        assert_eq!(matches[0].fallback_type, Some(FallbackType::X64OnArm));
+    }
+
+    #[test]
+    fn test_fallback_confirmation_required() {
+        // Arch fallback should require confirmation
+        assert!(FallbackType::Arch32On64.requires_confirmation());
+        assert!(FallbackType::X64OnArm.requires_confirmation());
+        assert!(FallbackType::GnuOnMusl.requires_confirmation());
+
+        // Compiler variants should not require confirmation
+        assert!(!FallbackType::MuslOnGnu.requires_confirmation());
+        assert!(!FallbackType::WindowsCompilerVariant.requires_confirmation());
+    }
+
+    #[test]
+    fn test_exact_match_preferred_over_fallback() {
+        use crate::core::manifest::PlatformBinary;
+
+        let mut available = std::collections::HashMap::new();
+        available.insert(
+            "linux-x86_64-musl".to_string(),
+            PlatformBinary {
+                url: "musl".to_string(),
+                size: 0,
+                checksum: None,
+            },
+        );
+        available.insert(
+            "linux-i686".to_string(),
+            PlatformBinary {
+                url: "i686".to_string(),
+                size: 0,
+                checksum: None,
+            },
+        );
+
+        let platform = Platform::new(Os::Linux, Arch::X86_64);
+        let matches = platform.find_best_match(&available);
+
+        // Should prefer exact match (musl) over fallback (i686)
+        assert!(!matches.is_empty());
+        assert!(matches[0].is_exact);
+        assert_eq!(matches[0].platform_id, "linux-x86_64-musl");
     }
 }
