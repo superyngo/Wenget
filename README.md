@@ -29,6 +29,28 @@ irm https://raw.githubusercontent.com/superyngo/Wenget/main/install.ps1 | iex
 curl -fsSL https://raw.githubusercontent.com/superyngo/Wenget/main/install.sh | bash
 ```
 
+### System-Level Installation
+
+The install scripts automatically detect elevated privileges and switch to system-level paths:
+
+| Mode | Platform | App Directory | Bin Directory |
+|------|----------|---------------|---------------|
+| User | Linux/macOS | `~/.wenget/apps` | `~/.wenget/bin` |
+| User | Windows | `%USERPROFILE%\.wenget\apps` | `%USERPROFILE%\.wenget\bin` |
+| Root/Admin | Linux/macOS | `/opt/wenget/app` | `/usr/local/bin` (symlinks) |
+| Root/Admin | Windows | `%ProgramW6432%\wenget\app` | `%ProgramW6432%\wenget\bin` |
+
+**Linux/macOS (as root):**
+```bash
+sudo curl -fsSL https://raw.githubusercontent.com/superyngo/Wenget/main/install.sh | sudo bash
+```
+
+**Windows (as Administrator):**
+```powershell
+# Run PowerShell as Administrator, then:
+irm https://raw.githubusercontent.com/superyngo/Wenget/main/install.ps1 | iex
+```
+
 ### Manual Installation
 
 Download the latest release from [GitHub Releases](https://github.com/superyngo/Wenget/releases) and place it in your PATH, or build from source:
@@ -103,6 +125,7 @@ wenget delete ripgrep
 
 ## Directory Structure
 
+### User-Level Installation (default)
 ```
 ~/.wenget/
 ├── apps/                  # Installed applications
@@ -117,6 +140,37 @@ wenget delete ripgrep
 │   └── downloads/        # Downloaded archives
 ├── buckets.json          # Bucket configuration
 └── installed.json        # Installed packages info (with descriptions)
+```
+
+### System-Level Installation (root/Administrator)
+
+**Linux/macOS:**
+```
+/opt/wenget/
+├── app/                   # Installed applications
+│   ├── wenget/
+│   └── <package>/
+├── cache/
+├── buckets.json
+└── installed.json
+
+/usr/local/bin/            # Symlinks to binaries
+├── wenget -> /opt/wenget/app/wenget/wenget
+└── <package> -> ...
+```
+
+**Windows:**
+```
+%ProgramW6432%\wenget\
+├── app\                   # Installed applications
+│   ├── wenget\
+│   └── <package>\
+├── bin\                   # Binaries (added to system PATH)
+│   ├── wenget.exe
+│   └── <package>.exe
+├── cache\
+├── buckets.json
+└── installed.json
 ```
 
 ## Bucket System

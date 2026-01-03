@@ -48,6 +48,19 @@ fn main() {
                 BucketCommands::Del { names } => commands::bucket::BucketCommand::Del { names },
                 BucketCommands::List => commands::bucket::BucketCommand::List,
                 BucketCommands::Refresh => commands::bucket::BucketCommand::Refresh,
+                BucketCommands::Create {
+                    repos_src,
+                    scripts_src,
+                    direct,
+                    output,
+                    token,
+                } => commands::bucket::BucketCommand::Create {
+                    repos_src,
+                    scripts_src,
+                    direct,
+                    output,
+                    token,
+                },
             };
             commands::run_bucket(bucket_cmd)
         }

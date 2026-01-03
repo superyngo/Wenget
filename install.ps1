@@ -17,8 +17,36 @@ function Write-Warning { Write-Host $args -ForegroundColor Yellow }
 # Configuration
 $APP_NAME = "wenget"
 $REPO = "superyngo/Wenget"
-$INSTALL_DIR = "$env:USERPROFILE\.wenget\apps\wenget"
-$BIN_PATH = "$INSTALL_DIR\$APP_NAME.exe"
+
+# Detect if running as Administrator for system-level installation
+function Get-InstallMode {
+    $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
+    if ($isAdmin) {
+        $script:SYSTEM_INSTALL = $true
+        $programFiles = $env:ProgramW6432
+        if (-not $programFiles) {
+            $programFiles = $env:ProgramFiles
+        }
+        $script:WENGET_HOME = "$programFiles\wenget"
+        $script:INSTALL_DIR = "$programFiles\wenget\app\wenget"
+        $script:BIN_DIR = "$programFiles\wenget\bin"
+        $script:BIN_PATH = "$script:INSTALL_DIR\$APP_NAME.exe"
+        Write-Info "Running as Administrator - using system-level installation"
+        Write-Info "  App directory: $programFiles\wenget\app"
+        Write-Info "  Bin directory: $programFiles\wenget\bin"
+    } else {
+        $script:SYSTEM_INSTALL = $false
+        $script:WENGET_HOME = "$env:USERPROFILE\.wenget"
+        $script:INSTALL_DIR = "$env:USERPROFILE\.wenget\apps\wenget"
+        $script:BIN_DIR = "$env:USERPROFILE\.wenget\bin"
+        $script:BIN_PATH = "$script:INSTALL_DIR\$APP_NAME.exe"
+        Write-Info "Running as user - using user-level installation"
+        Write-Info "  App directory: $env:USERPROFILE\.wenget\apps"
+        Write-Info "  Bin directory: $env:USERPROFILE\.wenget\bin"
+    }
+    Write-Info ""
+}
 
 function Get-LatestRelease {
     try {
@@ -52,6 +80,9 @@ function Get-Architecture {
 function Install-Wenget {
     Write-Info "=== Wenget Installation Script ==="
     Write-Info ""
+
+    # Detect install mode first
+    Get-InstallMode
 
     # Get latest release
     $release = Get-LatestRelease
@@ -102,6 +133,31 @@ function Install-Wenget {
     Write-Success "Binary installed successfully!"
     Write-Info ""
 
+    # For system-level installation, create bin directory and add to PATH
+    if ($SYSTEM_INSTALL) {
+        # Create bin directory
+        if (-not (Test-Path $BIN_DIR)) {
+            New-Item -ItemType Directory -Path $BIN_DIR -Force | Out-Null
+        }
+
+        # Create a copy or shim in bin directory
+        $shimPath = "$BIN_DIR\$APP_NAME.exe"
+        Copy-Item -Path $BIN_PATH -Destination $shimPath -Force
+        Write-Info "Copied to bin directory: $shimPath"
+
+        # Add bin directory to system PATH if not already present
+        $currentPath = [Environment]::GetEnvironmentVariable("Path", [EnvironmentVariableTarget]::Machine)
+        if ($currentPath -notlike "*$BIN_DIR*") {
+            Write-Info "Adding $BIN_DIR to system PATH..."
+            $newPath = "$currentPath;$BIN_DIR"
+            [Environment]::SetEnvironmentVariable("Path", $newPath, [EnvironmentVariableTarget]::Machine)
+            Write-Success "Added to system PATH"
+        } else {
+            Write-Info "Bin directory already in system PATH"
+        }
+        Write-Info ""
+    }
+
     # Run wenget init
     Write-Info "Initializing Wenget..."
     Write-Info ""
@@ -137,6 +193,9 @@ function Uninstall-Wenget {
     Write-Info "=== Wenget Uninstallation Script ==="
     Write-Info ""
 
+    # Detect install mode first
+    Get-InstallMode
+
     # Check if wenget is available and run self-deletion
     if (Test-Path $BIN_PATH) {
         Write-Info "Running Wenget self-deletion..."
@@ -145,6 +204,25 @@ function Uninstall-Wenget {
             Write-Success "Wenget uninstalled successfully!"
         } catch {
             Write-Warning "Wenget self-deletion failed. Performing manual cleanup..."
+
+            # For system-level installation, remove from PATH and bin directory
+            if ($SYSTEM_INSTALL) {
+                # Remove from system PATH
+                $currentPath = [Environment]::GetEnvironmentVariable("Path", [EnvironmentVariableTarget]::Machine)
+                if ($currentPath -like "*$BIN_DIR*") {
+                    Write-Info "Removing $BIN_DIR from system PATH..."
+                    $newPath = ($currentPath -split ';' | Where-Object { $_ -ne $BIN_DIR }) -join ';'
+                    [Environment]::SetEnvironmentVariable("Path", $newPath, [EnvironmentVariableTarget]::Machine)
+                    Write-Success "Removed from system PATH"
+                }
+
+                # Remove bin directory copy
+                $shimPath = "$BIN_DIR\$APP_NAME.exe"
+                if (Test-Path $shimPath) {
+                    Remove-Item $shimPath -Force -ErrorAction SilentlyContinue
+                    Write-Success "Bin copy removed"
+                }
+            }
 
             # Remove binary
             Write-Info "Removing binary..."
@@ -160,20 +238,30 @@ function Uninstall-Wenget {
                 }
             }
 
-            # Try to remove .wenget directory if empty
-            $wengetDir = "$env:USERPROFILE\.wenget"
-            if (Test-Path $wengetDir) {
-                $items = Get-ChildItem $wengetDir -Recurse -ErrorAction SilentlyContinue
+            # Try to remove wenget home directory if empty
+            if (Test-Path $WENGET_HOME) {
+                $items = Get-ChildItem $WENGET_HOME -Recurse -ErrorAction SilentlyContinue
                 if ($items.Count -eq 0) {
-                    Remove-Item $wengetDir -Force -Recurse
-                    Write-Success ".wenget directory removed"
+                    Remove-Item $WENGET_HOME -Force -Recurse
+                    Write-Success "Wenget home directory removed"
                 } else {
-                    Write-Info ".wenget directory contains other files, keeping it"
+                    Write-Info "Wenget home directory contains other files, keeping it"
                 }
             }
         }
     } else {
         Write-Info "Binary not found (already removed?)"
+
+        # Still try to clean up system PATH for system-level
+        if ($SYSTEM_INSTALL) {
+            $currentPath = [Environment]::GetEnvironmentVariable("Path", [EnvironmentVariableTarget]::Machine)
+            if ($currentPath -like "*$BIN_DIR*") {
+                Write-Info "Removing $BIN_DIR from system PATH..."
+                $newPath = ($currentPath -split ';' | Where-Object { $_ -ne $BIN_DIR }) -join ';'
+                [Environment]::SetEnvironmentVariable("Path", $newPath, [EnvironmentVariableTarget]::Machine)
+                Write-Success "Removed from system PATH"
+            }
+        }
     }
 
     Write-Info ""

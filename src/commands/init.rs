@@ -1,6 +1,7 @@
 //! Initialize Wenget
 
 use crate::bucket::Bucket;
+use crate::core::is_elevated;
 use crate::core::Config;
 use anyhow::{Context, Result};
 use colored::Colorize;
@@ -16,7 +17,28 @@ use std::fs::{self, OpenOptions};
 
 /// Initialize Wenget (create directories and manifests)
 pub fn run(yes: bool) -> Result<()> {
-    println!("{}", "Initializing Wenget...".cyan());
+    // Show installation mode
+    if is_elevated() {
+        println!(
+            "{}",
+            "Initializing Wenget (system-level installation)...".cyan()
+        );
+        #[cfg(unix)]
+        println!("  Apps: /opt/wenget/apps");
+        #[cfg(unix)]
+        println!("  Bin:  /usr/local/bin (symlinks)");
+        #[cfg(windows)]
+        {
+            let config = Config::new()?;
+            println!("  Root: {}", config.paths().root().display());
+            println!(
+                "  Bin:  {} (added to system PATH)",
+                config.paths().bin_dir().display()
+            );
+        }
+    } else {
+        println!("{}", "Initializing Wenget...".cyan());
+    }
 
     let config = Config::new()?;
 
@@ -211,23 +233,69 @@ fn setup_path(config: &Config) -> Result<()> {
 
     #[cfg(windows)]
     {
-        setup_path_windows(&bin_dir_str)?;
+        // For system installs, use the internal bin dir (not /usr/local/bin equivalent)
+        let actual_bin_dir = if config.paths().is_system_install() {
+            config.paths().internal_bin_dir()
+        } else {
+            bin_dir.clone()
+        };
+        setup_path_windows(
+            &actual_bin_dir.to_string_lossy(),
+            config.paths().is_system_install(),
+        )?;
     }
 
     #[cfg(not(windows))]
     {
-        setup_path_unix(&bin_dir_str)?;
+        // For system installs on Linux, /usr/local/bin is typically already in PATH
+        if config.paths().is_system_install() {
+            println!(
+                "{}",
+                "✓ System PATH (/usr/local/bin) is typically pre-configured".green()
+            );
+            println!("  Symlinks will be created in /usr/local/bin");
+        } else {
+            setup_path_unix(&bin_dir_str)?;
+        }
     }
 
     Ok(())
 }
 
-/// Set up PATH on Windows (modify user environment variable)
+/// Set up PATH on Windows (modify user or system environment variable)
 #[cfg(windows)]
-fn setup_path_windows(bin_dir: &str) -> Result<()> {
+fn setup_path_windows(bin_dir: &str, is_system_install: bool) -> Result<()> {
+    use crate::core::registry::add_to_system_path;
+    use std::path::Path;
     use std::process::Command;
 
-    // Use PowerShell to add to user PATH
+    if is_system_install {
+        // For system installs, use registry to modify system PATH
+        match add_to_system_path(Path::new(bin_dir)) {
+            Ok(true) => {
+                println!("{}", "✓ Added Wenget bin directory to system PATH".green());
+                println!();
+                println!("{}", "IMPORTANT:".yellow().bold());
+                println!("  Please restart your terminal or command prompt");
+                println!("  for the PATH changes to take effect.");
+            }
+            Ok(false) => {
+                println!(
+                    "{}",
+                    "✓ Wenget bin directory is already in system PATH".green()
+                );
+            }
+            Err(e) => {
+                println!("{} Failed to update system PATH: {}", "⚠".yellow(), e);
+                println!();
+                println!("Please manually add the following to your system PATH:");
+                println!("  {}", bin_dir.cyan());
+            }
+        }
+        return Ok(());
+    }
+
+    // For user installs, use PowerShell to add to user PATH
     let ps_script = format!(
         r#"
         $oldPath = [Environment]::GetEnvironmentVariable('Path', 'User')

@@ -4,11 +4,20 @@ pub mod config;
 pub mod manifest;
 pub mod paths;
 pub mod platform;
+pub mod privilege;
+pub mod registry;
 pub mod repair;
 
 // Re-export commonly used items
 pub use config::Config;
-pub use manifest::{InstalledManifest, InstalledPackage, Package, PlatformBinary};
+#[allow(unused_imports)]
+pub use manifest::{
+    InstalledManifest, InstalledPackage, Package, PlatformBinary, ScriptItem, ScriptPlatform,
+    ScriptType,
+};
 pub use paths::WenPaths;
 #[allow(unused_imports)]
 pub use platform::{Arch, BinaryAsset, BinarySelector, Compiler, FileExtension, Os, Platform};
+pub use privilege::is_elevated;
+#[allow(unused_imports)]
+pub use registry::{add_to_system_path, remove_from_system_path};

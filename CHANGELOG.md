@@ -5,48 +5,27 @@ All notable changes to Wenget will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.6.1] - 2025-12-08
-
-### Fixed
-
-- Code quality improvements
-  - Fixed clippy warnings for dead code in tests
-  - Fixed pointer argument linting (PathBuf → Path)
-  - Added allow attributes where appropriate
-- Enhanced code formatting compliance with cargo fmt
-
-## [0.6.0] - 2025-12-07
+## [0.8.0] - 2026-01-03
 
 ### Added
 
-- **Advanced platform detection system** - Refactored binary matching logic for better compatibility
-  - New 4-component parsing: file extension + OS + architecture + compiler/libc
-  - `Compiler` enum supporting GNU, musl, and MSVC variants
-  - Context-aware `x86` keyword resolution (macOS → x86_64, others → i686)
-  - FreeBSD support with explicit architecture requirement
-  - Compiler priority system: Linux prefers musl > gnu, Windows prefers msvc > gnu
-
-### Improved
-
-- **Default architecture handling** - Intelligent fallback for ambiguous binaries
-  - Windows/Linux default to x86_64 when architecture not specified
-  - macOS defaults to aarch64 (Rosetta 2 can run x86_64 binaries)
-  - FreeBSD requires explicit architecture (no default)
-  - Explicit architecture matches scored higher than defaults
+- **System-Level Installation** - Install scripts now auto-detect elevated privileges
+  - Linux/macOS: Running as root installs to `/opt/wenget/app` with symlinks in `/usr/local/bin`
+  - Windows: Running as Administrator installs to `%ProgramW6432%\wenget` with system PATH
+  - User-level installation remains the default behavior
 
 ### Changed
 
-- **Platform detection scoring** - New 4-component scoring algorithm
+- Refactored bucket management system
+- Improved core paths module architecture
+- Updated documentation with system-level installation guide
 
-  - OS match: +100 (mandatory)
-  - Explicit arch match: +50
-  - Default arch match: +25
-  - Compiler priority: +10/20/30 based on OS preference
-  - File format: +2 to +5
+## [0.7.2] - 2025-12-30
 
-- Complete refactor of `src/core/platform.rs` with `ParsedAsset` struct
-- Added `FileExtension` enum for archive format detection
-- Added 17 comprehensive test cases for platform detection
+### Fixed
+
+- Windows compatibility improvements
+- Minor bug fixes and code cleanup
 
 ## [0.7.1] - 2025-12-30
 
@@ -95,6 +74,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Platform string format unchanged: {os}-{arch} or {os}-{arch}-{compiler}
 - Existing manifests continue to work
 - New compiler-specific keys are additive
+
+## [0.6.2] - 2025-12-08
+
+### Fixed
+
+- Minor bug fixes and improvements
+
+## [0.6.1] - 2025-12-08
+
+### Fixed
+
+- Code quality improvements
+  - Fixed clippy warnings for dead code in tests
+  - Fixed pointer argument linting (PathBuf → Path)
+  - Added allow attributes where appropriate
+- Enhanced code formatting compliance with cargo fmt
+
+## [0.6.0] - 2025-12-07
+
+### Added
+
+- **Advanced platform detection system** - Refactored binary matching logic for better compatibility
+  - New 4-component parsing: file extension + OS + architecture + compiler/libc
+  - `Compiler` enum supporting GNU, musl, and MSVC variants
+  - Context-aware `x86` keyword resolution (macOS → x86_64, others → i686)
+  - FreeBSD support with explicit architecture requirement
+  - Compiler priority system: Linux prefers musl > gnu, Windows prefers msvc > gnu
+
+### Improved
+
+- **Default architecture handling** - Intelligent fallback for ambiguous binaries
+  - Windows/Linux default to x86_64 when architecture not specified
+  - macOS defaults to aarch64 (Rosetta 2 can run x86_64 binaries)
+  - FreeBSD requires explicit architecture (no default)
+  - Explicit architecture matches scored higher than defaults
+
+### Changed
+
+- **Platform detection scoring** - New 4-component scoring algorithm
+
+  - OS match: +100 (mandatory)
+  - Explicit arch match: +50
+  - Default arch match: +25
+  - Compiler priority: +10/20/30 based on OS preference
+  - File format: +2 to +5
+
+- Complete refactor of `src/core/platform.rs` with `ParsedAsset` struct
+- Added `FileExtension` enum for archive format detection
+- Added 17 comprehensive test cases for platform detection
 
 ## [0.5.3] - 2025-12-03
 
@@ -299,6 +327,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub integration
 - Package cache system
 
+[0.8.0]: https://github.com/superyngo/wenget/compare/v0.7.2...v0.8.0
+[0.7.2]: https://github.com/superyngo/wenget/compare/v0.7.1...v0.7.2
+[0.7.1]: https://github.com/superyngo/wenget/compare/v0.7.0...v0.7.1
+[0.7.0]: https://github.com/superyngo/wenget/compare/v0.6.3...v0.7.0
+[0.6.3]: https://github.com/superyngo/wenget/compare/v0.6.2...v0.6.3
+[0.6.2]: https://github.com/superyngo/wenget/compare/v0.6.1...v0.6.2
+[0.6.1]: https://github.com/superyngo/wenget/compare/v0.6.0...v0.6.1
+[0.6.0]: https://github.com/superyngo/wenget/compare/v0.5.3...v0.6.0
+[0.5.3]: https://github.com/superyngo/wenget/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/superyngo/wenget/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/superyngo/wenget/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/superyngo/wenget/compare/v0.4.0...v0.5.0
