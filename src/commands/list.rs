@@ -109,7 +109,7 @@ fn list_all_packages(config: &Config) -> Result<()> {
     let scripts: Vec<_> = manifest
         .scripts
         .iter()
-        .filter(|script| script.script_type.is_os_compatible())
+        .filter(|script| script.is_compatible_with_current_platform())
         .collect();
 
     if packages.is_empty() && scripts.is_empty() {
@@ -167,7 +167,11 @@ fn list_all_packages(config: &Config) -> Result<()> {
 
     // Print scripts
     for script in &scripts {
-        let script_type_display = script.script_type.display_name().to_lowercase().to_string();
+        // Get the best compatible script type for display
+        let script_type_display = script
+            .get_compatible_script()
+            .map(|(st, _)| st.display_name().to_lowercase())
+            .unwrap_or_else(|| script.platforms_display().to_lowercase());
 
         if installed.is_installed(&script.name) {
             // For installed scripts, calculate padding manually to account for "(installed)"

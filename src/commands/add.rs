@@ -543,29 +543,28 @@ fn install_packages(
                 if let Some(cached_script) = cache.find_script(name) {
                     let script = &cached_script.script;
 
-                    // Check platform support
-                    if !script.script_type.is_supported_on_current_platform() {
+                    // Get compatible script for current platform
+                    if let Some((script_type, platform_info)) = script.get_compatible_script() {
+                        // Prepare script for installation
+                        let source_name = match &cached_script.source {
+                            PackageSource::Bucket { name } => format!("bucket:{}", name),
+                            _ => "unknown".to_string(),
+                        };
+
+                        scripts_to_install.push((
+                            script.name.clone(),
+                            platform_info.url.clone(),
+                            script_type,
+                            source_name,
+                        ));
+                    } else {
                         println!(
-                            "{} {} ({}) is not supported on current platform",
+                            "{} {} is not supported on current platform (available: {})",
                             "Warning:".yellow(),
                             script.name,
-                            script.script_type.display_name()
+                            script.platforms_display()
                         );
-                        continue;
                     }
-
-                    // Prepare script for installation
-                    let source_name = match &cached_script.source {
-                        PackageSource::Bucket { name } => format!("bucket:{}", name),
-                        _ => "unknown".to_string(),
-                    };
-
-                    scripts_to_install.push((
-                        script.name.clone(),
-                        script.url.clone(),
-                        script.script_type.clone(),
-                        source_name,
-                    ));
                 } else {
                     eprintln!("{} {}: Not found", "Error".red().bold(), name);
                 }

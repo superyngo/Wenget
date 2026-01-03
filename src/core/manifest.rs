@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Script type enumeration
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum ScriptType {
     /// PowerShell script (.ps1)
@@ -93,6 +93,7 @@ impl ScriptType {
     /// Check basic OS compatibility without executing commands (for listing)
     /// This is faster than is_supported_on_current_platform and doesn't require
     /// the interpreter to be installed
+    #[allow(dead_code)]
     pub fn is_os_compatible(&self) -> bool {
         match self {
             ScriptType::PowerShell => {
@@ -132,6 +133,17 @@ pub struct PlatformBinary {
     pub checksum: Option<String>,
 }
 
+/// Platform-specific script information (for multi-platform scripts)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ScriptPlatform {
+    /// Download URL for this platform's script
+    pub url: String,
+
+    /// Optional SHA256 checksum
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checksum: Option<String>,
+}
+
 /// Package metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Package {
@@ -159,6 +171,22 @@ pub struct Package {
 }
 
 /// Script item metadata (for bucket scripts)
+///
+/// Supports multi-platform scripts where the same script name
+/// can have different implementations for different platforms.
+///
+/// # Example JSON format:
+/// ```json
+/// {
+///   "name": "rclonemm",
+///   "description": "Manage rclone mount through ssh config.",
+///   "repo": "https://gist.github.com/superyngo/...",
+///   "platforms": {
+///     "bash": { "url": "https://.../rclonemm.sh" },
+///     "powershell": { "url": "https://.../rclonemm.ps1" }
+///   }
+/// }
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScriptItem {
     /// Script name (used as identifier)
@@ -167,18 +195,11 @@ pub struct ScriptItem {
     /// Short description
     pub description: String,
 
-    /// Direct URL to the script file
-    pub url: String,
-
-    /// Script type
-    pub script_type: ScriptType,
-
-    /// Repository URL (for reference)
+    /// Repository URL (for reference, e.g., Gist URL)
     pub repo: String,
 
-    /// Optional SHA256 checksum
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub checksum: Option<String>,
+    /// Platform-specific scripts (key: script type like "bash", "powershell")
+    pub platforms: HashMap<ScriptType, ScriptPlatform>,
 
     /// Homepage URL (optional)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -187,6 +208,60 @@ pub struct ScriptItem {
     /// License (optional)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub license: Option<String>,
+}
+
+impl ScriptItem {
+    /// Get the best compatible script for the current platform
+    ///
+    /// Priority order:
+    /// - Windows: PowerShell > Batch > Python > Bash
+    /// - Unix: Bash > Python > PowerShell
+    ///
+    /// Returns the script type and its platform info if a compatible one is found.
+    pub fn get_compatible_script(&self) -> Option<(ScriptType, &ScriptPlatform)> {
+        let preference_order = if cfg!(target_os = "windows") {
+            vec![
+                ScriptType::PowerShell,
+                ScriptType::Batch,
+                ScriptType::Python,
+                ScriptType::Bash,
+            ]
+        } else {
+            vec![ScriptType::Bash, ScriptType::Python, ScriptType::PowerShell]
+        };
+
+        for script_type in preference_order {
+            if script_type.is_supported_on_current_platform() {
+                if let Some(platform) = self.platforms.get(&script_type) {
+                    return Some((script_type, platform));
+                }
+            }
+        }
+        None
+    }
+
+    /// Get all available platforms for this script
+    #[allow(dead_code)]
+    pub fn available_platforms(&self) -> Vec<ScriptType> {
+        self.platforms.keys().cloned().collect()
+    }
+
+    /// Check if this script has a compatible version for the current platform
+    pub fn is_compatible_with_current_platform(&self) -> bool {
+        self.get_compatible_script().is_some()
+    }
+
+    /// Get a specific platform's script info
+    #[allow(dead_code)]
+    pub fn get_platform(&self, script_type: &ScriptType) -> Option<&ScriptPlatform> {
+        self.platforms.get(script_type)
+    }
+
+    /// Get a display string showing available platforms
+    pub fn platforms_display(&self) -> String {
+        let platforms: Vec<&str> = self.platforms.keys().map(|st| st.display_name()).collect();
+        platforms.join(", ")
+    }
 }
 
 /// Source manifest (sources.json)
@@ -223,7 +298,7 @@ impl SourceManifest {
     pub fn scripts_for_current_platform(&self) -> Vec<&ScriptItem> {
         self.scripts
             .iter()
-            .filter(|s| s.script_type.is_supported_on_current_platform())
+            .filter(|s| s.is_compatible_with_current_platform())
             .collect()
     }
 }

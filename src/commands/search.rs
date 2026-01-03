@@ -64,7 +64,7 @@ pub fn run(patterns: Vec<String>) -> Result<()> {
                 .any(|pattern| pattern.matches(&script.name));
 
             // Check if supports current platform
-            let platform_matches = script.script_type.is_supported_on_current_platform();
+            let platform_matches = script.is_compatible_with_current_platform();
 
             name_matches && platform_matches
         })
@@ -126,7 +126,11 @@ pub fn run(patterns: Vec<String>) -> Result<()> {
 
         for cached_script in &matching_scripts {
             let script = &cached_script.script;
-            let script_type = script.script_type.display_name();
+            // Get the best compatible script type for display
+            let script_type = match script.get_compatible_script() {
+                Some((st, _)) => st.display_name().to_string(),
+                None => "script".to_string(),
+            };
 
             println!(
                 "{:<20} {:<10} {}",

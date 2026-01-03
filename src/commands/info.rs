@@ -182,12 +182,6 @@ fn display_script_info(
     println!("{}", "─".repeat(60));
 
     // Basic info
-    println!(
-        "{:<16} {}",
-        "Script type:".bold(),
-        script.script_type.display_name()
-    );
-    println!("{:<16} {}", "URL:".bold(), script.url);
     println!("{:<16} {}", "Repository:".bold(), script.repo);
 
     if let Some(ref homepage) = script.homepage {
@@ -236,11 +230,40 @@ fn display_script_info(
         println!("{:<16} {}", "Status:".bold(), "Not installed".yellow());
     }
 
-    // Platform support
+    // Available platforms (multi-platform support)
     println!();
-    let platform_supported = script.script_type.is_supported_on_current_platform();
-    if platform_supported {
-        println!("{} {}", "Current platform:".bold(), "Supported".green());
+    println!(
+        "{} {} platform(s):",
+        "Available platforms:".bold(),
+        script.platforms.len()
+    );
+    for (script_type, platform_info) in &script.platforms {
+        let supported = script_type.is_supported_on_current_platform();
+        let status = if supported {
+            "✓ compatible".green()
+        } else {
+            "✗ not supported".red()
+        };
+        println!(
+            "  {} {:<12} {} {}",
+            "•".cyan(),
+            script_type.display_name(),
+            status,
+            format!("({})", platform_info.url).dimmed()
+        );
+    }
+
+    // Show if current platform is compatible
+    println!();
+    if script.is_compatible_with_current_platform() {
+        if let Some((best_type, _)) = script.get_compatible_script() {
+            println!(
+                "{} {} ({})",
+                "Current platform:".bold(),
+                "Supported".green(),
+                format!("will use {}", best_type.display_name()).dimmed()
+            );
+        }
     } else {
         println!("{} {}", "Current platform:".bold(), "Not supported".red());
     }

@@ -11,6 +11,44 @@ use anyhow::{Context, Result};
 use std::fs;
 use std::path::Path;
 
+/// Cached PowerShell command detection result (Windows only)
+#[cfg(windows)]
+use std::sync::OnceLock;
+
+#[cfg(windows)]
+static POWERSHELL_CMD: OnceLock<&'static str> = OnceLock::new();
+
+/// Get the best available PowerShell command.
+///
+/// On Windows, this checks if `pwsh` (PowerShell Core) is available and uses it
+/// if so, otherwise falls back to `powershell` (Windows PowerShell).
+///
+/// The result is cached using OnceLock for efficiency.
+#[cfg(windows)]
+#[allow(dead_code)]
+pub fn get_powershell_command() -> &'static str {
+    POWERSHELL_CMD.get_or_init(|| {
+        if std::process::Command::new("pwsh")
+            .arg("--version")
+            .output()
+            .is_ok()
+        {
+            "pwsh"
+        } else {
+            "powershell"
+        }
+    })
+}
+
+/// Get the PowerShell command on Unix systems.
+///
+/// On Unix, PowerShell Core (pwsh) must be installed, so we always use "pwsh".
+#[cfg(not(windows))]
+#[allow(dead_code)]
+pub fn get_powershell_command() -> &'static str {
+    "pwsh"
+}
+
 /// Detect script type from file extension
 pub fn detect_script_type_from_extension(filename: &str) -> Option<ScriptType> {
     let filename_lower = filename.to_lowercase();
@@ -223,9 +261,10 @@ fn create_script_shim_windows(
 
     let shim_content = match script_type {
         ScriptType::PowerShell => {
+            let ps_cmd = get_powershell_command();
             format!(
-                "@echo off\r\npowershell -NoProfile -ExecutionPolicy Bypass -File \"%~dp0{}\" %*\r\n",
-                relative_path_str
+                "@echo off\r\n{} -NoProfile -ExecutionPolicy Bypass -File \"%~dp0{}\" %*\r\n",
+                ps_cmd, relative_path_str
             )
         }
         ScriptType::Batch => {
@@ -385,5 +424,22 @@ mod tests {
             extract_script_name("https://example.com/script.sh?token=abc"),
             Some("script".to_string())
         );
+    }
+
+    #[test]
+    fn test_get_powershell_command() {
+        // Test that the function returns a valid PowerShell command
+        let ps_cmd = get_powershell_command();
+
+        // Should be either "pwsh" or "powershell"
+        assert!(
+            ps_cmd == "pwsh" || ps_cmd == "powershell",
+            "Expected 'pwsh' or 'powershell', got '{}'",
+            ps_cmd
+        );
+
+        // Test that calling it again returns the same cached result
+        let ps_cmd_again = get_powershell_command();
+        assert_eq!(ps_cmd, ps_cmd_again, "PowerShell command should be cached");
     }
 }

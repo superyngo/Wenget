@@ -141,6 +141,29 @@ pub enum BucketCommands {
 
     /// Refresh cache from buckets
     Refresh,
+
+    /// Create a bucket manifest from source files or direct URLs
+    Create {
+        /// Source file(s) containing GitHub repository URLs (comma-separated for multiple)
+        #[arg(short = 'r', long = "repos-src", value_delimiter = ',')]
+        repos_src: Vec<String>,
+
+        /// Source file(s) containing script URLs/Gist URLs (comma-separated for multiple)
+        #[arg(short = 's', long = "scripts-src", value_delimiter = ',')]
+        scripts_src: Vec<String>,
+
+        /// Direct URLs or local paths to add (comma-separated, supports GitHub URLs, Gist URLs, raw scripts, local files)
+        #[arg(short = 'd', long = "direct", value_delimiter = ',')]
+        direct: Vec<String>,
+
+        /// Output file path (default: manifest.json)
+        #[arg(short = 'o', long = "output")]
+        output: Option<String>,
+
+        /// GitHub personal access token (or use GITHUB_TOKEN env var)
+        #[arg(short = 't', long = "token")]
+        token: Option<String>,
+    },
 }
 
 impl Cli {

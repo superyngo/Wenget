@@ -19,8 +19,29 @@ print_warning() { echo -e "${YELLOW}$1${NC}"; }
 # Configuration
 APP_NAME="wenget"
 REPO="superyngo/Wenget"
-INSTALL_DIR="$HOME/.wenget/apps/wenget"
-BIN_PATH="$INSTALL_DIR/$APP_NAME"
+
+# Detect if running as root for system-level installation
+detect_install_mode() {
+    if [ "$(id -u)" -eq 0 ]; then
+        SYSTEM_INSTALL=true
+        INSTALL_DIR="/opt/wenget/app/wenget"
+        BIN_DIR="/usr/local/bin"
+        WENGET_HOME="/opt/wenget"
+        print_info "Running as root - using system-level installation"
+        print_info "  App directory: /opt/wenget/app"
+        print_info "  Bin directory: /usr/local/bin"
+    else
+        SYSTEM_INSTALL=false
+        INSTALL_DIR="$HOME/.wenget/apps/wenget"
+        BIN_DIR="$HOME/.wenget/bin"
+        WENGET_HOME="$HOME/.wenget"
+        print_info "Running as user - using user-level installation"
+        print_info "  App directory: $HOME/.wenget/apps"
+        print_info "  Bin directory: $HOME/.wenget/bin"
+    fi
+    BIN_PATH="$INSTALL_DIR/$APP_NAME"
+    echo ""
+}
 
 # Detect OS and Architecture
 detect_platform() {
@@ -165,6 +186,13 @@ download_release() {
     chmod +x "$BIN_PATH"
 
     print_success "Binary installed successfully!"
+
+    # For system-level installation, create symlink in /usr/local/bin
+    if [ "$SYSTEM_INSTALL" = true ]; then
+        print_info "Creating symlink in $BIN_DIR..."
+        ln -sf "$BIN_PATH" "$BIN_DIR/$APP_NAME"
+        print_success "Symlink created: $BIN_DIR/$APP_NAME -> $BIN_PATH"
+    fi
 }
 
 # Run wenget init
@@ -190,6 +218,7 @@ install_wenget() {
     print_info "=== Wenget Installation Script ==="
     echo ""
 
+    detect_install_mode
     detect_platform
     get_latest_release
     download_release
@@ -218,6 +247,8 @@ uninstall_wenget() {
     print_info "=== Wenget Uninstallation Script ==="
     echo ""
 
+    detect_install_mode
+
     # Check if wenget is available and run self-deletion
     if [ -x "$BIN_PATH" ]; then
         print_info "Running Wenget self-deletion..."
@@ -225,6 +256,13 @@ uninstall_wenget() {
             print_success "Wenget uninstalled successfully!"
         else
             print_warning "Wenget self-deletion failed. Performing manual cleanup..."
+
+            # Remove symlink for system-level installation
+            if [ "$SYSTEM_INSTALL" = true ]; then
+                print_info "Removing symlink..."
+                rm -f "$BIN_DIR/$APP_NAME"
+                print_success "Symlink removed"
+            fi
 
             # Remove binary
             print_info "Removing binary..."
@@ -239,19 +277,25 @@ uninstall_wenget() {
                 fi
             fi
 
-            # Try to remove .wenget directory if empty
-            local wenget_dir="$HOME/.wenget"
-            if [ -d "$wenget_dir" ]; then
-                if [ -z "$(ls -A "$wenget_dir")" ]; then
-                    rmdir "$wenget_dir"
-                    print_success ".wenget directory removed"
+            # Try to remove wenget home directory if empty
+            if [ -d "$WENGET_HOME" ]; then
+                if [ -z "$(ls -A "$WENGET_HOME")" ]; then
+                    rmdir "$WENGET_HOME"
+                    print_success "Wenget home directory removed"
                 else
-                    print_info ".wenget directory contains other files, keeping it"
+                    print_info "Wenget home directory contains other files, keeping it"
                 fi
             fi
         fi
     else
         print_info "Binary not found (already removed?)"
+
+        # Still try to clean up symlink for system-level
+        if [ "$SYSTEM_INSTALL" = true ] && [ -L "$BIN_DIR/$APP_NAME" ]; then
+            print_info "Removing orphaned symlink..."
+            rm -f "$BIN_DIR/$APP_NAME"
+            print_success "Symlink removed"
+        fi
     fi
 
     echo ""
