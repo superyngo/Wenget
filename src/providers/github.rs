@@ -26,7 +26,7 @@ impl GitHubProvider {
     /// - https://github.com/owner/repo
     /// - https://github.com/owner/repo/
     /// - https://github.com/owner/repo.git
-    fn parse_github_url(&self, url: &str) -> Result<(String, String)> {
+    pub fn parse_github_url(url: &str) -> Option<(String, String)> {
         let url = url.trim_end_matches('/').trim_end_matches(".git");
 
         let parts: Vec<&str> = url
@@ -36,18 +36,15 @@ impl GitHubProvider {
             .split('/')
             .collect();
 
-        if parts.len() < 2 {
-            anyhow::bail!("Invalid GitHub URL: {}", url);
+        if parts.len() >= 2 {
+            Some((parts[0].to_string(), parts[1].to_string()))
+        } else {
+            None
         }
-
-        let owner = parts[0].to_string();
-        let repo = parts[1].to_string();
-
-        Ok((owner, repo))
     }
 
     /// Fetch latest release from GitHub API
-    fn fetch_latest_release(&self, owner: &str, repo: &str) -> Result<GitHubRelease> {
+    pub fn fetch_latest_release(&self, owner: &str, repo: &str) -> Result<GitHubRelease> {
         let url = format!(
             "https://api.github.com/repos/{}/{}/releases/latest",
             owner, repo
@@ -59,7 +56,7 @@ impl GitHubProvider {
     }
 
     /// Get repository information
-    fn fetch_repo_info(&self, owner: &str, repo: &str) -> Result<GitHubRepo> {
+    pub fn fetch_repo_info(&self, owner: &str, repo: &str) -> Result<GitHubRepo> {
         let url = format!("https://api.github.com/repos/{}/{}", owner, repo);
 
         self.http
@@ -69,9 +66,45 @@ impl GitHubProvider {
 
     /// Fetch latest version for a repository
     pub fn fetch_latest_version(&self, repo_url: &str) -> Result<String> {
-        let (owner, repo) = self.parse_github_url(repo_url)?;
+        let (owner, repo) = Self::parse_github_url(repo_url)
+            .ok_or_else(|| anyhow::anyhow!("Invalid GitHub URL: {}", repo_url))?;
         let release = self.fetch_latest_release(&owner, &repo)?;
         Ok(release.tag_name.trim_start_matches('v').to_string())
+    }
+
+    /// Convert GitHub release assets to platform binaries map
+    ///
+    /// This is the shared logic used by both `fetch_package` and bucket manifest generation.
+    pub fn extract_platform_binaries(
+        assets: &[GitHubAsset],
+    ) -> HashMap<String, PlatformBinary> {
+        // Convert GitHub assets to BinaryAsset
+        let binary_assets: Vec<BinaryAsset> = assets
+            .iter()
+            .map(|a| BinaryAsset {
+                name: a.name.clone(),
+                url: a.browser_download_url.clone(),
+                size: a.size,
+            })
+            .collect();
+
+        // Extract platforms using BinarySelector
+        let platform_map = BinarySelector::extract_platforms(&binary_assets);
+
+        // Convert to PlatformBinary map
+        platform_map
+            .into_iter()
+            .map(|(platform_id, asset)| {
+                (
+                    platform_id,
+                    PlatformBinary {
+                        url: asset.url,
+                        size: asset.size,
+                        checksum: None,
+                    },
+                )
+            })
+            .collect()
     }
 }
 
@@ -80,7 +113,8 @@ impl SourceProvider for GitHubProvider {
         log::info!("Fetching package from: {}", url);
 
         // Parse URL
-        let (owner, repo) = self.parse_github_url(url)?;
+        let (owner, repo) = Self::parse_github_url(url)
+            .ok_or_else(|| anyhow::anyhow!("Invalid GitHub URL: {}", url))?;
 
         // Fetch repo info for description and license
         let repo_info = self.fetch_repo_info(&owner, &repo)?;
@@ -96,42 +130,16 @@ impl SourceProvider for GitHubProvider {
             );
         }
 
-        // Convert GitHub assets to BinaryAsset
-        let assets: Vec<BinaryAsset> = release
-            .assets
-            .iter()
-            .map(|a| BinaryAsset {
-                name: a.name.clone(),
-                url: a.browser_download_url.clone(),
-                size: a.size,
-            })
-            .collect();
+        // Use shared platform extraction logic
+        let platforms = Self::extract_platform_binaries(&release.assets);
 
-        // Extract platforms using BinarySelector
-        let platform_map = BinarySelector::extract_platforms(&assets);
-
-        if platform_map.is_empty() {
+        if platforms.is_empty() {
             anyhow::bail!(
                 "No matching binaries found for any platform in {}/{}",
                 owner,
                 repo
             );
         }
-
-        // Convert to PlatformBinary map
-        let platforms: HashMap<String, PlatformBinary> = platform_map
-            .into_iter()
-            .map(|(platform_id, asset)| {
-                (
-                    platform_id,
-                    PlatformBinary {
-                        url: asset.url,
-                        size: asset.size,
-                        checksum: None,
-                    },
-                )
-            })
-            .collect();
 
         // Create package
         let package = Package {
@@ -167,29 +175,48 @@ impl Default for GitHubProvider {
 
 // GitHub API response structures
 
+/// GitHub release information
 #[derive(Debug, Deserialize)]
-struct GitHubRelease {
-    tag_name: String,
-    assets: Vec<GitHubAsset>,
+pub struct GitHubRelease {
+    /// Release tag name (e.g., "v1.0.0")
+    pub tag_name: String,
+    /// Release assets (downloadable files)
+    pub assets: Vec<GitHubAsset>,
 }
 
+/// GitHub release asset (downloadable file)
 #[derive(Debug, Deserialize)]
-struct GitHubAsset {
-    name: String,
-    browser_download_url: String,
-    size: u64,
+pub struct GitHubAsset {
+    /// Asset filename
+    pub name: String,
+    /// Direct download URL
+    pub browser_download_url: String,
+    /// File size in bytes
+    pub size: u64,
 }
 
+/// GitHub repository information
 #[derive(Debug, Deserialize)]
-struct GitHubRepo {
-    description: Option<String>,
-    html_url: String,
-    license: Option<GitHubLicense>,
+pub struct GitHubRepo {
+    /// Repository name
+    pub name: String,
+    /// Repository description
+    pub description: Option<String>,
+    /// Repository URL
+    pub html_url: String,
+    /// Homepage URL (if set)
+    pub homepage: Option<String>,
+    /// License information
+    pub license: Option<GitHubLicense>,
 }
 
+/// GitHub license information
 #[derive(Debug, Deserialize)]
-struct GitHubLicense {
-    name: String,
+pub struct GitHubLicense {
+    /// License name (e.g., "MIT License")
+    pub name: String,
+    /// SPDX identifier (e.g., "MIT")
+    pub spdx_id: Option<String>,
 }
 
 #[cfg(test)]
@@ -198,25 +225,27 @@ mod tests {
 
     #[test]
     fn test_parse_github_url() {
-        let provider = GitHubProvider::new().unwrap();
-
-        let (owner, repo) = provider
-            .parse_github_url("https://github.com/user/repo")
-            .unwrap();
+        let result = GitHubProvider::parse_github_url("https://github.com/user/repo");
+        assert!(result.is_some());
+        let (owner, repo) = result.unwrap();
         assert_eq!(owner, "user");
         assert_eq!(repo, "repo");
 
-        let (owner, repo) = provider
-            .parse_github_url("https://github.com/user/repo/")
-            .unwrap();
+        let result = GitHubProvider::parse_github_url("https://github.com/user/repo/");
+        assert!(result.is_some());
+        let (owner, repo) = result.unwrap();
         assert_eq!(owner, "user");
         assert_eq!(repo, "repo");
 
-        let (owner, repo) = provider
-            .parse_github_url("https://github.com/user/repo.git")
-            .unwrap();
+        let result = GitHubProvider::parse_github_url("https://github.com/user/repo.git");
+        assert!(result.is_some());
+        let (owner, repo) = result.unwrap();
         assert_eq!(owner, "user");
         assert_eq!(repo, "repo");
+
+        // Invalid URL
+        let result = GitHubProvider::parse_github_url("https://github.com/user");
+        assert!(result.is_none());
     }
 
     #[test]

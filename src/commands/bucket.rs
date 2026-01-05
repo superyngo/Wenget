@@ -1,8 +1,9 @@
 //! Bucket command implementation
 
 use crate::bucket::Bucket;
-use crate::core::manifest::{Package, PlatformBinary, ScriptItem, ScriptPlatform, ScriptType};
-use crate::core::{BinaryAsset, BinarySelector, Config};
+use crate::core::manifest::{Package, ScriptItem, ScriptPlatform, ScriptType};
+use crate::core::Config;
+use crate::providers::{GitHubProvider, GitHubRepo};
 use crate::utils::HttpClient;
 use anyhow::{Context, Result};
 use colored::Colorize;
@@ -245,34 +246,7 @@ struct BucketManifest {
 /// Rate limit delay between GitHub API requests (milliseconds)
 const RATE_LIMIT_DELAY_MS: u64 = 1000;
 
-/// GitHub API response structures
-#[derive(Debug, Deserialize)]
-struct GitHubRelease {
-    #[allow(dead_code)]
-    tag_name: String,
-    assets: Vec<GitHubAsset>,
-}
-
-#[derive(Debug, Deserialize)]
-struct GitHubAsset {
-    name: String,
-    browser_download_url: String,
-    size: u64,
-}
-
-#[derive(Debug, Deserialize)]
-struct GitHubRepo {
-    name: String,
-    description: Option<String>,
-    html_url: String,
-    homepage: Option<String>,
-    license: Option<GitHubLicense>,
-}
-
-#[derive(Debug, Deserialize)]
-struct GitHubLicense {
-    spdx_id: Option<String>,
-}
+// Gist API response structures (GitHub-specific, not shared with providers)
 
 #[derive(Debug, Deserialize)]
 struct GistFile {
@@ -290,6 +264,7 @@ struct GistResponse {
 /// Manifest generator that processes source files and URLs
 struct ManifestGenerator {
     http: HttpClient,
+    github: GitHubProvider,
     packages: HashMap<String, Package>,
     scripts: HashMap<String, ScriptItem>,
 }
@@ -298,6 +273,7 @@ impl ManifestGenerator {
     fn new() -> Result<Self> {
         Ok(Self {
             http: HttpClient::new()?,
+            github: GitHubProvider::new()?,
             packages: HashMap::new(),
             scripts: HashMap::new(),
         })
@@ -316,23 +292,6 @@ impl ManifestGenerator {
             .collect();
 
         Ok(urls)
-    }
-
-    /// Parse GitHub URL to extract owner and repo
-    fn parse_github_url(&self, url: &str) -> Option<(String, String)> {
-        let url = url.trim_end_matches('/').trim_end_matches(".git");
-        let parts: Vec<&str> = url
-            .trim_start_matches("https://")
-            .trim_start_matches("http://")
-            .trim_start_matches("github.com/")
-            .split('/')
-            .collect();
-
-        if parts.len() >= 2 {
-            Some((parts[0].to_string(), parts[1].to_string()))
-        } else {
-            None
-        }
     }
 
     /// Parse Gist URL to extract gist ID
@@ -409,27 +368,25 @@ impl ManifestGenerator {
         name.to_string()
     }
 
-    /// Fetch package info from GitHub repo URL
+    /// Fetch package info from GitHub repo URL using shared GitHubProvider logic
     fn fetch_package(&mut self, url: &str) -> Result<()> {
-        let (owner, repo) = self
-            .parse_github_url(url)
+        let (owner, repo) = GitHubProvider::parse_github_url(url)
             .ok_or_else(|| anyhow::anyhow!("Invalid GitHub URL: {}", url))?;
 
         print!("  {} {}/{}...", "Fetching".cyan(), owner, repo);
 
-        // Fetch repo info
-        let repo_url = format!("https://api.github.com/repos/{}/{}", owner, repo);
-        let repo_info: GitHubRepo = self
-            .http
-            .get_json(&repo_url)
-            .with_context(|| format!("Failed to fetch repo info for {}/{}", owner, repo))?;
+        // Fetch repo info using GitHubProvider
+        let repo_info: GitHubRepo = match self.github.fetch_repo_info(&owner, &repo) {
+            Ok(info) => info,
+            Err(e) => {
+                println!(" {} failed to fetch repo info", "✗".red());
+                log::warn!("Failed to fetch repo info for {}/{}: {}", owner, repo, e);
+                return Ok(());
+            }
+        };
 
-        // Fetch latest release
-        let release_url = format!(
-            "https://api.github.com/repos/{}/{}/releases/latest",
-            owner, repo
-        );
-        let release: GitHubRelease = match self.http.get_json(&release_url) {
+        // Fetch latest release using GitHubProvider
+        let release = match self.github.fetch_latest_release(&owner, &repo) {
             Ok(r) => r,
             Err(e) => {
                 println!(" {} no releases", "⚠".yellow());
@@ -438,46 +395,20 @@ impl ManifestGenerator {
             }
         };
 
-        // Convert assets to BinaryAsset for platform detection
-        let assets: Vec<BinaryAsset> = release
-            .assets
-            .iter()
-            .map(|a| BinaryAsset {
-                name: a.name.clone(),
-                url: a.browser_download_url.clone(),
-                size: a.size,
-            })
-            .collect();
+        // Use shared platform extraction logic from GitHubProvider
+        let platforms = GitHubProvider::extract_platform_binaries(&release.assets);
 
-        // Use existing BinarySelector to extract platforms
-        let platform_map = BinarySelector::extract_platforms(&assets);
-
-        if platform_map.is_empty() {
+        if platforms.is_empty() {
             println!(" {} no binaries", "⚠".yellow());
             return Ok(());
         }
 
-        // Convert to PlatformBinary map
-        let platforms: HashMap<String, PlatformBinary> = platform_map
-            .into_iter()
-            .map(|(platform_id, asset)| {
-                (
-                    platform_id,
-                    PlatformBinary {
-                        url: asset.url,
-                        size: asset.size,
-                        checksum: None,
-                    },
-                )
-            })
-            .collect();
-
         let package = Package {
             name: repo_info.name.clone(),
-            description: repo_info.description.unwrap_or_default(),
-            repo: repo_info.html_url,
-            homepage: repo_info.homepage.filter(|h| !h.is_empty()),
-            license: repo_info.license.and_then(|l| l.spdx_id),
+            description: repo_info.description.clone().unwrap_or_default(),
+            repo: repo_info.html_url.clone(),
+            homepage: repo_info.homepage.clone().filter(|h| !h.is_empty()),
+            license: repo_info.license.as_ref().and_then(|l| l.spdx_id.clone()),
             platforms,
         };
 
