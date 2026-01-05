@@ -5,6 +5,79 @@ All notable changes to Wenget will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-01-05
+
+### 🎉 Stable Release
+
+This marks the first stable release of Wenget! After extensive development and testing,
+Wenget is now production-ready for managing GitHub binaries across platforms.
+
+### Added
+
+- **User Confirmation Utilities** - New `utils/prompt` module
+  - `confirm()` function for [Y/n] prompts
+  - `confirm_no_default()` function for [y/N] prompts
+  - Reduces code duplication across command modules
+
+- **Interpreter Caching** - Performance optimization for script support
+  - Cached interpreter availability detection using `OnceLock`
+  - PowerShell, Bash, and Python availability checked once per session
+  - Significantly faster script compatibility checks
+
+- **Batch Script Path Escaping** - Security improvement
+  - New `escape_batch_path()` function for special character handling
+  - Properly escapes `&`, `|`, `<`, `>`, `^`, `%`, `!` in paths
+  - Prevents potential command injection in Windows batch shims
+
+### Changed
+
+- **Removed Default Trait Panic Risk**
+  - Removed `impl Default for Config` to avoid panic on home directory detection failure
+  - Removed `impl Default for WenPaths` for the same reason
+  - Applications should use explicit `Config::new()` and `WenPaths::new()` calls
+
+- **Script Preference Order** - Extracted to shared function
+  - New `ScriptType::preference_order()` returns platform-specific script preference
+  - Windows: PowerShell > Batch > Python > Bash
+  - Unix: Bash > Python > PowerShell
+  - Eliminates code duplication between `get_compatible_script()` and `get_installable_script()`
+
+- **Registry Operations Refactored** (Windows)
+  - Extracted shared `modify_system_path_inner()` function
+  - Reduced code duplication between `add_to_system_path()` and `remove_from_system_path()`
+
+### Fixed
+
+- **Improved Error Logging**
+  - Backup failures now logged with `log::warn!` instead of silent ignore
+  - File cleanup failures (temp files, old executables) now logged
+  - Better debugging experience for troubleshooting
+
+- **Clippy Warnings Resolved**
+  - Collapsed nested `if` statements for better readability
+  - Removed unused imports across command modules
+  - All clippy warnings addressed
+
+### Technical
+
+- **Code Quality Improvements**
+  - Reduced ~120 lines of duplicated code
+  - Added ~80 lines of new utility functions
+  - All 68 unit tests passing
+  - No clippy warnings in codebase
+
+### Documentation
+
+- Added ExecutionPolicy Bypass explanation in script shim generation
+- Improved comments for `unreachable!()` macro usage
+- Updated inline documentation for new utility functions
+
+## [0.9.1] - 2026-01-05
+
+### Fixed
+
+- Resolved clippy warnings for better code quality
+
 ## [0.9.0] - 2026-01-03
 
 ### Added
@@ -376,6 +449,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub integration
 - Package cache system
 
+[1.0.0]: https://github.com/superyngo/wenget/compare/v0.9.1...v1.0.0
+[0.9.1]: https://github.com/superyngo/wenget/compare/v0.9.0...v0.9.1
+[0.9.0]: https://github.com/superyngo/wenget/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/superyngo/wenget/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/superyngo/wenget/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/superyngo/wenget/compare/v0.7.0...v0.7.1

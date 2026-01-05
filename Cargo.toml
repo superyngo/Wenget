@@ -1,6 +1,6 @@
 [package]
 name = "wenget"
-version = "0.9.1"
+version = "1.0.0"
 edition = "2021"
 authors = ["wen"]
 description = "A cross-platform package manager for GitHub binaries"

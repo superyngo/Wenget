@@ -1,5 +1,9 @@
 # Wenget - Wen Package Manager
 
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/superyngo/Wenget/releases)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/superyngo/Wenget)
+
 A cross-platform package manager for GitHub binaries, written in Rust.
 
 Wenget simplifies the installation and management of command-line tools and applications distributed through GitHub Releases. It automatically detects your platform, downloads the appropriate binaries, and manages them in an organized directory structure.
@@ -471,7 +475,7 @@ wenget/
 │   ├── downloader/       # Download logic
 │   ├── installer/        # Installation logic
 │   ├── providers/        # GitHub API integration
-│   └── utils/            # Utilities
+│   └── utils/            # Utilities (HTTP client, prompts)
 ├── install.ps1           # Windows installer
 └── install.sh            # Unix installer
 ```
