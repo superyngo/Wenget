@@ -7,25 +7,21 @@
 use anyhow::{Context, Result};
 use std::path::Path;
 
-/// Add a directory to the system PATH on Windows
-///
-/// This modifies the system-wide PATH environment variable in the registry.
-/// Requires Administrator privileges.
-///
-/// # Arguments
-/// * `path` - The directory path to add to PATH
-///
-/// # Errors
-/// Returns an error if:
-/// - Not running with Administrator privileges
-/// - Registry access fails
-/// - The path is already in PATH (returns Ok but does nothing)
+/// Path modification operation type
 #[cfg(windows)]
-pub fn add_to_system_path(path: &Path) -> Result<bool> {
+enum PathOperation {
+    Add,
+    Remove,
+}
+
+/// Core implementation for modifying system PATH
+#[cfg(windows)]
+fn modify_system_path_inner(path: &Path, operation: PathOperation) -> Result<bool> {
     use winreg::enums::*;
     use winreg::RegKey;
 
     let path_str = path.to_string_lossy().to_string();
+    let path_lower = path_str.to_lowercase();
 
     let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
     let env = hklm
@@ -39,21 +35,31 @@ pub fn add_to_system_path(path: &Path) -> Result<bool> {
         .get_value("Path")
         .context("Failed to read current PATH")?;
 
-    // Check if path is already in PATH (case-insensitive on Windows)
-    let path_lower = path_str.to_lowercase();
-    let already_exists = current_path
+    let path_exists = current_path
         .split(';')
         .any(|p| p.trim().to_lowercase() == path_lower);
 
-    if already_exists {
-        return Ok(false); // Already in PATH
-    }
-
-    // Add the new path
-    let new_path = if current_path.ends_with(';') {
-        format!("{}{}", current_path, path_str)
-    } else {
-        format!("{};{}", current_path, path_str)
+    let new_path = match operation {
+        PathOperation::Add => {
+            if path_exists {
+                return Ok(false); // Already in PATH
+            }
+            if current_path.ends_with(';') {
+                format!("{}{}", current_path, path_str)
+            } else {
+                format!("{};{}", current_path, path_str)
+            }
+        }
+        PathOperation::Remove => {
+            if !path_exists {
+                return Ok(false); // Not in PATH
+            }
+            current_path
+                .split(';')
+                .filter(|p| !p.trim().is_empty() && p.trim().to_lowercase() != path_lower)
+                .collect::<Vec<_>>()
+                .join(";")
+        }
     };
 
     env.set_value("Path", &new_path)
@@ -63,6 +69,23 @@ pub fn add_to_system_path(path: &Path) -> Result<bool> {
     broadcast_environment_change();
 
     Ok(true)
+}
+
+/// Add a directory to the system PATH on Windows
+///
+/// This modifies the system-wide PATH environment variable in the registry.
+/// Requires Administrator privileges.
+///
+/// # Arguments
+/// * `path` - The directory path to add to PATH
+///
+/// # Errors
+/// Returns an error if:
+/// - Not running with Administrator privileges
+/// - Registry access fails
+#[cfg(windows)]
+pub fn add_to_system_path(path: &Path) -> Result<bool> {
+    modify_system_path_inner(path, PathOperation::Add)
 }
 
 /// Remove a directory from the system PATH on Windows
@@ -80,49 +103,7 @@ pub fn add_to_system_path(path: &Path) -> Result<bool> {
 #[cfg(windows)]
 #[allow(dead_code)]
 pub fn remove_from_system_path(path: &Path) -> Result<bool> {
-    use winreg::enums::*;
-    use winreg::RegKey;
-
-    let path_str = path.to_string_lossy().to_string();
-
-    let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
-    let env = hklm
-        .open_subkey_with_flags(
-            r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
-            KEY_READ | KEY_WRITE,
-        )
-        .context("Failed to open environment registry key. Are you running as Administrator?")?;
-
-    let current_path: String = env
-        .get_value("Path")
-        .context("Failed to read current PATH")?;
-
-    let path_lower = path_str.to_lowercase();
-
-    // Filter out the path to remove (case-insensitive)
-    let new_paths: Vec<&str> = current_path
-        .split(';')
-        .filter(|p| !p.trim().is_empty() && p.trim().to_lowercase() != path_lower)
-        .collect();
-
-    // Check if anything was removed
-    let original_count = current_path
-        .split(';')
-        .filter(|p| !p.trim().is_empty())
-        .count();
-    if new_paths.len() == original_count {
-        return Ok(false); // Path was not in PATH
-    }
-
-    let new_path = new_paths.join(";");
-
-    env.set_value("Path", &new_path)
-        .context("Failed to update PATH in registry")?;
-
-    // Notify the system of the change
-    broadcast_environment_change();
-
-    Ok(true)
+    modify_system_path_inner(path, PathOperation::Remove)
 }
 
 /// Broadcast a WM_SETTINGCHANGE message to notify other processes of environment change

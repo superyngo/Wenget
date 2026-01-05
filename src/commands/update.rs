@@ -214,7 +214,9 @@ fn upgrade_self() -> Result<()> {
     }
 
     // Clean up temporary files
-    let _ = fs::remove_dir_all(&temp_dir);
+    if let Err(e) = fs::remove_dir_all(&temp_dir) {
+        log::warn!("Failed to cleanup temp directory: {}: {}", temp_dir.display(), e);
+    }
 
     println!();
     println!(
@@ -293,7 +295,9 @@ fn replace_exe_unix(current_exe: &std::path::PathBuf, new_exe: &std::path::PathB
 
     // Remove any existing .old file to avoid confusion.
     if old_exe.exists() {
-        let _ = fs::remove_file(&old_exe);
+        if let Err(e) = fs::remove_file(&old_exe) {
+            log::warn!("Failed to remove old executable: {}: {}", old_exe.display(), e);
+        }
     }
 
     // 1. Rename the currently running executable.

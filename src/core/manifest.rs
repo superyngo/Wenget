@@ -9,6 +9,44 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::OnceLock;
+
+/// Cached interpreter availability results
+static INTERPRETER_CACHE: OnceLock<InterpreterCache> = OnceLock::new();
+
+/// Cache for interpreter availability checks
+struct InterpreterCache {
+    pwsh_available: bool,
+    bash_available: bool,
+    python_available: bool,
+}
+
+impl InterpreterCache {
+    fn detect() -> Self {
+        Self {
+            pwsh_available: std::process::Command::new("pwsh")
+                .arg("--version")
+                .output()
+                .is_ok(),
+            bash_available: std::process::Command::new("bash")
+                .arg("--version")
+                .output()
+                .is_ok(),
+            python_available: std::process::Command::new("python")
+                .arg("--version")
+                .output()
+                .is_ok()
+                || std::process::Command::new("python3")
+                    .arg("--version")
+                    .output()
+                    .is_ok(),
+        }
+    }
+}
+
+fn get_interpreter_cache() -> &'static InterpreterCache {
+    INTERPRETER_CACHE.get_or_init(InterpreterCache::detect)
+}
 
 /// Script type enumeration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -45,19 +83,20 @@ impl ScriptType {
         }
     }
 
-    /// Check if this script type is supported on the current platform
+    /// Check if this script type is supported on the current platform.
+    ///
+    /// This checks if the required interpreter is actually available on the system.
+    /// Results are cached for performance.
     pub fn is_supported_on_current_platform(&self) -> bool {
+        let cache = get_interpreter_cache();
+
         match self {
             ScriptType::PowerShell => {
                 // PowerShell is available on Windows natively, and on Linux/macOS via pwsh
                 if cfg!(target_os = "windows") {
                     true
                 } else {
-                    // Check if pwsh is available
-                    std::process::Command::new("pwsh")
-                        .arg("--version")
-                        .output()
-                        .is_ok()
+                    cache.pwsh_available
                 }
             }
             ScriptType::Batch => {
@@ -67,25 +106,13 @@ impl ScriptType {
             ScriptType::Bash => {
                 // Bash is available on Linux and macOS, and on Windows via WSL/Git Bash
                 if cfg!(target_os = "windows") {
-                    // Check if bash is available (Git Bash, WSL, etc.)
-                    std::process::Command::new("bash")
-                        .arg("--version")
-                        .output()
-                        .is_ok()
+                    cache.bash_available
                 } else {
                     true
                 }
             }
             ScriptType::Python => {
-                // Check if python is available
-                std::process::Command::new("python")
-                    .arg("--version")
-                    .output()
-                    .is_ok()
-                    || std::process::Command::new("python3")
-                        .arg("--version")
-                        .output()
-                        .is_ok()
+                cache.python_available
             }
         }
     }
@@ -114,6 +141,27 @@ impl ScriptType {
                 // We don't check for Python installation here
                 true
             }
+        }
+    }
+
+    /// Get the platform-specific script type preference order.
+    ///
+    /// - Windows: PowerShell > Batch > Python > Bash
+    /// - Unix: Bash > Python > PowerShell
+    pub fn preference_order() -> &'static [ScriptType] {
+        #[cfg(target_os = "windows")]
+        {
+            &[
+                ScriptType::PowerShell,
+                ScriptType::Batch,
+                ScriptType::Python,
+                ScriptType::Bash,
+            ]
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            &[ScriptType::Bash, ScriptType::Python, ScriptType::PowerShell]
         }
     }
 }
@@ -222,21 +270,10 @@ impl ScriptItem {
     ///
     /// Returns the script type and its platform info if a compatible one is found.
     pub fn get_compatible_script(&self) -> Option<(ScriptType, &ScriptPlatform)> {
-        let preference_order = if cfg!(target_os = "windows") {
-            vec![
-                ScriptType::PowerShell,
-                ScriptType::Batch,
-                ScriptType::Python,
-                ScriptType::Bash,
-            ]
-        } else {
-            vec![ScriptType::Bash, ScriptType::Python, ScriptType::PowerShell]
-        };
-
-        for script_type in preference_order {
+        for script_type in ScriptType::preference_order() {
             if script_type.is_os_compatible() {
-                if let Some(platform) = self.platforms.get(&script_type) {
-                    return Some((script_type, platform));
+                if let Some(platform) = self.platforms.get(script_type) {
+                    return Some((script_type.clone(), platform));
                 }
             }
         }
@@ -250,21 +287,10 @@ impl ScriptItem {
     ///
     /// Returns the script type and its platform info if an installable one is found.
     pub fn get_installable_script(&self) -> Option<(ScriptType, &ScriptPlatform)> {
-        let preference_order = if cfg!(target_os = "windows") {
-            vec![
-                ScriptType::PowerShell,
-                ScriptType::Batch,
-                ScriptType::Python,
-                ScriptType::Bash,
-            ]
-        } else {
-            vec![ScriptType::Bash, ScriptType::Python, ScriptType::PowerShell]
-        };
-
-        for script_type in preference_order {
+        for script_type in ScriptType::preference_order() {
             if script_type.is_supported_on_current_platform() {
-                if let Some(platform) = self.platforms.get(&script_type) {
-                    return Some((script_type, platform));
+                if let Some(platform) = self.platforms.get(script_type) {
+                    return Some((script_type.clone(), platform));
                 }
             }
         }

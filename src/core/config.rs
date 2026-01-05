@@ -72,7 +72,12 @@ impl Config {
                 log::error!("CRITICAL: Failed to parse installed.json: {}", parse_error);
 
                 // This is critical - create backup
-                let backup_path = create_backup(&path).ok();
+                let backup_path = create_backup(&path)
+                    .map_err(|e| {
+                        log::warn!("Failed to create backup of corrupted file: {}", e);
+                        e
+                    })
+                    .ok();
 
                 // Create new empty manifest
                 let new_manifest = InstalledManifest::new();
@@ -223,12 +228,6 @@ impl Config {
     pub fn get_packages_from_cache(&self) -> Result<SourceManifest> {
         let cache = self.get_or_rebuild_cache()?;
         Ok(cache.to_source_manifest())
-    }
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self::new().expect("Failed to create Config")
     }
 }
 

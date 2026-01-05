@@ -6,7 +6,6 @@ use crate::core::Config;
 use anyhow::{Context, Result};
 use colored::Colorize;
 use std::env;
-use std::io::{self, Write as IoWrite};
 use std::path::PathBuf;
 
 #[cfg(windows)]
@@ -198,14 +197,7 @@ fn collect_existing_init_changes(config: &Config) -> Result<PlannedChanges> {
 fn prompt_confirm_changes(changes: &PlannedChanges) -> Result<bool> {
     changes.display();
 
-    print!("Proceed? [Y/n]: ");
-    io::stdout().flush()?;
-
-    let mut input = String::new();
-    io::stdin().read_line(&mut input)?;
-    let input = input.trim().to_lowercase();
-
-    Ok(input.is_empty() || input == "y" || input == "yes")
+    crate::utils::confirm("Proceed?")
 }
 
 /// Initialize Wenget (create directories and manifests)
