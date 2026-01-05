@@ -104,6 +104,10 @@ The codebase follows a layered architecture:
    - Handles multi-threaded downloads with progress bars
    - Caches downloaded archives
 
+9. **Utility System** (`src/utils/`)
+   - `http.rs`: HTTP client wrapper for GitHub API
+   - `prompt.rs`: User confirmation utilities (`confirm()`, `confirm_no_default()`)
+
 ### Key Data Flow
 
 **Installing a package from a bucket:**
