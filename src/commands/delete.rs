@@ -6,7 +6,6 @@ use colored::Colorize;
 use glob::Pattern;
 use std::env;
 use std::fs;
-use std::io::{self, Write as IoWrite};
 use std::path::Path;
 
 /// Delete installed packages
@@ -70,20 +69,11 @@ pub fn run(names: Vec<String>, yes: bool, force: bool) -> Result<()> {
     }
 
     // Confirm deletion
-    if !yes {
-        print!("\nProceed with deletion? [y/N] ");
-        use std::io::{self, Write};
-        io::stdout().flush()?;
-
-        let mut response = String::new();
-        io::stdin().read_line(&mut response)?;
-        let response = response.trim().to_lowercase();
-
-        if response != "y" && response != "yes" {
+    if !yes
+        && !crate::utils::prompt::confirm_no_default("\nProceed with deletion?")? {
             println!("Deletion cancelled");
             return Ok(());
         }
-    }
 
     println!();
 
@@ -176,15 +166,9 @@ fn delete_self(yes: bool) -> Result<()> {
     if !yes {
         println!("{}", "═".repeat(60));
         println!();
-        print!("{} ", "Are you sure you want to proceed?".bold().red());
-        print!("[y/N] ");
-        io::stdout().flush()?;
+        println!("{}", "Are you sure you want to proceed?".bold().red());
 
-        let mut response = String::new();
-        io::stdin().read_line(&mut response)?;
-        let response = response.trim().to_lowercase();
-
-        if response != "y" && response != "yes" {
+        if !crate::utils::prompt::confirm_no_default("")? {
             println!();
             println!("{}", "Deletion cancelled".green());
             return Ok(());

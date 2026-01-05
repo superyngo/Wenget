@@ -244,6 +244,32 @@ pub fn create_script_shim(paths: &WenPaths, name: &str, script_type: &ScriptType
     Ok(())
 }
 
+/// Escape special characters in a path string for use in Windows batch scripts.
+///
+/// Batch scripts interpret characters like &, |, <, >, ^, and % specially.
+/// This function escapes them to ensure paths with these characters work correctly.
+#[cfg(windows)]
+fn escape_batch_path(path: &str) -> String {
+    path.chars()
+        .flat_map(|c| match c {
+            // ^ is the escape character in batch, so double it
+            '^' => vec!['^', '^'],
+            // & needs escaping
+            '&' => vec!['^', '&'],
+            // | needs escaping
+            '|' => vec!['^', '|'],
+            // < and > need escaping
+            '<' => vec!['^', '<'],
+            '>' => vec!['^', '>'],
+            // % needs to be doubled in batch scripts
+            '%' => vec!['%', '%'],
+            // ! needs escaping when delayed expansion is enabled (rare but possible)
+            '!' => vec!['^', '!'],
+            _ => vec![c],
+        })
+        .collect()
+}
+
 /// Create script shim on Windows
 #[cfg(windows)]
 fn create_script_shim_windows(
@@ -259,22 +285,27 @@ fn create_script_shim_windows(
         .context("Failed to calculate relative path")?;
     let relative_path_str = relative_path.display().to_string().replace('/', "\\");
 
+    // Escape special batch characters in the path
+    let escaped_path = escape_batch_path(&relative_path_str);
+
     let shim_content = match script_type {
         ScriptType::PowerShell => {
+            // Note: -ExecutionPolicy Bypass is standard practice for package managers (like Scoop)
+            // to ensure scripts can run regardless of system policy settings
             let ps_cmd = get_powershell_command();
             format!(
                 "@echo off\r\n{} -NoProfile -ExecutionPolicy Bypass -File \"%~dp0{}\" %*\r\n",
-                ps_cmd, relative_path_str
+                ps_cmd, escaped_path
             )
         }
         ScriptType::Batch => {
-            format!("@echo off\r\ncall \"%~dp0{}\" %*\r\n", relative_path_str)
+            format!("@echo off\r\ncall \"%~dp0{}\" %*\r\n", escaped_path)
         }
         ScriptType::Bash => {
-            format!("@echo off\r\nbash \"%~dp0{}\" %*\r\n", relative_path_str)
+            format!("@echo off\r\nbash \"%~dp0{}\" %*\r\n", escaped_path)
         }
         ScriptType::Python => {
-            format!("@echo off\r\npython \"%~dp0{}\" %*\r\n", relative_path_str)
+            format!("@echo off\r\npython \"%~dp0{}\" %*\r\n", escaped_path)
         }
     };
 
@@ -332,7 +363,9 @@ fn create_script_shim_unix(
                     "#!/bin/sh\necho 'Batch scripts are not supported on this platform'\nexit 1\n"
                         .to_string()
                 }
-                ScriptType::Bash => unreachable!(),
+                // Note: Bash is handled in the outer match arm (line 336) with a symlink,
+                // so this branch is unreachable. We need this arm to satisfy exhaustiveness.
+                ScriptType::Bash => unreachable!("Bash scripts are handled above via symlink"),
             };
 
             fs::write(&shim_path, wrapper_content)

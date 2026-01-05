@@ -258,12 +258,6 @@ impl WenPaths {
     }
 }
 
-impl Default for WenPaths {
-    fn default() -> Self {
-        Self::new().expect("Failed to initialize WenPaths")
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
