@@ -187,6 +187,66 @@ pub enum Compiler {
     Msvc,
 }
 
+/// Detected libc type on the current system
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)] // Unknown variant kept for completeness and future use
+pub enum LibcType {
+    /// musl libc (Alpine, Void Linux musl, etc.)
+    Musl,
+    /// GNU libc (most Linux distributions)
+    Glibc,
+    /// Unknown or not applicable (non-Linux)
+    Unknown,
+}
+
+impl LibcType {
+    /// Detect the libc type on the current system at runtime
+    ///
+    /// Detection methods (in order):
+    /// 1. Check for /lib/ld-musl-* (musl dynamic linker)
+    /// 2. Check for musl in ldd output
+    /// 3. Default to Glibc on Linux, Unknown on other platforms
+    #[cfg(target_os = "linux")]
+    pub fn detect() -> Self {
+        // Method 1: Check for musl dynamic linker
+        // Alpine and other musl distros have /lib/ld-musl-<arch>.so.1
+        let musl_linker_patterns = [
+            "/lib/ld-musl-x86_64.so.1",
+            "/lib/ld-musl-aarch64.so.1",
+            "/lib/ld-musl-armhf.so.1",
+            "/lib/ld-musl-i386.so.1",
+        ];
+
+        for pattern in &musl_linker_patterns {
+            if std::path::Path::new(pattern).exists() {
+                return LibcType::Musl;
+            }
+        }
+
+        // Method 2: Check ldd output (fallback)
+        if let Ok(output) = std::process::Command::new("ldd")
+            .arg("--version")
+            .output()
+        {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let combined = format!("{}{}", stdout, stderr).to_lowercase();
+
+            if combined.contains("musl") {
+                return LibcType::Musl;
+            }
+        }
+
+        // Default to Glibc on Linux
+        LibcType::Glibc
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    pub fn detect() -> Self {
+        LibcType::Unknown
+    }
+}
+
 impl Compiler {
     /// Get compiler keywords for matching
     pub fn keywords(&self) -> &[&str] {
@@ -420,27 +480,51 @@ impl Platform {
 
     /// Get all possible platform identifiers for this platform
     ///
-    /// Returns variants like:
+    /// Returns variants in priority order based on detected libc:
+    /// - On musl systems (Alpine): musl > base > gnu
+    /// - On glibc systems: gnu > base > musl
+    /// - On Windows: msvc > base > gnu
+    ///
+    /// Examples:
+    /// - "linux-x86_64-musl" (highest on Alpine)
     /// - "linux-x86_64"
-    /// - "linux-x86_64-musl"
     /// - "linux-x86_64-gnu"
     /// - "windows-x86_64-msvc"
     /// - "windows-x86_64-gnu"
     pub fn possible_identifiers(&self) -> Vec<String> {
         let base = format!("{}", self);
-        let mut identifiers = vec![base.clone()];
+        let mut identifiers = Vec::new();
 
-        // Add compiler variants
+        // Add compiler variants in priority order based on detected libc
         match self.os {
             Os::Linux => {
-                identifiers.push(format!("{}-musl", base));
-                identifiers.push(format!("{}-gnu", base));
+                let libc = LibcType::detect();
+                match libc {
+                    LibcType::Musl => {
+                        // On musl systems: prefer musl > base > gnu
+                        identifiers.push(format!("{}-musl", base));
+                        identifiers.push(base.clone());
+                        identifiers.push(format!("{}-gnu", base));
+                    }
+                    LibcType::Glibc | LibcType::Unknown => {
+                        // On glibc systems: prefer gnu > base > musl
+                        // (musl binaries are statically linked and work on glibc too)
+                        identifiers.push(format!("{}-gnu", base));
+                        identifiers.push(base.clone());
+                        identifiers.push(format!("{}-musl", base));
+                    }
+                }
             }
             Os::Windows => {
+                // On Windows: prefer msvc > base > gnu
                 identifiers.push(format!("{}-msvc", base));
+                identifiers.push(base.clone());
                 identifiers.push(format!("{}-gnu", base));
             }
-            _ => {}
+            _ => {
+                // macOS, FreeBSD: just base
+                identifiers.push(base);
+            }
         }
 
         identifiers
@@ -1259,5 +1343,57 @@ mod tests {
         assert!(!matches.is_empty());
         assert!(matches[0].is_exact);
         assert_eq!(matches[0].platform_id, "linux-x86_64-musl");
+    }
+
+    #[test]
+    fn test_libc_detection() {
+        // Test that libc detection works
+        let libc = LibcType::detect();
+        println!("Detected libc: {:?}", libc);
+
+        // On Linux, should be either Musl or Glibc
+        #[cfg(target_os = "linux")]
+        {
+            assert!(
+                libc == LibcType::Musl || libc == LibcType::Glibc,
+                "Linux should detect either Musl or Glibc"
+            );
+        }
+
+        // On non-Linux, should be Unknown
+        #[cfg(not(target_os = "linux"))]
+        {
+            assert_eq!(libc, LibcType::Unknown);
+        }
+    }
+
+    #[test]
+    fn test_possible_identifiers_order_on_musl() {
+        // This test verifies the priority order is correct for musl systems
+        // The actual detection depends on the runtime environment
+        let platform = Platform::new(Os::Linux, Arch::X86_64);
+        let identifiers = platform.possible_identifiers();
+
+        // Should have 3 identifiers for Linux
+        assert_eq!(identifiers.len(), 3);
+
+        // On musl systems (like Alpine), the order should be:
+        // 1. linux-x86_64-musl
+        // 2. linux-x86_64
+        // 3. linux-x86_64-gnu
+        let libc = LibcType::detect();
+        if libc == LibcType::Musl {
+            assert_eq!(identifiers[0], "linux-x86_64-musl");
+            assert_eq!(identifiers[1], "linux-x86_64");
+            assert_eq!(identifiers[2], "linux-x86_64-gnu");
+        } else {
+            // On glibc systems, the order should be:
+            // 1. linux-x86_64-gnu
+            // 2. linux-x86_64
+            // 3. linux-x86_64-musl
+            assert_eq!(identifiers[0], "linux-x86_64-gnu");
+            assert_eq!(identifiers[1], "linux-x86_64");
+            assert_eq!(identifiers[2], "linux-x86_64-musl");
+        }
     }
 }
