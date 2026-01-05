@@ -54,11 +54,9 @@ impl PlannedChanges {
         }
 
         if self.add_bucket {
-            println!(
-                "  • Add bucket: {} ({})",
-                "wenget".cyan(),
-                "https://raw.githubusercontent.com/superyngo/wenget-bucket/refs/heads/main/manifest.json"
-            );
+            const BUCKET_URL: &str =
+                "https://raw.githubusercontent.com/superyngo/wenget-bucket/refs/heads/main/manifest.json";
+            println!("  • Add bucket: {} ({})", "wenget".cyan(), BUCKET_URL);
         }
 
         println!();
@@ -92,10 +90,14 @@ fn collect_fresh_init_changes(config: &Config) -> PlannedChanges {
 
     // Files to create
     if !paths.installed_json().exists() {
-        changes.create_files.push(paths.installed_json().to_path_buf());
+        changes
+            .create_files
+            .push(paths.installed_json().to_path_buf());
     }
     if !paths.buckets_json().exists() {
-        changes.create_files.push(paths.buckets_json().to_path_buf());
+        changes
+            .create_files
+            .push(paths.buckets_json().to_path_buf());
     }
 
     // Shim/symlink

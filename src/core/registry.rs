@@ -78,6 +78,7 @@ pub fn add_to_system_path(path: &Path) -> Result<bool> {
 /// - Not running with Administrator privileges
 /// - Registry access fails
 #[cfg(windows)]
+#[allow(dead_code)]
 pub fn remove_from_system_path(path: &Path) -> Result<bool> {
     use winreg::enums::*;
     use winreg::RegKey;
@@ -127,9 +128,6 @@ pub fn remove_from_system_path(path: &Path) -> Result<bool> {
 /// Broadcast a WM_SETTINGCHANGE message to notify other processes of environment change
 #[cfg(windows)]
 fn broadcast_environment_change() {
-    use std::ffi::CString;
-    use std::ptr;
-
     // We use a simple approach here - in a real implementation, you might want to use
     // SendMessageTimeout with HWND_BROADCAST and WM_SETTINGCHANGE
     // For now, we just log that the change was made
