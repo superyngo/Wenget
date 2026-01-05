@@ -13,6 +13,8 @@ use std::path::Path;
 
 #[cfg(not(windows))]
 use std::fs::{self, OpenOptions};
+#[cfg(not(windows))]
+use std::io::Write;
 
 /// Planned changes to show user before confirmation
 struct PlannedChanges {
