@@ -15,6 +15,197 @@ use std::path::Path;
 #[cfg(not(windows))]
 use std::fs::{self, OpenOptions};
 
+/// Planned changes to show user before confirmation
+struct PlannedChanges {
+    create_dirs: Vec<PathBuf>,
+    create_files: Vec<PathBuf>,
+    create_shim: Option<PathBuf>,
+    add_to_path: Option<String>,
+    add_bucket: bool,
+}
+
+impl PlannedChanges {
+    fn is_empty(&self) -> bool {
+        self.create_dirs.is_empty()
+            && self.create_files.is_empty()
+            && self.create_shim.is_none()
+            && self.add_to_path.is_none()
+            && !self.add_bucket
+    }
+
+    fn display(&self) {
+        println!("{}", "Wenget will make the following changes:".bold());
+        println!();
+
+        for dir in &self.create_dirs {
+            println!("  • Create directory: {}", dir.display().to_string().cyan());
+        }
+
+        for file in &self.create_files {
+            println!("  • Create file: {}", file.display().to_string().cyan());
+        }
+
+        if let Some(shim) = &self.create_shim {
+            println!("  • Create shim: {}", shim.display().to_string().cyan());
+        }
+
+        if let Some(path) = &self.add_to_path {
+            println!("  • Add to PATH: {}", path.cyan());
+        }
+
+        if self.add_bucket {
+            println!(
+                "  • Add bucket: {} ({})",
+                "wenget".cyan(),
+                "https://raw.githubusercontent.com/superyngo/wenget-bucket/refs/heads/main/manifest.json"
+            );
+        }
+
+        println!();
+    }
+}
+
+/// Collect planned changes for a fresh initialization
+fn collect_fresh_init_changes(config: &Config) -> PlannedChanges {
+    let mut changes = PlannedChanges {
+        create_dirs: Vec::new(),
+        create_files: Vec::new(),
+        create_shim: None,
+        add_to_path: None,
+        add_bucket: true,
+    };
+
+    // Directories to create
+    let paths = config.paths();
+    if !paths.root().exists() {
+        changes.create_dirs.push(paths.root().to_path_buf());
+    }
+    if !paths.apps_dir().exists() {
+        changes.create_dirs.push(paths.apps_dir().to_path_buf());
+    }
+    if !paths.bin_dir().exists() {
+        changes.create_dirs.push(paths.bin_dir().to_path_buf());
+    }
+    if !paths.cache_dir().exists() {
+        changes.create_dirs.push(paths.cache_dir().to_path_buf());
+    }
+
+    // Files to create
+    if !paths.installed_json().exists() {
+        changes.create_files.push(paths.installed_json().to_path_buf());
+    }
+    if !paths.buckets_json().exists() {
+        changes.create_files.push(paths.buckets_json().to_path_buf());
+    }
+
+    // Shim/symlink
+    #[cfg(windows)]
+    {
+        let shim_path = paths.bin_dir().join("wenget.cmd");
+        if !shim_path.exists() {
+            changes.create_shim = Some(shim_path);
+        }
+    }
+    #[cfg(unix)]
+    {
+        let symlink_path = paths.bin_dir().join("wenget");
+        if !symlink_path.exists() && !symlink_path.is_symlink() {
+            changes.create_shim = Some(symlink_path);
+        }
+    }
+
+    // PATH modification
+    if !is_in_path(paths.bin_dir()).unwrap_or(false) {
+        #[cfg(windows)]
+        {
+            let bin_dir = if paths.is_system_install() {
+                paths.internal_bin_dir()
+            } else {
+                paths.bin_dir().to_path_buf()
+            };
+            changes.add_to_path = Some(bin_dir.to_string_lossy().to_string());
+        }
+        #[cfg(not(windows))]
+        {
+            // For system installs, /usr/local/bin is typically in PATH
+            if !paths.is_system_install() {
+                changes.add_to_path = Some(paths.bin_dir().to_string_lossy().to_string());
+            }
+        }
+    }
+
+    changes
+}
+
+/// Collect planned changes for an already-initialized state
+fn collect_existing_init_changes(config: &Config) -> Result<PlannedChanges> {
+    let mut changes = PlannedChanges {
+        create_dirs: Vec::new(),
+        create_files: Vec::new(),
+        create_shim: None,
+        add_to_path: None,
+        add_bucket: false,
+    };
+
+    let paths = config.paths();
+
+    // Check shim/symlink
+    #[cfg(windows)]
+    {
+        let shim_path = paths.bin_dir().join("wenget.cmd");
+        if !shim_path.exists() {
+            changes.create_shim = Some(shim_path);
+        }
+    }
+    #[cfg(unix)]
+    {
+        let symlink_path = paths.bin_dir().join("wenget");
+        if !symlink_path.exists() && !symlink_path.is_symlink() {
+            changes.create_shim = Some(symlink_path);
+        }
+    }
+
+    // Check PATH
+    if !is_in_path(paths.bin_dir())? {
+        #[cfg(windows)]
+        {
+            let bin_dir = if paths.is_system_install() {
+                paths.internal_bin_dir()
+            } else {
+                paths.bin_dir().to_path_buf()
+            };
+            changes.add_to_path = Some(bin_dir.to_string_lossy().to_string());
+        }
+        #[cfg(not(windows))]
+        {
+            if !paths.is_system_install() {
+                changes.add_to_path = Some(paths.bin_dir().to_string_lossy().to_string());
+            }
+        }
+    }
+
+    // Check bucket
+    if !has_wenget_bucket(config)? {
+        changes.add_bucket = true;
+    }
+
+    Ok(changes)
+}
+
+/// Prompt user to confirm changes
+fn prompt_confirm_changes(changes: &PlannedChanges) -> Result<bool> {
+    changes.display();
+
+    print!("Proceed? [Y/n]: ");
+    io::stdout().flush()?;
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    let input = input.trim().to_lowercase();
+
+    Ok(input.is_empty() || input == "y" || input == "yes")
+}
+
 /// Initialize Wenget (create directories and manifests)
 pub fn run(yes: bool) -> Result<()> {
     // Show installation mode
@@ -24,9 +215,10 @@ pub fn run(yes: bool) -> Result<()> {
             "Initializing Wenget (system-level installation)...".cyan()
         );
         #[cfg(unix)]
-        println!("  Apps: /opt/wenget/apps");
-        #[cfg(unix)]
-        println!("  Bin:  /usr/local/bin (symlinks)");
+        {
+            println!("  Apps: /opt/wenget/apps");
+            println!("  Bin:  /usr/local/bin (symlinks)");
+        }
         #[cfg(windows)]
         {
             let config = Config::new()?;
@@ -39,38 +231,70 @@ pub fn run(yes: bool) -> Result<()> {
     } else {
         println!("{}", "Initializing Wenget...".cyan());
     }
+    println!();
 
     let config = Config::new()?;
 
     if config.is_initialized() {
         println!("{}", "✓ Wenget is already initialized".green());
         println!("  Root: {}", config.paths().root().display());
+        println!();
 
-        // Check and setup wenget executable if missing
-        check_and_setup_wenget_executable(&config)?;
+        // Collect changes needed for existing installation
+        let changes = collect_existing_init_changes(&config)?;
 
-        // Check if PATH is already configured
-        if is_in_path(config.paths().bin_dir())? {
-            println!("{}", "✓ Wenget bin directory is in PATH".green());
+        if changes.is_empty() {
+            // Everything is already set up
+            println!("{}", "✓ Wenget shim is in bin directory".green());
+            if is_in_path(config.paths().bin_dir())? {
+                println!("{}", "✓ Wenget bin directory is in PATH".green());
+            }
+            if has_wenget_bucket(&config)? {
+                println!("{}", "✓ Wenget bucket is configured".green());
+            }
+            return Ok(());
+        }
+
+        // Show what needs to be done and confirm
+        if !yes {
+            if !prompt_confirm_changes(&changes)? {
+                println!("{}", "Initialization cancelled.".yellow());
+                return Ok(());
+            }
         } else {
-            println!("{}", "⚠ Wenget bin directory is not in PATH".yellow());
-            println!();
+            changes.display();
+        }
+
+        // Apply changes
+        if changes.create_shim.is_some() {
+            setup_wenget_executable(&config)?;
+        }
+
+        if changes.add_to_path.is_some() {
             setup_path(&config)?;
         }
 
-        // Check if wenget bucket exists
-        if !has_wenget_bucket(&config)? {
-            println!();
-            if prompt_add_wenget_bucket(yes)? {
-                add_wenget_bucket(&config)?;
-            }
-        } else {
-            println!("{}", "✓ Wenget bucket is configured".green());
+        if changes.add_bucket {
+            add_wenget_bucket(&config)?;
         }
 
         return Ok(());
     }
 
+    // Fresh initialization - collect all changes
+    let changes = collect_fresh_init_changes(&config);
+
+    // Show what will be done and confirm
+    if !yes {
+        if !prompt_confirm_changes(&changes)? {
+            println!("{}", "Initialization cancelled.".yellow());
+            return Ok(());
+        }
+    } else {
+        changes.display();
+    }
+
+    // Perform initialization
     config.init()?;
 
     println!("{}", "✓ Wenget initialized successfully!".green());
@@ -92,15 +316,14 @@ pub fn run(yes: bool) -> Result<()> {
     // Set up PATH
     setup_path(&config)?;
 
-    // Ask about adding wenget bucket
-    println!();
-    if prompt_add_wenget_bucket(yes)? {
+    // Add wenget bucket (already confirmed above)
+    if changes.add_bucket {
         add_wenget_bucket(&config)?;
     }
 
     println!();
     println!("{}", "Next steps:".bold());
-    println!("  1. List available:       wenget source list");
+    println!("  1. List available:       wenget bucket list");
     println!("  2. Search packages:      wenget search <keyword>");
     println!("  3. Install packages:     wenget add <package-name>");
 
@@ -163,28 +386,6 @@ fn create_wenget_symlink(target: &PathBuf, link: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-/// Check and setup wenget executable if missing (for already initialized)
-fn check_and_setup_wenget_executable(config: &Config) -> Result<()> {
-    let bin_dir = config.paths().bin_dir();
-
-    #[cfg(windows)]
-    let wenget_bin = bin_dir.join("wenget.cmd");
-
-    #[cfg(unix)]
-    let wenget_bin = bin_dir.join("wenget");
-
-    // Check if wenget shim/symlink exists
-    if wenget_bin.exists() {
-        println!("{}", "✓ Wenget shim is in bin directory".green());
-    } else {
-        println!("{}", "⚠ Wenget shim is not in bin directory".yellow());
-        println!();
-        setup_wenget_executable(config)?;
-    }
-
-    Ok(())
-}
-
 /// Setup wenget executable itself in bin directory
 fn setup_wenget_executable(config: &Config) -> Result<()> {
     let current_exe = env::current_exe().context("Failed to get current executable path")?;
@@ -227,7 +428,6 @@ fn setup_wenget_executable(config: &Config) -> Result<()> {
 /// Set up PATH for Wenget bin directory
 fn setup_path(config: &Config) -> Result<()> {
     let bin_dir = config.paths().bin_dir();
-    let bin_dir_str = bin_dir.to_string_lossy();
 
     println!("{}", "Setting up PATH...".cyan());
 
@@ -255,7 +455,7 @@ fn setup_path(config: &Config) -> Result<()> {
             );
             println!("  Symlinks will be created in /usr/local/bin");
         } else {
-            setup_path_unix(&bin_dir_str)?;
+            setup_path_unix(&bin_dir.to_string_lossy())?;
         }
     }
 
@@ -459,32 +659,6 @@ fn is_in_path(dir: PathBuf) -> Result<bool> {
     Ok(path_var
         .split(if cfg!(windows) { ';' } else { ':' })
         .any(|p| p == dir_str.as_ref()))
-}
-
-/// Prompt user to add wenget bucket
-fn prompt_add_wenget_bucket(yes: bool) -> Result<bool> {
-    if yes {
-        return Ok(true);
-    }
-
-    println!("{}", "─".repeat(60));
-    println!();
-    println!("{}", "Add official Wenget bucket?".bold());
-    println!();
-    println!("The Wenget bucket provides curated open-source tools including:");
-    println!("  • ripgrep, fd, bat - Modern CLI utilities");
-    println!("  • gitui, zoxide - Enhanced Git and navigation");
-    println!("  • starship, bottom - Shell customization and monitoring");
-    println!("  • and more...");
-    println!();
-    print!("Add wenget bucket? [Y/n]: ");
-    io::stdout().flush()?;
-
-    let mut input = String::new();
-    io::stdin().read_line(&mut input)?;
-    let input = input.trim().to_lowercase();
-
-    Ok(input.is_empty() || input == "y" || input == "yes")
 }
 
 /// Check if wenget bucket is already configured

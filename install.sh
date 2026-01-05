@@ -24,17 +24,15 @@ REPO="superyngo/Wenget"
 detect_install_mode() {
     if [ "$(id -u)" -eq 0 ]; then
         SYSTEM_INSTALL=true
-        INSTALL_DIR="/opt/wenget/app/wenget"
+        INSTALL_DIR="/opt/wenget/apps/wenget"
         BIN_DIR="/usr/local/bin"
-        WENGET_HOME="/opt/wenget"
         print_info "Running as root - using system-level installation"
-        print_info "  App directory: /opt/wenget/app"
+        print_info "  App directory: /opt/wenget/apps"
         print_info "  Bin directory: /usr/local/bin"
     else
         SYSTEM_INSTALL=false
         INSTALL_DIR="$HOME/.wenget/apps/wenget"
         BIN_DIR="$HOME/.wenget/bin"
-        WENGET_HOME="$HOME/.wenget"
         print_info "Running as user - using user-level installation"
         print_info "  App directory: $HOME/.wenget/apps"
         print_info "  Bin directory: $HOME/.wenget/bin"
@@ -186,19 +184,20 @@ download_release() {
     chmod +x "$BIN_PATH"
 
     print_success "Binary installed successfully!"
+}
 
-    # For system-level installation, create symlink in /usr/local/bin
-    if [ "$SYSTEM_INSTALL" = true ]; then
-        print_info "Creating symlink in $BIN_DIR..."
-        ln -sf "$BIN_PATH" "$BIN_DIR/$APP_NAME"
-        print_success "Symlink created: $BIN_DIR/$APP_NAME -> $BIN_PATH"
-    fi
+# Create symlink in bin directory
+create_symlink() {
+    print_info "Creating symlink in $BIN_DIR..."
+    mkdir -p "$BIN_DIR"
+    ln -sf "$BIN_PATH" "$BIN_DIR/$APP_NAME"
+    print_success "Symlink created: $BIN_DIR/$APP_NAME -> $BIN_PATH"
 }
 
 # Run wenget init
 run_init() {
     print_info ""
-    print_info "Initializing Wenget..."
+    print_info "Running wenget init..."
     print_info ""
 
     if [ -x "$BIN_PATH" ]; then
@@ -206,8 +205,6 @@ run_init() {
             print_warning "Failed to run wenget init. You can run it manually later."
             print_info "  Run: wenget init"
         }
-        print_info ""
-        print_success "Wenget initialized successfully!"
     else
         print_warning "Binary not executable. Skipping initialization."
     fi
@@ -222,24 +219,16 @@ install_wenget() {
     detect_platform
     get_latest_release
     download_release
+    create_symlink
     run_init
 
     echo ""
-    print_success "Installation completed successfully!"
+    print_success "Installation completed!"
     echo ""
     print_info "Installed version: $VERSION"
     print_info "Installation path: $BIN_PATH"
     echo ""
-    print_info "Usage:"
-    print_info "  wenget search <keyword>     - Search packages"
-    print_info "  wenget add <package>        - Install a package"
-    print_info "  wenget list                 - List installed packages"
-    print_info "  wenget --help               - Show help"
-    echo ""
     print_warning "Note: You may need to restart your terminal for PATH changes to take effect."
-    echo ""
-    print_info "To uninstall, run:"
-    print_info "  curl -fsSL https://raw.githubusercontent.com/$REPO/main/install.sh | bash -s uninstall"
 }
 
 # Uninstallation function
@@ -257,8 +246,8 @@ uninstall_wenget() {
         else
             print_warning "Wenget self-deletion failed. Performing manual cleanup..."
 
-            # Remove symlink for system-level installation
-            if [ "$SYSTEM_INSTALL" = true ]; then
+            # Remove symlink
+            if [ -L "$BIN_DIR/$APP_NAME" ]; then
                 print_info "Removing symlink..."
                 rm -f "$BIN_DIR/$APP_NAME"
                 print_success "Symlink removed"
@@ -276,22 +265,12 @@ uninstall_wenget() {
                     print_success "Installation directory removed"
                 fi
             fi
-
-            # Try to remove wenget home directory if empty
-            if [ -d "$WENGET_HOME" ]; then
-                if [ -z "$(ls -A "$WENGET_HOME")" ]; then
-                    rmdir "$WENGET_HOME"
-                    print_success "Wenget home directory removed"
-                else
-                    print_info "Wenget home directory contains other files, keeping it"
-                fi
-            fi
         fi
     else
         print_info "Binary not found (already removed?)"
 
-        # Still try to clean up symlink for system-level
-        if [ "$SYSTEM_INSTALL" = true ] && [ -L "$BIN_DIR/$APP_NAME" ]; then
+        # Still try to clean up symlink
+        if [ -L "$BIN_DIR/$APP_NAME" ]; then
             print_info "Removing orphaned symlink..."
             rm -f "$BIN_DIR/$APP_NAME"
             print_success "Symlink removed"
