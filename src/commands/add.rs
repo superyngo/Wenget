@@ -233,11 +233,10 @@ fn install_scripts(
     );
 
     // Confirm installation
-    if !yes
-        && !crate::utils::confirm("\nProceed with installation?")? {
-            println!("Installation cancelled");
-            return Ok(());
-        }
+    if !yes && !crate::utils::confirm("\nProceed with installation?")? {
+        println!("Installation cancelled");
+        return Ok(());
+    }
 
     println!();
 
@@ -328,11 +327,10 @@ fn install_local_files(
         println!("  • {}", file);
     }
 
-    if !yes
-        && !crate::utils::confirm("\nProceed with installation?")? {
-            println!("Installation cancelled");
-            return Ok(());
-        }
+    if !yes && !crate::utils::confirm("\nProceed with installation?")? {
+        println!("Installation cancelled");
+        return Ok(());
+    }
 
     println!();
 
@@ -385,11 +383,10 @@ fn install_from_urls(
         println!("  • {}", url);
     }
 
-    if !yes
-        && !crate::utils::confirm("\nProceed with installation?")? {
-            println!("Installation cancelled");
-            return Ok(());
-        }
+    if !yes && !crate::utils::confirm("\nProceed with installation?")? {
+        println!("Installation cancelled");
+        return Ok(());
+    }
 
     println!();
 
@@ -445,7 +442,11 @@ fn install_from_urls(
         // Clean up downloaded file
         if download_path.exists() {
             if let Err(e) = fs::remove_file(&download_path) {
-                log::warn!("Failed to cleanup downloaded file: {}: {}", download_path.display(), e);
+                log::warn!(
+                    "Failed to cleanup downloaded file: {}: {}",
+                    download_path.display(),
+                    e
+                );
             }
         }
         println!();
@@ -706,11 +707,10 @@ fn install_packages(
     }
 
     // Confirm installation
-    if !yes
-        && !crate::utils::confirm("\nProceed with installation?")? {
-            println!("Installation cancelled");
-            return Ok(());
-        }
+    if !yes && !crate::utils::confirm("\nProceed with installation?")? {
+        println!("Installation cancelled");
+        return Ok(());
+    }
 
     println!();
 

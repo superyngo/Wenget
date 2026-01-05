@@ -69,11 +69,10 @@ pub fn run(names: Vec<String>, yes: bool, force: bool) -> Result<()> {
     }
 
     // Confirm deletion
-    if !yes
-        && !crate::utils::prompt::confirm_no_default("\nProceed with deletion?")? {
-            println!("Deletion cancelled");
-            return Ok(());
-        }
+    if !yes && !crate::utils::prompt::confirm_no_default("\nProceed with deletion?")? {
+        println!("Deletion cancelled");
+        return Ok(());
+    }
 
     println!();
 

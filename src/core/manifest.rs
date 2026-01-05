@@ -111,9 +111,7 @@ impl ScriptType {
                     true
                 }
             }
-            ScriptType::Python => {
-                cache.python_available
-            }
+            ScriptType::Python => cache.python_available,
         }
     }
 
