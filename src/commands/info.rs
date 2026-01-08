@@ -1,7 +1,9 @@
 //! Info command implementation
 //!
-//! Shows detailed package information from cache (with glob support) or GitHub URL
+//! Shows detailed package information from cache (with glob support), GitHub URL,
+//! or installed packages (for manually installed or non-bucket sources)
 
+use crate::core::manifest::InstalledPackage;
 use crate::core::Config;
 use crate::package_resolver::{PackageInput, PackageResolver, ResolvedPackage};
 use anyhow::Result;
@@ -36,7 +38,7 @@ pub fn run(names: Vec<String>) -> Result<()> {
     for name in &names {
         let input = PackageInput::parse(name);
 
-        // First try to resolve as package
+        // First try to resolve as package from cache
         match resolver.resolve(&input) {
             Ok(packages) => {
                 for resolved in packages {
@@ -58,6 +60,15 @@ pub fn run(names: Vec<String>) -> Result<()> {
                         println!();
                     }
                     display_script_info(cached_script, &installed)?;
+                    total_found += 1;
+                } else if let Some(inst_pkg) = installed.get_package(name) {
+                    // Check if it's an installed package not in cache (manual/direct install)
+                    if total_found > 0 {
+                        println!();
+                        println!("{}", "─".repeat(80));
+                        println!();
+                    }
+                    display_installed_only_info(name, inst_pkg)?;
                     total_found += 1;
                 } else {
                     eprintln!("{} {}: Not found", "Error".red().bold(), name);
@@ -266,6 +277,98 @@ fn display_script_info(
         }
     } else {
         println!("{} {}", "Current platform:".bold(), "Not supported".red());
+    }
+
+    Ok(())
+}
+
+/// Display information for an installed package not found in cache
+/// (e.g., manually installed, direct URL install, or local script)
+fn display_installed_only_info(name: &str, inst_pkg: &InstalledPackage) -> Result<()> {
+    // Determine type label based on source
+    let type_label = match &inst_pkg.source {
+        crate::core::manifest::PackageSource::Script { script_type, .. } => {
+            format!("[{} Script]", script_type.display_name())
+        }
+        crate::core::manifest::PackageSource::DirectRepo { .. } => "[Direct Install]".to_string(),
+        crate::core::manifest::PackageSource::Bucket { name } => {
+            format!("[Bucket: {}]", name)
+        }
+    };
+
+    // Header
+    println!("{} {}", name.bold().cyan(), type_label.magenta());
+    println!("{}", "─".repeat(60));
+
+    // Description
+    if !inst_pkg.description.is_empty() {
+        println!("{:<16} {}", "Description:".bold(), inst_pkg.description);
+    }
+
+    // Source information
+    match &inst_pkg.source {
+        crate::core::manifest::PackageSource::Bucket { name } => {
+            println!(
+                "{:<16} {} ({})",
+                "Source:".bold(),
+                "Bucket".green(),
+                name
+            );
+        }
+        crate::core::manifest::PackageSource::DirectRepo { url } => {
+            println!("{:<16} {}", "Source:".bold(), "Direct URL".yellow());
+            println!("{:<16} {}", "Repository:".bold(), url);
+        }
+        crate::core::manifest::PackageSource::Script {
+            origin,
+            script_type,
+        } => {
+            println!(
+                "{:<16} {} ({})",
+                "Source:".bold(),
+                "Script".magenta(),
+                script_type.display_name()
+            );
+            println!("{:<16} {}", "Origin:".bold(), origin);
+        }
+    }
+
+    // Installation status (always installed since we found it in installed.json)
+    println!(
+        "{:<16} {} (v{})",
+        "Status:".bold(),
+        "Installed".green(),
+        inst_pkg.version
+    );
+    println!(
+        "{:<16} {}",
+        "Command name:".bold(),
+        inst_pkg.command_name.yellow()
+    );
+    println!("{:<16} {}", "Installed at:".bold(), inst_pkg.installed_at);
+    println!("{:<16} {}", "Platform:".bold(), inst_pkg.platform);
+    println!("{:<16} {}", "Install path:".bold(), inst_pkg.install_path);
+
+    // Show installed files
+    if !inst_pkg.files.is_empty() {
+        println!();
+        println!(
+            "{} {} file(s)",
+            "Installed files:".bold(),
+            inst_pkg.files.len()
+        );
+        let max_files = 10;
+        for (i, file) in inst_pkg.files.iter().enumerate() {
+            if i >= max_files {
+                println!(
+                    "  {} ... and {} more",
+                    "•".dimmed(),
+                    inst_pkg.files.len() - max_files
+                );
+                break;
+            }
+            println!("  {} {}", "•".cyan(), file.dimmed());
+        }
     }
 
     Ok(())

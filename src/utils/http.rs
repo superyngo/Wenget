@@ -11,11 +11,16 @@ pub struct HttpClient {
 }
 
 impl HttpClient {
-    /// Create a new HTTP client
+    /// Create a new HTTP client with default timeout (30 seconds)
     pub fn new() -> Result<Self> {
+        Self::with_timeout(Duration::from_secs(30))
+    }
+
+    /// Create a new HTTP client with custom timeout
+    pub fn with_timeout(timeout: Duration) -> Result<Self> {
         let client = Client::builder()
             .user_agent(format!("WenPM/{}", env!("CARGO_PKG_VERSION")))
-            .timeout(Duration::from_secs(30))
+            .timeout(timeout)
             .build()
             .context("Failed to create HTTP client")?;
 

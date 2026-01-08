@@ -196,14 +196,15 @@ impl Config {
     pub fn rebuild_cache(&self) -> Result<ManifestCache> {
         use crate::cache::build_cache;
         use crate::utils::HttpClient;
+        use std::time::Duration;
 
         let bucket_config = self.get_or_create_buckets()?;
 
-        // Fetch bucket manifests
+        // Fetch bucket manifests with shorter timeout (10 seconds)
         let fetch_bucket = |bucket: &crate::bucket::Bucket| -> Result<SourceManifest> {
             log::info!("Fetching bucket '{}' from {}", bucket.name, bucket.url);
 
-            let http = HttpClient::new()?;
+            let http = HttpClient::with_timeout(Duration::from_secs(10))?;
             let content = http
                 .get_text(&bucket.url)
                 .with_context(|| format!("Failed to fetch bucket from {}", bucket.url))?;

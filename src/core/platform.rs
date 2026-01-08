@@ -294,6 +294,8 @@ pub enum FileExtension {
     TarXz,
     TarBz2,
     SevenZ,
+    /// Uncompressed binary (no extension or unrecognized extension)
+    UncompressedBinary,
     Unsupported,
 }
 
@@ -313,9 +315,58 @@ impl FileExtension {
             FileExtension::TarBz2
         } else if lower.ends_with(".7z") {
             FileExtension::SevenZ
+        } else if Self::is_likely_binary_without_extension(filename) {
+            FileExtension::UncompressedBinary
         } else {
             FileExtension::Unsupported
         }
+    }
+
+    /// Check if a filename looks like an uncompressed binary without a file extension
+    /// This is used for GitHub releases that distribute raw executables
+    fn is_likely_binary_without_extension(filename: &str) -> bool {
+        let lower = filename.to_lowercase();
+
+        // Exclude common non-binary files
+        let excluded_extensions = [
+            ".md", ".txt", ".rst", ".html", ".htm", ".json", ".yaml", ".yml",
+            ".toml", ".xml", ".sha256", ".sha512", ".sig", ".asc", ".pub", ".pem",
+            ".deb", ".rpm", ".apk", ".dmg", ".pkg", ".msi", ".appimage",
+        ];
+        if excluded_extensions.iter().any(|ext| lower.ends_with(ext)) {
+            return false;
+        }
+
+        // Exclude source archives
+        if lower.contains("source") || lower.contains("src") {
+            return false;
+        }
+
+        // Check for platform keywords in filename (strong indicator of binary)
+        let platform_keywords = [
+            "windows", "win64", "win32", "linux", "darwin", "macos", "osx", "mac",
+            "freebsd", "x86_64", "amd64", "x64", "aarch64", "arm64", "armv7", "i686",
+            "x86", "i386",
+        ];
+        let has_platform_keyword = platform_keywords.iter().any(|kw| lower.contains(kw));
+
+        // If filename contains platform keywords and has no common archive extension,
+        // it's likely an uncompressed binary
+        if has_platform_keyword {
+            return true;
+        }
+
+        // Also check for files that have no extension at all (common for Unix binaries)
+        // Only if they don't look like common non-binary files
+        let excluded_names = [
+            "readme", "license", "copying", "changelog", "authors", "news", "todo",
+            "makefile", "dockerfile", "vagrantfile", "gemfile", "rakefile",
+        ];
+        let base_name = filename.split('/').next_back().unwrap_or(filename);
+        let has_no_extension = !base_name.contains('.') || base_name.starts_with('.');
+        let is_excluded_name = excluded_names.iter().any(|n| lower.contains(n));
+
+        has_no_extension && !is_excluded_name
     }
 
     /// Get format preference score (higher = preferred)
@@ -327,6 +378,7 @@ impl FileExtension {
             FileExtension::TarBz2 => 3,
             FileExtension::SevenZ => 2,
             FileExtension::Exe => 2,
+            FileExtension::UncompressedBinary => 1, // Lower preference than archives
             FileExtension::Unsupported => 0,
         }
     }
@@ -1395,5 +1447,92 @@ mod tests {
             assert_eq!(identifiers[1], "linux-x86_64");
             assert_eq!(identifiers[2], "linux-x86_64-musl");
         }
+    }
+
+    #[test]
+    fn test_uncompressed_binary_detection() {
+        // Files with platform keywords should be detected as uncompressed binaries
+        assert_eq!(
+            FileExtension::from_filename("m3u8-downloader-linux-amd64"),
+            FileExtension::UncompressedBinary
+        );
+        assert_eq!(
+            FileExtension::from_filename("m3u8-downloader-darwin-amd64"),
+            FileExtension::UncompressedBinary
+        );
+        assert_eq!(
+            FileExtension::from_filename("m3u8-downloader-windows-amd64.exe"),
+            FileExtension::Exe
+        );
+        assert_eq!(
+            FileExtension::from_filename("tool-linux-x86_64"),
+            FileExtension::UncompressedBinary
+        );
+        assert_eq!(
+            FileExtension::from_filename("app-darwin-arm64"),
+            FileExtension::UncompressedBinary
+        );
+
+        // Non-binary files should be unsupported
+        assert_eq!(
+            FileExtension::from_filename("README.md"),
+            FileExtension::Unsupported
+        );
+        assert_eq!(
+            FileExtension::from_filename("config.json"),
+            FileExtension::Unsupported
+        );
+        assert_eq!(
+            FileExtension::from_filename("checksums.sha256"),
+            FileExtension::Unsupported
+        );
+
+        // Archive files should be their respective types
+        assert_eq!(
+            FileExtension::from_filename("app-linux-x64.tar.gz"),
+            FileExtension::TarGz
+        );
+        assert_eq!(
+            FileExtension::from_filename("app-windows-x64.zip"),
+            FileExtension::Zip
+        );
+    }
+
+    #[test]
+    fn test_uncompressed_binary_platform_extraction() {
+        // Test that uncompressed binaries are correctly extracted as platforms
+        let assets = vec![
+            BinaryAsset {
+                name: "m3u8-downloader-linux-amd64".to_string(),
+                url: "https://example.com/m3u8-downloader-linux-amd64".to_string(),
+                size: 10000000,
+            },
+            BinaryAsset {
+                name: "m3u8-downloader-darwin-amd64".to_string(),
+                url: "https://example.com/m3u8-downloader-darwin-amd64".to_string(),
+                size: 10000000,
+            },
+            BinaryAsset {
+                name: "m3u8-downloader-windows-amd64.exe".to_string(),
+                url: "https://example.com/m3u8-downloader-windows-amd64.exe".to_string(),
+                size: 10000000,
+            },
+        ];
+
+        let platforms = BinarySelector::extract_platforms(&assets);
+
+        // Should detect all three platforms
+        assert!(
+            platforms.contains_key("linux-x86_64"),
+            "Should detect Linux platform from uncompressed binary"
+        );
+        assert!(
+            platforms.contains_key("macos-x86_64"),
+            "Should detect macOS platform from uncompressed binary"
+        );
+        assert!(
+            platforms.contains_key("windows-x86_64"),
+            "Should detect Windows platform from .exe"
+        );
     }
 }

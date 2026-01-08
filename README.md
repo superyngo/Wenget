@@ -1,6 +1,6 @@
 # Wenget - Wen Package Manager
 
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/superyngo/Wenget/releases)
+[![Version](https://img.shields.io/badge/version-1.0.1-blue.svg)](https://github.com/superyngo/Wenget/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/superyngo/Wenget)
 
@@ -21,21 +21,46 @@ Wenget simplifies the installation and management of command-line tools and appl
 - **🎯 Platform Detection**: Automatically selects the correct binary for your system
 - **🔧 Smart Command Naming**: Automatically removes platform suffixes from executable names
 
-## Quick Install
+## Installation
 
-### Windows (PowerShell)
+### Method 1: Winget (Windows, Recommended)
+
 ```powershell
-irm https://raw.githubusercontent.com/superyngo/Wenget/main/install.ps1 | iex
+winget install wenget
 ```
 
-### Linux/macOS (Bash)
+After installation, run initialization:
+```powershell
+wenget init
+```
+
+### Method 2: Installation Script
+
+#### Windows (PowerShell)
+
+```powershell
+$env:APP_NAME="wenget"; $env:REPO="superyngo/Wenget"; $env:UNINSTALL="false"; irm https://gist.githubusercontent.com/superyngo/a6b786af38b8b4c2ce15a70ae5387bd7/raw/gpinstall.ps1 | iex
+```
+
+**Uninstall:**
+```powershell
+$env:APP_NAME="wenget"; $env:REPO="superyngo/Wenget"; $env:UNINSTALL="true"; irm https://gist.githubusercontent.com/superyngo/a6b786af38b8b4c2ce15a70ae5387bd7/raw/gpinstall.ps1 | iex
+```
+
+#### Linux / macOS (Bash)
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/superyngo/Wenget/main/install.sh | bash
+curl -fsSL https://gist.githubusercontent.com/superyngo/a6b786af38b8b4c2ce15a70ae5387bd7/raw/gpinstall.sh | APP_NAME="wenget" REPO="superyngo/Wenget" bash
 ```
 
-### System-Level Installation
+**Uninstall:**
+```bash
+curl -fsSL https://gist.githubusercontent.com/superyngo/a6b786af38b8b4c2ce15a70ae5387bd7/raw/gpinstall.sh | APP_NAME="wenget" REPO="superyngo/Wenget" UNINSTALL="true" bash
+```
 
-The install scripts automatically detect elevated privileges and switch to system-level paths:
+### User vs Administrator/Root Installation
+
+Running Wenget commands with elevated privileges (Administrator on Windows, root on Linux/macOS) determines where packages are installed:
 
 | Mode | Platform | App Directory | Bin Directory |
 |------|----------|---------------|---------------|
@@ -44,18 +69,15 @@ The install scripts automatically detect elevated privileges and switch to syste
 | Root/Admin | Linux/macOS | `/opt/wenget/app` | `/usr/local/bin` (symlinks) |
 | Root/Admin | Windows | `%ProgramW6432%\wenget\app` | `%ProgramW6432%\wenget\bin` |
 
-**Linux/macOS (as root):**
-```bash
-sudo curl -fsSL https://raw.githubusercontent.com/superyngo/Wenget/main/install.sh | sudo bash
-```
+**When to use Administrator/Root:**
+- When you want packages available to all users on the system
+- When installing to system directories like `/usr/local/bin` or `%ProgramW6432%`
 
-**Windows (as Administrator):**
-```powershell
-# Run PowerShell as Administrator, then:
-irm https://raw.githubusercontent.com/superyngo/Wenget/main/install.ps1 | iex
-```
+**For installation scripts:** Run the script in an elevated terminal (Administrator PowerShell or `sudo bash`) to install system-wide.
 
-### Manual Installation
+**For winget:** After `winget install wenget`, run `wenget init` as Administrator to set up system-level paths.
+
+### Method 3: Manual Installation
 
 Download the latest release from [GitHub Releases](https://github.com/superyngo/Wenget/releases) and place it in your PATH, or build from source:
 
@@ -476,8 +498,7 @@ wenget/
 │   ├── installer/        # Installation logic
 │   ├── providers/        # GitHub API integration
 │   └── utils/            # Utilities (HTTP client, prompts)
-├── install.ps1           # Windows installer
-└── install.sh            # Unix installer
+└── Cargo.toml            # Project configuration
 ```
 
 ## Troubleshooting
