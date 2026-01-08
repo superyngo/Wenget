@@ -652,6 +652,10 @@ fn install_packages(
                     "upgrade to".yellow(),
                     version.green()
                 );
+                // Show download URL for the matched platform
+                if let Some(binary) = resolved.package.platforms.get(&platform_match.platform_id) {
+                    println!("    {} {}", "↳".dimmed(), binary.url.dimmed());
+                }
                 to_update.push((resolved, platform_match));
             }
         } else {
@@ -663,6 +667,10 @@ fn install_packages(
                 version,
                 "(new)".green()
             );
+            // Show download URL for the matched platform
+            if let Some(binary) = resolved.package.platforms.get(&platform_match.platform_id) {
+                println!("    {} {}", "↳".dimmed(), binary.url.dimmed());
+            }
             to_install.push((resolved, platform_match));
         }
     }
