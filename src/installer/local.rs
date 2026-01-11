@@ -139,6 +139,7 @@ pub fn install_local_file(
         files: extracted_files,
         source,
         description: format!("Local installation of {}", filename),
-        command_name,
+        command_names: vec![command_name],
+        command_name: None,
     })
 }

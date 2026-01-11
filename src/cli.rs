@@ -163,7 +163,19 @@ pub enum BucketCommands {
         /// GitHub personal access token (or use GITHUB_TOKEN env var)
         #[arg(short = 't', long = "token")]
         token: Option<String>,
+
+        /// Update mode when output file exists
+        #[arg(short = 'u', long = "update-mode", value_enum)]
+        update_mode: Option<UpdateMode>,
     },
+}
+
+#[derive(clap::ValueEnum, Clone, Copy, Debug)]
+pub enum UpdateMode {
+    /// Replace entire manifest file
+    Overwrite,
+    /// Keep existing entries not in current run, update/add new entries
+    Incremental,
 }
 
 impl Cli {

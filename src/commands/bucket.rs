@@ -1,6 +1,7 @@
 //! Bucket command implementation
 
 use crate::bucket::Bucket;
+use crate::cli::UpdateMode;
 use crate::core::manifest::{Package, ScriptItem, ScriptPlatform, ScriptType};
 use crate::core::Config;
 use crate::providers::{GitHubProvider, GitHubRepo};
@@ -31,6 +32,7 @@ pub enum BucketCommand {
         direct: Vec<String>,
         output: Option<String>,
         token: Option<String>,
+        update_mode: Option<UpdateMode>,
     },
 }
 
@@ -47,7 +49,8 @@ pub fn run(cmd: BucketCommand) -> Result<()> {
             direct,
             output,
             token,
-        } => run_create(repos_src, scripts_src, direct, output, token),
+            update_mode,
+        } => run_create(repos_src, scripts_src, direct, output, token, update_mode),
     }
 }
 
@@ -270,9 +273,14 @@ struct ManifestGenerator {
 }
 
 impl ManifestGenerator {
+    #[allow(dead_code)]
     fn new() -> Result<Self> {
+        Self::with_token(None)
+    }
+
+    fn with_token(token: Option<String>) -> Result<Self> {
         Ok(Self {
-            http: HttpClient::new()?,
+            http: HttpClient::with_token(token.clone())?,
             github: GitHubProvider::new()?,
             packages: HashMap::new(),
             scripts: HashMap::new(),
@@ -717,7 +725,8 @@ fn run_create(
     scripts_src: Vec<String>,
     direct: Vec<String>,
     output_path: Option<String>,
-    _token: Option<String>,
+    token: Option<String>,
+    update_mode: Option<UpdateMode>,
 ) -> Result<()> {
     // Validate inputs
     if repos_src.is_empty() && scripts_src.is_empty() && direct.is_empty() {
@@ -733,7 +742,27 @@ fn run_create(
         println!("  -s, --scripts-src  Source file(s) with Gist/script URLs");
         println!("  -d, --direct       Direct URLs or local paths (comma-separated)");
         println!("  -o, --output       Output file (default: manifest.json)");
+        println!("  -t, --token        GitHub token for higher API rate limit");
         return Ok(());
+    }
+
+    // Try to get token from environment variable if not provided
+    let auth_token = token.or_else(|| std::env::var("GITHUB_TOKEN").ok());
+
+    if let Some(ref _token) = auth_token {
+        println!(
+            "{}",
+            "ℹ Using GitHub authentication (rate limit: 5000/hour)".cyan()
+        );
+    } else {
+        println!(
+            "{}",
+            "ℹ Using unauthenticated requests (rate limit: 60/hour)".yellow()
+        );
+        println!(
+            "{}",
+            "  Tip: Use --token or set GITHUB_TOKEN env var for higher rate limit".dimmed()
+        );
     }
 
     println!(
@@ -755,14 +784,59 @@ fn run_create(
             .cyan()
     );
 
-    let mut generator = ManifestGenerator::new()?;
-    let manifest = generator.generate(repos_src, scripts_src, direct)?;
+    let mut generator = ManifestGenerator::with_token(auth_token)?;
+    let new_manifest = generator.generate(repos_src, scripts_src, direct)?;
 
     // Determine output path
     let output_file = output_path.unwrap_or_else(|| "manifest.json".to_string());
+    let output_path = Path::new(&output_file);
+
+    // Check if file exists and determine update mode
+    let final_manifest = if output_path.exists() {
+        let mode = match update_mode {
+            Some(m) => m,
+            None => {
+                // Interactive prompt
+                use dialoguer::Select;
+                let choice = Select::new()
+                    .with_prompt("Output file exists. How should it be updated?")
+                    .items(&[
+                        "Overwrite (replace entire file)",
+                        "Incremental (merge with existing)",
+                    ])
+                    .default(0)
+                    .interact()?;
+                if choice == 0 {
+                    UpdateMode::Overwrite
+                } else {
+                    UpdateMode::Incremental
+                }
+            }
+        };
+
+        match mode {
+            UpdateMode::Overwrite => {
+                println!("{}", "  Mode: Overwrite".yellow());
+                new_manifest
+            }
+            UpdateMode::Incremental => {
+                println!("{}", "  Mode: Incremental merge".cyan());
+                // Load existing manifest
+                let existing_content = fs::read_to_string(output_path)?;
+                let existing: BucketManifest = serde_json::from_str(&existing_content)
+                    .context("Failed to parse existing manifest")?;
+
+                // Merge manifests
+                merge_manifests(existing, new_manifest)
+            }
+        }
+    } else {
+        new_manifest
+    };
 
     // Serialize and write
-    let json = serde_json::to_string_pretty(&manifest).context("Failed to serialize manifest")?;
+    let json =
+        serde_json::to_string_pretty(&final_manifest).context("Failed to serialize manifest")?;
     fs::write(&output_file, &json)
         .with_context(|| format!("Failed to write to {}", output_file))?;
 
@@ -776,14 +850,14 @@ fn run_create(
     println!(
         "  {} {} package(s), {} script(s)",
         "Contents:".bold(),
-        manifest.packages.len(),
-        manifest.scripts.len()
+        final_manifest.packages.len(),
+        final_manifest.scripts.len()
     );
 
     // Platform statistics
-    if !manifest.packages.is_empty() {
+    if !final_manifest.packages.is_empty() {
         let mut platform_stats: HashMap<String, usize> = HashMap::new();
-        for pkg in &manifest.packages {
+        for pkg in &final_manifest.packages {
             for platform in pkg.platforms.keys() {
                 *platform_stats.entry(platform.clone()).or_insert(0) += 1;
             }
@@ -798,9 +872,9 @@ fn run_create(
     }
 
     // Script type statistics
-    if !manifest.scripts.is_empty() {
+    if !final_manifest.scripts.is_empty() {
         let mut type_stats: HashMap<String, usize> = HashMap::new();
-        for script in &manifest.scripts {
+        for script in &final_manifest.scripts {
             for script_type in script.platforms.keys() {
                 *type_stats
                     .entry(script_type.display_name().to_string())
@@ -822,4 +896,30 @@ fn run_create(
     println!();
 
     Ok(())
+}
+
+/// Merge two manifests - keeps existing entries not in new manifest, updates/adds new entries
+fn merge_manifests(mut existing: BucketManifest, new: BucketManifest) -> BucketManifest {
+    use std::collections::HashSet;
+
+    // Create hash sets for efficient lookups
+    let new_package_names: HashSet<_> = new.packages.iter().map(|p| &p.name).collect();
+    let new_script_names: HashSet<_> = new.scripts.iter().map(|s| &s.name).collect();
+
+    // Keep existing packages not in new manifest
+    existing
+        .packages
+        .retain(|p| !new_package_names.contains(&p.name));
+    existing
+        .scripts
+        .retain(|s| !new_script_names.contains(&s.name));
+
+    // Add all new packages and scripts
+    existing.packages.extend(new.packages);
+    existing.scripts.extend(new.scripts);
+
+    // Update timestamp
+    existing.last_updated = Some(chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string());
+
+    existing
 }

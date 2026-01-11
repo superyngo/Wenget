@@ -153,7 +153,7 @@ fn display_package_info(
         println!(
             "{:<16} {}",
             "Command name:".bold(),
-            inst_pkg.command_name.yellow()
+            inst_pkg.command_names.join(", ").yellow()
         );
         println!("{:<16} {}", "Installed at:".bold(), inst_pkg.installed_at);
         println!("{:<16} {}", "Platform:".bold(), inst_pkg.platform);
@@ -233,7 +233,7 @@ fn display_script_info(
         println!(
             "{:<16} {}",
             "Command name:".bold(),
-            inst_pkg.command_name.yellow()
+            inst_pkg.command_names.join(", ").yellow()
         );
         println!("{:<16} {}", "Installed at:".bold(), inst_pkg.installed_at);
         println!("{:<16} {}", "Install path:".bold(), inst_pkg.install_path);
@@ -308,12 +308,7 @@ fn display_installed_only_info(name: &str, inst_pkg: &InstalledPackage) -> Resul
     // Source information
     match &inst_pkg.source {
         crate::core::manifest::PackageSource::Bucket { name } => {
-            println!(
-                "{:<16} {} ({})",
-                "Source:".bold(),
-                "Bucket".green(),
-                name
-            );
+            println!("{:<16} {} ({})", "Source:".bold(), "Bucket".green(), name);
         }
         crate::core::manifest::PackageSource::DirectRepo { url } => {
             println!("{:<16} {}", "Source:".bold(), "Direct URL".yellow());
@@ -343,7 +338,7 @@ fn display_installed_only_info(name: &str, inst_pkg: &InstalledPackage) -> Resul
     println!(
         "{:<16} {}",
         "Command name:".bold(),
-        inst_pkg.command_name.yellow()
+        inst_pkg.command_name.as_deref().unwrap_or("-").yellow()
     );
     println!("{:<16} {}", "Installed at:".bold(), inst_pkg.installed_at);
     println!("{:<16} {}", "Platform:".bold(), inst_pkg.platform);

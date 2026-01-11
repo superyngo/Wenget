@@ -405,8 +405,13 @@ pub struct InstalledPackage {
     /// Package description
     pub description: String,
 
-    /// Command name (the name used to invoke the tool)
-    pub command_name: String,
+    /// Command names (the names used to invoke the tools)
+    #[serde(default)]
+    pub command_names: Vec<String>,
+
+    /// Legacy single command name (for backward compatibility)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command_name: Option<String>,
 }
 
 /// Installed manifest (installed.json)
@@ -449,6 +454,18 @@ impl InstalledManifest {
     pub fn installed_names(&self) -> Vec<&str> {
         self.packages.keys().map(|s| s.as_str()).collect()
     }
+
+    /// Migrate old format (single command_name) to new format (command_names vec)
+    pub fn migrate(&mut self) {
+        for package in self.packages.values_mut() {
+            // If command_names is empty but command_name exists, migrate
+            if package.command_names.is_empty() {
+                if let Some(ref name) = package.command_name {
+                    package.command_names = vec![name.clone()];
+                }
+            }
+        }
+    }
 }
 
 impl Default for InstalledManifest {
@@ -481,7 +498,8 @@ mod tests {
                 name: "test-bucket".to_string(),
             },
             description: "Test package".to_string(),
-            command_name: "test".to_string(),
+            command_names: vec!["test".to_string()],
+            command_name: None,
         };
 
         manifest.upsert_package("test".to_string(), package);

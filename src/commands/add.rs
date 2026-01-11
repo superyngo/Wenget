@@ -306,7 +306,8 @@ fn install_single_script(
             script_type: script_type.clone(),
         },
         description: format!("{} script from {}", script_type.display_name(), origin),
-        command_name: name.to_string(),
+        command_names: vec![name.to_string()],
+        command_name: None,
     };
 
     Ok(inst_pkg)
@@ -343,10 +344,20 @@ fn install_local_files(
 
         match install_local_file(paths, path, custom_name, None) {
             Ok(inst_pkg) => {
-                let name = inst_pkg.command_name.clone();
+                // Use first command name as package name
+                let name = inst_pkg
+                    .command_names
+                    .first()
+                    .ok_or_else(|| anyhow::anyhow!("No command names found in installed package"))?
+                    .clone();
+                let display_names = inst_pkg.command_names.join(", ");
                 installed.upsert_package(name.clone(), inst_pkg);
                 config.save_installed(installed)?;
-                println!("  {} Installed successfully as {}", "✓".green(), name);
+                println!(
+                    "  {} Installed successfully as {}",
+                    "✓".green(),
+                    display_names
+                );
                 success_count += 1;
             }
             Err(e) => {
@@ -421,10 +432,22 @@ fn install_from_urls(
                 match install_local_file(paths, &download_path, custom_name, Some(url.to_string()))
                 {
                     Ok(inst_pkg) => {
-                        let name = inst_pkg.command_name.clone();
+                        // Use first command name as package name
+                        let name = inst_pkg
+                            .command_names
+                            .first()
+                            .ok_or_else(|| {
+                                anyhow::anyhow!("No command names found in installed package")
+                            })?
+                            .clone();
+                        let display_names = inst_pkg.command_names.join(", ");
                         installed.upsert_package(name.clone(), inst_pkg);
                         config.save_installed(installed)?;
-                        println!("  {} Installed successfully as {}", "✓".green(), name);
+                        println!(
+                            "  {} Installed successfully as {}",
+                            "✓".green(),
+                            display_names
+                        );
                         success_count += 1;
                     }
                     Err(e) => {
@@ -786,6 +809,7 @@ fn install_packages(
             &version,
             &resolved.source,
             custom_name,
+            yes,
         ) {
             Ok(inst_pkg) => {
                 installed.upsert_package(pkg_name.clone(), inst_pkg);
@@ -875,6 +899,7 @@ fn install_packages(
 }
 
 /// Install a single package
+#[allow(clippy::too_many_arguments)]
 fn install_package(
     _config: &Config,
     paths: &WenPaths,
@@ -883,6 +908,7 @@ fn install_package(
     version: &str,
     source: &PackageSource,
     custom_name: Option<&str>,
+    yes: bool,
 ) -> Result<InstalledPackage> {
     // Find platform binary using the matched platform_id
     let binary = pkg
@@ -938,8 +964,8 @@ fn install_package(
         );
     }
 
-    // Select the best executable
-    let exe_relative =
+    // Select executables
+    let selected_executables =
         if candidates.len() == 1 || (candidates.len() > 1 && candidates[0].score >= 80) {
             // Auto-select if only one candidate or if the top candidate has high confidence
             let selected = &candidates[0];
@@ -947,79 +973,98 @@ fn install_package(
                 "  Found executable: {} ({})",
                 selected.path, selected.reason
             );
-            selected.path.clone()
-        } else {
-            // Multiple candidates with similar scores - ask user to choose
-            println!("  Found multiple possible executables:");
-            for (i, candidate) in candidates.iter().enumerate() {
+            vec![candidates[0].path.clone()]
+        } else if yes {
+            // With --yes flag, select all candidates
+            println!(
+                "  Found {} executables, selecting all (--yes):",
+                candidates.len()
+            );
+            for candidate in &candidates {
                 println!(
-                    "    {}. {} (score: {}, {})",
-                    i + 1,
-                    candidate.path,
-                    candidate.score,
-                    candidate.reason
+                    "    {} (score: {}, {})",
+                    candidate.path, candidate.score, candidate.reason
                 );
             }
+            candidates.iter().map(|c| c.path.clone()).collect()
+        } else {
+            // Interactive multi-select
+            use dialoguer::MultiSelect;
 
-            use std::io::{self, Write};
-            print!("\n  Select executable [1-{}]: ", candidates.len());
-            io::stdout().flush()?;
+            println!("  Found multiple possible executables:");
 
-            let mut input = String::new();
-            io::stdin().read_line(&mut input)?;
+            let items: Vec<String> = candidates
+                .iter()
+                .map(|c| format!("{} (score: {}, {})", c.path, c.score, c.reason))
+                .collect();
 
-            let selection = input
-                .trim()
-                .parse::<usize>()
-                .ok()
-                .and_then(|n| {
-                    if n > 0 && n <= candidates.len() {
-                        Some(n - 1)
-                    } else {
-                        None
-                    }
-                })
-                .context("Invalid selection")?;
+            let selections = MultiSelect::new()
+                .with_prompt("Select executables to install (Space to select, Enter to confirm)")
+                .items(&items)
+                .interact()?;
 
-            candidates[selection].path.clone()
+            if selections.is_empty() {
+                anyhow::bail!("No executables selected");
+            }
+
+            selections
+                .into_iter()
+                .map(|i| candidates[i].path.clone())
+                .collect()
         };
 
-    let exe_path = app_dir.join(&exe_relative);
+    // Install all selected executables
+    let mut command_names = Vec::new();
 
-    if !exe_path.exists() {
-        anyhow::bail!("Executable not found: {}", exe_path.display());
-    }
+    for exe_relative in selected_executables {
+        let exe_path = app_dir.join(&exe_relative);
 
-    // Extract the actual command name from the executable path
-    let command_name = if let Some(custom) = custom_name {
-        // Use custom name if provided
-        custom.to_string()
-    } else {
-        // Auto-detect and normalize command name
-        let raw_name = exe_path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .context("Failed to extract command name")?;
+        if !exe_path.exists() {
+            anyhow::bail!("Executable not found: {}", exe_path.display());
+        }
 
-        // Apply smart normalization to remove platform suffixes
-        normalize_command_name(raw_name)
-    };
+        // Extract the actual command name from the executable path
+        let command_name = if let Some(custom) = custom_name {
+            // Use custom name if provided (only for first executable)
+            if command_names.is_empty() {
+                custom.to_string()
+            } else {
+                // For additional executables, use auto-detected name
+                let raw_name = exe_path
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .context("Failed to extract command name")?;
+                normalize_command_name(raw_name)
+            }
+        } else {
+            // Auto-detect and normalize command name
+            let raw_name = exe_path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .context("Failed to extract command name")?;
 
-    println!("  Command will be available as: {}", command_name);
+            // Apply smart normalization to remove platform suffixes
+            normalize_command_name(raw_name)
+        };
 
-    // Create symlink/shim using the actual executable name
-    let bin_path = paths.bin_shim_path(&command_name);
+        println!("  Command will be available as: {}", command_name);
 
-    println!("  Creating launcher at {}...", bin_path.display());
+        // Create symlink/shim using the actual executable name
+        let bin_path = paths.bin_shim_path(&command_name);
 
-    #[cfg(unix)]
-    {
-        create_symlink(&exe_path, &bin_path)?;
-    }
+        println!("  Creating launcher at {}...", bin_path.display());
 
-    #[cfg(windows)]
-    {
-        create_shim(&exe_path, &bin_path, &command_name)?;
+        #[cfg(unix)]
+        {
+            create_symlink(&exe_path, &bin_path)?;
+        }
+
+        #[cfg(windows)]
+        {
+            create_shim(&exe_path, &bin_path, &command_name)?;
+        }
+
+        command_names.push(command_name);
     }
 
     // Clean up download
@@ -1034,7 +1079,8 @@ fn install_package(
         files: extracted_files,
         source: source.clone(),
         description: pkg.description.clone(),
-        command_name,
+        command_names,
+        command_name: None,
     };
 
     Ok(inst_pkg)
@@ -1109,7 +1155,8 @@ fn install_script_from_bucket(
             script_type: script_type.clone(),
         },
         description: format!("{} script from bucket", script_type.display_name()),
-        command_name: command_name.to_string(),
+        command_names: vec![command_name.to_string()],
+        command_name: None,
     };
 
     // Update installed manifest

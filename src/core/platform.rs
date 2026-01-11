@@ -224,10 +224,7 @@ impl LibcType {
         }
 
         // Method 2: Check ldd output (fallback)
-        if let Ok(output) = std::process::Command::new("ldd")
-            .arg("--version")
-            .output()
-        {
+        if let Ok(output) = std::process::Command::new("ldd").arg("--version").output() {
             let stdout = String::from_utf8_lossy(&output.stdout);
             let stderr = String::from_utf8_lossy(&output.stderr);
             let combined = format!("{}{}", stdout, stderr).to_lowercase();
@@ -329,9 +326,29 @@ impl FileExtension {
 
         // Exclude common non-binary files
         let excluded_extensions = [
-            ".md", ".txt", ".rst", ".html", ".htm", ".json", ".yaml", ".yml",
-            ".toml", ".xml", ".sha256", ".sha512", ".sig", ".asc", ".pub", ".pem",
-            ".deb", ".rpm", ".apk", ".dmg", ".pkg", ".msi", ".appimage",
+            ".md",
+            ".txt",
+            ".rst",
+            ".html",
+            ".htm",
+            ".json",
+            ".yaml",
+            ".yml",
+            ".toml",
+            ".xml",
+            ".sha256",
+            ".sha512",
+            ".sig",
+            ".asc",
+            ".pub",
+            ".pem",
+            ".deb",
+            ".rpm",
+            ".apk",
+            ".dmg",
+            ".pkg",
+            ".msi",
+            ".appimage",
         ];
         if excluded_extensions.iter().any(|ext| lower.ends_with(ext)) {
             return false;
@@ -344,9 +361,8 @@ impl FileExtension {
 
         // Check for platform keywords in filename (strong indicator of binary)
         let platform_keywords = [
-            "windows", "win64", "win32", "linux", "darwin", "macos", "osx", "mac",
-            "freebsd", "x86_64", "amd64", "x64", "aarch64", "arm64", "armv7", "i686",
-            "x86", "i386",
+            "windows", "win64", "win32", "linux", "darwin", "macos", "osx", "mac", "freebsd",
+            "x86_64", "amd64", "x64", "aarch64", "arm64", "armv7", "i686", "x86", "i386",
         ];
         let has_platform_keyword = platform_keywords.iter().any(|kw| lower.contains(kw));
 
@@ -359,8 +375,18 @@ impl FileExtension {
         // Also check for files that have no extension at all (common for Unix binaries)
         // Only if they don't look like common non-binary files
         let excluded_names = [
-            "readme", "license", "copying", "changelog", "authors", "news", "todo",
-            "makefile", "dockerfile", "vagrantfile", "gemfile", "rakefile",
+            "readme",
+            "license",
+            "copying",
+            "changelog",
+            "authors",
+            "news",
+            "todo",
+            "makefile",
+            "dockerfile",
+            "vagrantfile",
+            "gemfile",
+            "rakefile",
         ];
         let base_name = filename.split('/').next_back().unwrap_or(filename);
         let has_no_extension = !base_name.contains('.') || base_name.starts_with('.');

@@ -8,32 +8,48 @@ use std::time::Duration;
 /// HTTP client wrapper
 pub struct HttpClient {
     client: Client,
+    token: Option<String>,
 }
 
 impl HttpClient {
-    /// Create a new HTTP client with default timeout (30 seconds)
+    /// Create a new HTTP client with default timeout (30 seconds) and no authentication
     pub fn new() -> Result<Self> {
-        Self::with_timeout(Duration::from_secs(30))
+        Self::with_options(None, Duration::from_secs(30))
+    }
+
+    /// Create a new HTTP client with optional GitHub token
+    pub fn with_token(token: Option<String>) -> Result<Self> {
+        Self::with_options(token, Duration::from_secs(30))
     }
 
     /// Create a new HTTP client with custom timeout
     pub fn with_timeout(timeout: Duration) -> Result<Self> {
+        Self::with_options(None, timeout)
+    }
+
+    /// Create a new HTTP client with optional token and custom timeout
+    pub fn with_options(token: Option<String>, timeout: Duration) -> Result<Self> {
         let client = Client::builder()
             .user_agent(format!("WenPM/{}", env!("CARGO_PKG_VERSION")))
             .timeout(timeout)
             .build()
             .context("Failed to create HTTP client")?;
 
-        Ok(Self { client })
+        Ok(Self { client, token })
     }
 
     /// Send a GET request and return the response as text
     pub fn get_text(&self, url: &str) -> Result<String> {
         log::debug!("GET {}", url);
 
-        let response = self
-            .client
-            .get(url)
+        let mut request = self.client.get(url);
+
+        // Add authorization header if token is available
+        if let Some(ref token) = self.token {
+            request = request.header("Authorization", format!("Bearer {}", token));
+        }
+
+        let response = request
             .send()
             .with_context(|| format!("Failed to send GET request to {}", url))?;
 
@@ -52,10 +68,14 @@ impl HttpClient {
     pub fn get_json<T: DeserializeOwned>(&self, url: &str) -> Result<T> {
         log::debug!("GET {} (JSON)", url);
 
-        let response = self
-            .client
-            .get(url)
-            .header("Accept", "application/json")
+        let mut request = self.client.get(url).header("Accept", "application/json");
+
+        // Add authorization header if token is available
+        if let Some(ref token) = self.token {
+            request = request.header("Authorization", format!("Bearer {}", token));
+        }
+
+        let response = request
             .send()
             .with_context(|| format!("Failed to send GET request to {}", url))?;
 

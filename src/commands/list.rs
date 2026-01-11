@@ -69,7 +69,7 @@ fn list_installed_packages(config: &Config) -> Result<()> {
         println!(
             "{:<20} {:<15} {:<10} {:<12} {}",
             name.green(),
-            pkg.command_name.yellow(),
+            pkg.command_names.join(", ").yellow(),
             pkg.version,
             source_display.cyan(),
             description

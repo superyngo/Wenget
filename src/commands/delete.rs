@@ -118,16 +118,31 @@ fn delete_package(
     installed: &mut crate::core::InstalledManifest,
     name: &str,
 ) -> Result<()> {
+    // Get package info to find all command names
+    let pkg = installed.get_package(name).context(format!(
+        "Package '{}' not found in installed manifest",
+        name
+    ))?;
+
+    // Remove symlinks/shims for all command names
+    for command_name in &pkg.command_names {
+        let bin_path = paths.bin_shim_path(command_name);
+        if bin_path.exists() {
+            fs::remove_file(&bin_path)
+                .with_context(|| format!("Failed to remove shim/symlink for '{}'", command_name))?;
+        }
+    }
+
+    // Also remove old single-name shim/symlink if it exists (for packages installed with old version)
+    let bin_path = paths.bin_shim_path(name);
+    if bin_path.exists() {
+        fs::remove_file(&bin_path).ok(); // Ignore errors here
+    }
+
     // Remove app directory
     let app_dir = paths.app_dir(name);
     if app_dir.exists() {
         fs::remove_dir_all(&app_dir)?;
-    }
-
-    // Remove symlink/shim
-    let bin_path = paths.bin_shim_path(name);
-    if bin_path.exists() {
-        fs::remove_file(&bin_path)?;
     }
 
     // Remove from installed manifest

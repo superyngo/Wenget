@@ -67,7 +67,11 @@ impl Config {
 
         // Try to parse JSON
         match try_parse_json::<InstalledManifest>(&content, &path) {
-            Ok(manifest) => Ok(manifest),
+            Ok(mut manifest) => {
+                // Migrate old format to new format
+                manifest.migrate();
+                Ok(manifest)
+            }
             Err(parse_error) => {
                 log::error!("CRITICAL: Failed to parse installed.json: {}", parse_error);
 

@@ -54,12 +54,14 @@ fn main() {
                     direct,
                     output,
                     token,
+                    update_mode,
                 } => commands::bucket::BucketCommand::Create {
                     repos_src,
                     scripts_src,
                     direct,
                     output,
                     token,
+                    update_mode,
                 },
             };
             commands::run_bucket(bucket_cmd)
