@@ -13,10 +13,15 @@ pub struct GitHubProvider {
 }
 
 impl GitHubProvider {
-    /// Create a new GitHub provider
+    /// Create a new GitHub provider without authentication
     pub fn new() -> Result<Self> {
+        Self::with_token(None)
+    }
+
+    /// Create a new GitHub provider with optional token for authentication
+    pub fn with_token(token: Option<String>) -> Result<Self> {
         Ok(Self {
-            http: HttpClient::new()?,
+            http: HttpClient::with_token(token)?,
         })
     }
 

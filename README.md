@@ -1,6 +1,6 @@
 # Wenget - Wen Package Manager
 
-[![Version](https://img.shields.io/badge/version-1.0.1-blue.svg)](https://github.com/superyngo/Wenget/releases)
+[![Version](https://img.shields.io/badge/version-1.1.1-blue.svg)](https://github.com/superyngo/Wenget/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/superyngo/Wenget)
 
@@ -132,6 +132,38 @@ wenget delete ripgrep
 - `wenget bucket del <name>` - Remove a bucket
 - `wenget bucket list` - List all buckets
 - `wenget bucket refresh` - Rebuild package cache
+- `wenget bucket create` - Generate a bucket manifest from source files
+
+### Bucket Manifest Generator
+
+The `bucket create` command generates bucket manifests from GitHub repositories and scripts:
+
+```bash
+# Generate manifest from source files
+wenget bucket create -r sources_repos.txt -s sources_scripts.txt -o manifest.json
+
+# Use with GitHub token for higher API rate limit (5000/hour vs 60/hour)
+wenget bucket create -r repos.txt -o manifest.json -t YOUR_TOKEN
+
+# Or use GITHUB_TOKEN environment variable
+export GITHUB_TOKEN=your_token
+wenget bucket create -r repos.txt -o manifest.json
+
+# Update modes (when manifest.json already exists)
+wenget bucket create -r repos.txt -o manifest.json -u overwrite     # Replace entire file
+wenget bucket create -r repos.txt -o manifest.json -u incremental   # Merge with existing
+
+# Add direct URLs
+wenget bucket create -d https://github.com/user/repo,https://gist.github.com/user/id
+```
+
+**Options:**
+- `-r, --repos-src` - Source file(s) with GitHub repo URLs (one per line)
+- `-s, --scripts-src` - Source file(s) with Gist/script URLs (one per line)
+- `-d, --direct` - Direct URLs (comma-separated)
+- `-o, --output` - Output file (default: manifest.json)
+- `-t, --token` - GitHub personal access token
+- `-u, --update-mode` - How to handle existing file: `overwrite` or `incremental`
 
 ### System
 

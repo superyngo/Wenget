@@ -5,6 +5,69 @@ All notable changes to Wenget will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-01-12
+
+### Fixed
+
+- **Token Propagation in Bucket Create** - Fixed GitHub token not being passed to GitHubProvider
+  - `ManifestGenerator::with_token()` now correctly passes token to `GitHubProvider::with_token()`
+  - Previously token was only passed to `HttpClient`, causing API rate limiting in CI/CD
+  - This fixes Gist and repo fetching failures when using `bucket create` with authentication
+
+### Documentation
+
+- Updated README with comprehensive `bucket create` command documentation
+  - Added usage examples for token authentication
+  - Documented update mode options (overwrite/incremental)
+  - Added all available command flags and options
+
+## [1.1.0] - 2026-01-12
+
+### Added
+
+- **GitHub Token Support for Bucket Creation** - Higher API rate limits for manifest generation
+  - New `-t, --token` option for `bucket create` command
+  - Automatically reads `GITHUB_TOKEN` environment variable if no token provided
+  - Authenticated requests get 5,000 requests/hour vs 60/hour unauthenticated
+  - Token now properly passed to all GitHub API calls (repos, releases, gists)
+
+- **Update Mode for Manifest Generation** - Control how existing manifests are updated
+  - New `-u, --update-mode` option with two modes:
+    - `overwrite`: Replace entire manifest file (default behavior)
+    - `incremental`: Merge with existing manifest, keeping entries not in current run
+  - Enables CI/CD pipelines to run non-interactively with `--update-mode overwrite`
+
+- **Uncompressed Binary Support** - Install binaries without archive wrappers
+  - Detects platform-specific binaries without file extensions (e.g., `m3u8-linux-amd64`)
+  - Recognizes binaries with platform keywords (linux, darwin, windows, x86_64, amd64, etc.)
+  - Properly handles repos like [llychao/m3u8-downloader](https://github.com/llychao/m3u8-downloader)
+
+- **Enhanced Info Command** - Shows info for manually installed packages
+  - Now displays details for packages installed via direct URL or local script
+  - Falls back to `installed.json` when package not found in cache
+  - Shows source type, origin URL, command name, and installed files
+
+- **Download URL Display** - Shows resolved download URLs during installation
+  - Displays the actual binary URL before confirmation
+  - Helps users verify what will be downloaded
+
+### Fixed
+
+- **Token Propagation** - `GitHubProvider` now accepts token for authenticated API calls
+  - Previously `bucket create` passed token to `HttpClient` but not to `GitHubProvider`
+  - This caused API rate limiting issues in CI/CD environments
+
+- **Bucket Fetch Timeout** - Reduced timeout from 30s to 10s for faster failure detection
+  - Improves responsiveness when bucket URLs are unreachable
+
+### Technical
+
+- Added `GitHubProvider::with_token()` constructor for authenticated API access
+- Added `FileExtension::UncompressedBinary` variant for extensionless binaries
+- Added `is_likely_binary_without_extension()` helper for binary detection
+- New `display_installed_only_info()` function in info command
+- All 72+ unit tests passing
+
 ## [1.0.0] - 2026-01-05
 
 ### 🎉 Stable Release
@@ -449,6 +512,8 @@ Wenget is now production-ready for managing GitHub binaries across platforms.
 - GitHub integration
 - Package cache system
 
+[1.1.1]: https://github.com/superyngo/wenget/compare/v1.1.0...v1.1.1
+[1.1.0]: https://github.com/superyngo/wenget/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/superyngo/wenget/compare/v0.9.1...v1.0.0
 [0.9.1]: https://github.com/superyngo/wenget/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/superyngo/wenget/compare/v0.8.0...v0.9.0

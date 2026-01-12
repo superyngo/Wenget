@@ -281,7 +281,7 @@ impl ManifestGenerator {
     fn with_token(token: Option<String>) -> Result<Self> {
         Ok(Self {
             http: HttpClient::with_token(token.clone())?,
-            github: GitHubProvider::new()?,
+            github: GitHubProvider::with_token(token)?,
             packages: HashMap::new(),
             scripts: HashMap::new(),
         })
