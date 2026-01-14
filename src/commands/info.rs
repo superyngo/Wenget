@@ -98,37 +98,43 @@ fn display_package_info(
 ) -> Result<()> {
     let pkg = &resolved.package;
 
-    // Header
-    println!("{}", pkg.name.bold().cyan());
-    println!("{}", "─".repeat(60));
+    // ═══════════════════════════════════════════════════════════════════
+    // Beautiful Header (Box style)
+    // ═══════════════════════════════════════════════════════════════════
+    println!();
+    println!("╭─────────────────────────────────────────────────────────╮");
+    println!("│  {:<55}│", pkg.name.bold().cyan());
+    println!("╰─────────────────────────────────────────────────────────╯");
+    println!();
 
     // Basic info
-    println!("{:<16} {}", "Repository:".bold(), pkg.repo);
+    println!("  {} {}", "Repository:".bold(), pkg.repo);
 
     if let Some(ref homepage) = pkg.homepage {
-        println!("{:<16} {}", "Homepage:".bold(), homepage);
+        println!("  {} {}", "Homepage:".bold(), homepage);
     }
 
     if let Some(ref license) = pkg.license {
-        println!("{:<16} {}", "License:".bold(), license);
+        println!("  {} {}", "License:".bold(), license);
     }
 
-    println!("{:<16} {}", "Description:".bold(), pkg.description);
+    println!("  {} {}", "Description:".bold(), pkg.description);
+    println!();
 
     // Source
     match &resolved.source {
         crate::core::manifest::PackageSource::Bucket { name } => {
-            println!("{:<16} {} ({})", "Source:".bold(), "Bucket".green(), name);
+            println!("  {} {} ({})", "Source:".bold(), "Bucket".green(), name);
         }
         crate::core::manifest::PackageSource::DirectRepo { url: _ } => {
-            println!("{:<16} {}", "Source:".bold(), "Direct URL".yellow());
+            println!("  {} {}", "Source:".bold(), "Direct URL".yellow());
         }
         crate::core::manifest::PackageSource::Script {
             origin,
             script_type,
         } => {
             println!(
-                "{:<16} {} ({} from {})",
+                "  {} {} ({} from {})",
                 "Source:".bold(),
                 "Script".magenta(),
                 script_type.display_name(),
@@ -139,43 +145,91 @@ fn display_package_info(
 
     // Latest version from GitHub
     if let Ok(version) = resolver.fetch_latest_version(&pkg.repo) {
-        println!("{:<16} {}", "Latest version:".bold(), version.green());
+        println!("  {} {}", "Latest version:".bold(), version.green());
     }
 
-    // Installation status
+    // Installation status and variants
     if let Some(inst_pkg) = installed.get_package(&pkg.name) {
         println!(
-            "{:<16} {} (v{})",
+            "  {} {} (v{})",
             "Status:".bold(),
             "Installed".green(),
             inst_pkg.version
         );
         println!(
-            "{:<16} {}",
+            "  {} {}",
             "Command name:".bold(),
             inst_pkg.command_names.join(", ").yellow()
         );
-        println!("{:<16} {}", "Installed at:".bold(), inst_pkg.installed_at);
-        println!("{:<16} {}", "Platform:".bold(), inst_pkg.platform);
-        println!("{:<16} {}", "Install path:".bold(), inst_pkg.install_path);
+        println!("  {} {}", "Installed at:".bold(), inst_pkg.installed_at);
+        println!("  {} {}", "Platform:".bold(), inst_pkg.platform);
+        println!("  {} {}", "Install path:".bold(), inst_pkg.install_path);
+
+        // Display variant information if any
+        let variants: Vec<_> = installed
+            .packages
+            .iter()
+            .filter(|(_, p)| p.parent_package.as_deref() == Some(&pkg.name))
+            .collect();
+
+        if !variants.is_empty() {
+            println!();
+            println!(
+                "  {} {} variant(s) installed:",
+                "Variants:".bold(),
+                variants.len()
+            );
+            for (var_name, var_pkg) in &variants {
+                println!(
+                    "    {} {} ({}) [v{}]",
+                    "└─".dimmed(),
+                    var_name.green(),
+                    var_pkg.asset_name.dimmed(),
+                    var_pkg.version.dimmed()
+                );
+            }
+        }
     } else {
-        println!("{:<16} {}", "Status:".bold(), "Not installed".yellow());
+        println!("  {} {}", "Status:".bold(), "Not installed".yellow());
     }
 
-    // Supported platforms
+    // Supported platforms (enhanced: show multiple packages per platform)
     println!();
     println!(
-        "{} {} platform(s)",
-        "Supported platforms:".bold(),
+        "  {} {} platform(s)",
+        "Supported:".bold(),
         pkg.platforms.len()
     );
+
     let mut platforms: Vec<_> = pkg.platforms.keys().collect();
     platforms.sort();
 
     for platform in platforms {
-        let binary = &pkg.platforms[platform];
-        let size_mb = binary.size as f64 / 1024.0 / 1024.0;
-        println!("  {} {:<25} ({:.2} MB)", "•".cyan(), platform, size_mb);
+        let binaries = &pkg.platforms[platform];
+        if binaries.len() == 1 {
+            let b = &binaries[0];
+            println!(
+                "    {} {} ({:.2} MB)",
+                "•".cyan(),
+                platform,
+                b.size as f64 / 1_048_576.0
+            );
+        } else {
+            println!(
+                "    {} {} [{} packages]",
+                "•".cyan(),
+                platform,
+                binaries.len()
+            );
+            for b in binaries {
+                println!(
+                    "      {} {} ({:.2} MB)",
+                    "─".dimmed(),
+                    b.asset_name,
+                    b.size as f64 / 1_048_576.0
+                );
+            }
+        }
     }
 
     Ok(())

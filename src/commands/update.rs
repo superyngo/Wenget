@@ -47,8 +47,21 @@ pub fn run(names: Vec<String>, yes: bool) -> Result<()> {
         names
     };
 
+    // Expand: include all variants when upgrading a parent package
+    let mut expanded = Vec::new();
+    for name in &to_upgrade {
+        expanded.push(name.clone());
+
+        // Find all variants of this package
+        for (key, pkg) in &installed.packages {
+            if pkg.parent_package.as_deref() == Some(name) {
+                expanded.push(key.clone());
+            }
+        }
+    }
+
     // Use add command to upgrade (reinstall)
-    add::run(to_upgrade, yes, None, None)
+    add::run(expanded, yes, None, None)
 }
 
 /// Find upgradeable packages by checking their sources
@@ -60,6 +73,11 @@ fn find_upgradeable(
     let mut upgradeable = Vec::new();
 
     for (name, inst_pkg) in &installed.packages {
+        // Skip variants - only check parent packages
+        if inst_pkg.parent_package.is_some() {
+            continue;
+        }
+
         // Determine repo URL based on source
         let repo_url = match &inst_pkg.source {
             PackageSource::Bucket { name: bucket_name } => {
@@ -150,7 +168,7 @@ fn upgrade_self() -> Result<()> {
     let current_platform = Platform::current();
     let platform_id = current_platform.to_string();
 
-    let binary = package
+    let binaries = package
         .platforms
         .get(&platform_id)
         .or_else(|| {
@@ -162,6 +180,11 @@ fn upgrade_self() -> Result<()> {
             }
         })
         .ok_or_else(|| anyhow::anyhow!("No binary available for platform: {}", platform_id))?;
+
+    // For self-update, just use the first binary if multiple exist
+    let binary = binaries
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("No binaries found for platform"))?;
 
     println!("Downloading: {}", binary.url);
 

@@ -1,6 +1,5 @@
 //! List command implementation
 
-use crate::core::manifest::PackageSource;
 use crate::core::{Config, Platform};
 use anyhow::Result;
 use colored::Colorize;
@@ -44,17 +43,34 @@ fn list_installed_packages(config: &Config) -> Result<()> {
     );
     println!("{}", "─".repeat(100));
 
-    // Convert to sorted vector for consistent display
-    let mut packages: Vec<_> = manifest.packages.iter().collect();
-    packages.sort_by(|a, b| a.0.cmp(b.0));
+    // Group packages: parent packages and their variants
+    let mut parent_packages: Vec<(&String, &crate::core::InstalledPackage)> = Vec::new();
+    let mut variants_map: std::collections::HashMap<
+        String,
+        Vec<(&String, &crate::core::InstalledPackage)>,
+    > = std::collections::HashMap::new();
 
-    // Print packages
-    for (name, pkg) in packages {
+    for (name, pkg) in &manifest.packages {
+        if let Some(ref parent) = pkg.parent_package {
+            variants_map
+                .entry(parent.clone())
+                .or_default()
+                .push((name, pkg));
+        } else {
+            parent_packages.push((name, pkg));
+        }
+    }
+
+    // Sort parent packages
+    parent_packages.sort_by(|a, b| a.0.cmp(b.0));
+
+    // Display packages with tree structure
+    for (name, pkg) in &parent_packages {
         // Get source display
         let source_display = match &pkg.source {
-            PackageSource::Bucket { name } => name.clone(),
-            PackageSource::DirectRepo { .. } => "url".to_string(),
-            PackageSource::Script { script_type, .. } => {
+            crate::core::manifest::PackageSource::Bucket { name } => name.clone(),
+            crate::core::manifest::PackageSource::DirectRepo { .. } => "url".to_string(),
+            crate::core::manifest::PackageSource::Script { script_type, .. } => {
                 script_type.display_name().to_lowercase().to_string()
             }
         };
@@ -74,10 +90,52 @@ fn list_installed_packages(config: &Config) -> Result<()> {
             source_display.cyan(),
             description
         );
+
+        // Display variants (tree structure)
+        if let Some(variants) = variants_map.get(*name) {
+            let mut sorted_variants = variants.clone();
+            sorted_variants.sort_by(|a, b| a.0.cmp(b.0));
+
+            for (i, (var_name, var_pkg)) in sorted_variants.iter().enumerate() {
+                let prefix = if i == sorted_variants.len() - 1 {
+                    "└─"
+                } else {
+                    "├─"
+                };
+
+                // Truncate variant description
+                let var_desc = if var_pkg.description.len() > 25 {
+                    format!("{}...", &var_pkg.description[..22])
+                } else {
+                    var_pkg.description.clone()
+                };
+
+                println!(
+                    "  {} {:<17} {:<15} {:<10} {}",
+                    prefix.dimmed(),
+                    var_name.green(),
+                    var_pkg.command_names.join(", ").yellow(),
+                    var_pkg.version.dimmed(),
+                    var_desc.dimmed()
+                );
+            }
+        }
     }
 
+    // Calculate total (including variants)
+    let total_variants: usize = variants_map.values().map(|v| v.len()).sum();
+    let total_packages = manifest.packages.len();
+
     println!();
-    println!("Total: {} package(s) installed", manifest.packages.len());
+    if total_variants > 0 {
+        println!(
+            "Total: {} package(s) installed ({} with variants)",
+            total_packages,
+            parent_packages.len()
+        );
+    } else {
+        println!("Total: {} package(s) installed", total_packages);
+    }
 
     Ok(())
 }

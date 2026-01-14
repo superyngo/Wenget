@@ -80,7 +80,10 @@ impl GitHubProvider {
     /// Convert GitHub release assets to platform binaries map
     ///
     /// This is the shared logic used by both `fetch_package` and bucket manifest generation.
-    pub fn extract_platform_binaries(assets: &[GitHubAsset]) -> HashMap<String, PlatformBinary> {
+    /// Returns a map where each platform can have MULTIPLE binaries (Vec<PlatformBinary>).
+    pub fn extract_platform_binaries(
+        assets: &[GitHubAsset],
+    ) -> HashMap<String, Vec<PlatformBinary>> {
         // Convert GitHub assets to BinaryAsset
         let binary_assets: Vec<BinaryAsset> = assets
             .iter()
@@ -91,21 +94,23 @@ impl GitHubProvider {
             })
             .collect();
 
-        // Extract platforms using BinarySelector
+        // Extract platforms using BinarySelector (now returns Vec<BinaryAsset> per platform)
         let platform_map = BinarySelector::extract_platforms(&binary_assets);
 
-        // Convert to PlatformBinary map
+        // Convert to Vec<PlatformBinary> map
         platform_map
             .into_iter()
-            .map(|(platform_id, asset)| {
-                (
-                    platform_id,
-                    PlatformBinary {
+            .map(|(platform_id, assets_vec)| {
+                let binaries: Vec<PlatformBinary> = assets_vec
+                    .into_iter()
+                    .map(|asset| PlatformBinary {
                         url: asset.url,
                         size: asset.size,
                         checksum: None,
-                    },
-                )
+                        asset_name: asset.name, // NEW: Store original asset filename
+                    })
+                    .collect();
+                (platform_id, binaries)
             })
             .collect()
     }

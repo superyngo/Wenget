@@ -61,11 +61,105 @@ pub fn run(names: Vec<String>, yes: bool, force: bool) -> Result<()> {
         return Ok(());
     }
 
+    // Group packages: find parents and their variants
+    let mut packages_to_delete: Vec<(String, Vec<String>)> = Vec::new();
+    let mut processed: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for name in &matching_packages {
+        if processed.contains(name) {
+            continue;
+        }
+
+        let pkg = installed.get_package(name).unwrap();
+
+        // If this is a variant (has parent_package), skip - it will be handled with its parent
+        if pkg.parent_package.is_some() {
+            continue;
+        }
+
+        // Find all variants of this package
+        let variants: Vec<String> = installed
+            .packages
+            .iter()
+            .filter(|(_, p)| p.parent_package.as_deref() == Some(name))
+            .map(|(key, _)| key.clone())
+            .collect();
+
+        processed.insert(name.clone());
+        for v in &variants {
+            processed.insert(v.clone());
+        }
+
+        packages_to_delete.push((name.clone(), variants));
+    }
+
     // Show packages to delete
     println!("{}", "Packages to delete:".bold());
-    for name in &matching_packages {
-        let pkg = installed.get_package(name).unwrap();
-        println!("  • {} v{}", name.red(), pkg.version);
+    for (parent, variants) in &packages_to_delete {
+        let pkg = installed.get_package(parent).unwrap();
+        println!("  • {} v{}", parent.red(), pkg.version);
+        for variant in variants {
+            let var_pkg = installed.get_package(variant).unwrap();
+            println!("    └─ {} v{}", variant.red(), var_pkg.version);
+        }
+    }
+
+    // If there are variants and not using -y, ask which ones to delete
+    let mut final_to_delete: Vec<String> = Vec::new();
+
+    if !yes {
+        for (parent, variants) in &packages_to_delete {
+            if variants.is_empty() {
+                // No variants, just add the parent
+                final_to_delete.push(parent.clone());
+            } else {
+                // Has variants, show selection dialog
+                use dialoguer::MultiSelect;
+
+                let mut all_options = vec![parent.clone()];
+                all_options.extend(variants.clone());
+
+                let items: Vec<String> = all_options
+                    .iter()
+                    .map(|name| {
+                        let pkg = installed.get_package(name).unwrap();
+                        format!("{} ({})", name, pkg.asset_name)
+                    })
+                    .collect();
+
+                println!(
+                    "\nFound {} variant(s) of '{}'. Select which to remove:",
+                    variants.len(),
+                    parent
+                );
+
+                let selections = MultiSelect::new()
+                    .with_prompt("Space to select, Enter to confirm")
+                    .items(&items)
+                    .defaults(&vec![true; items.len()]) // Default: all selected
+                    .interact()?;
+
+                if selections.is_empty() {
+                    println!("  Skipped {}", parent);
+                    continue;
+                }
+
+                for &idx in &selections {
+                    final_to_delete.push(all_options[idx].clone());
+                }
+            }
+        }
+    } else {
+        // -y flag: delete all
+        for (parent, variants) in &packages_to_delete {
+            final_to_delete.push(parent.clone());
+            final_to_delete.extend(variants.clone());
+        }
+    }
+
+    if final_to_delete.is_empty() {
+        println!("No packages selected for deletion");
+        return Ok(());
     }
 
     // Confirm deletion
@@ -80,7 +174,7 @@ pub fn run(names: Vec<String>, yes: bool, force: bool) -> Result<()> {
     let mut success_count = 0;
     let mut fail_count = 0;
 
-    for name in matching_packages {
+    for name in final_to_delete {
         println!("{} {}...", "Deleting".cyan(), name);
 
         match delete_package(&config, &paths, &mut installed, &name) {

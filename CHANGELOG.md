@@ -5,6 +5,48 @@ All notable changes to Wenget will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-01-14
+
+### Added
+
+- **Multi-Package Variant Support** - Install multiple binary variants from a single package
+  - Each platform can now have multiple binaries (e.g., baseline, desktop, musl, gnu variants)
+  - Interactive MultiSelect dialog to choose which variants to install
+  - `--yes` flag installs all variants automatically
+  - New `parent_package` tracking for variant relationships
+  - New `asset_name` field to track original asset filenames
+
+- **Variant-Aware Commands** - All commands now understand package variants
+  - `list`: Tree structure display showing parent packages and their variants (├─, └─)
+  - `delete`: Select which variants to remove with MultiSelect dialog
+  - `update`: Automatically includes all variants when updating a parent package
+  - `info`: Shows variant information and displays multiple packages per platform
+
+- **AGENTS.md** - AI coding agent guidelines for this repository
+  - Build/test commands, code style guidelines, and release workflow
+
+### Changed
+
+- **Manifest Structure** - `platforms` now stores `Vec<PlatformBinary>` instead of single `PlatformBinary`
+  - Bucket manifests capture ALL available variants for each platform
+  - Better support for projects with multiple build configurations
+
+- **Info Command UI** - Beautiful box-style header with improved formatting
+
+- **Input Detection** - GitHub repo URLs now correctly treated as package names
+  - Distinguishes between `github.com/owner/repo` (package) and `/releases/download/` (direct URL)
+
+- **Download URL Display** - Shows all download URLs when multiple packages available
+
+### Technical
+
+- Added `extract_variant_from_asset()` function for variant name extraction
+- Added `generate_installed_key()` function for consistent installed.json keys
+- `PlatformBinary` now includes `asset_name` field
+- `InstalledPackage` now includes `asset_name` and `parent_package` fields
+- `BinarySelector::extract_platforms()` returns `HashMap<String, Vec<BinaryAsset>>`
+- Fixed clippy warnings: `is_some_and()` and `or_default()` usage
+
 ## [1.1.1] - 2026-01-12
 
 ### Fixed
@@ -512,6 +554,7 @@ Wenget is now production-ready for managing GitHub binaries across platforms.
 - GitHub integration
 - Package cache system
 
+[1.2.0]: https://github.com/superyngo/wenget/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/superyngo/wenget/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/superyngo/wenget/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/superyngo/wenget/compare/v0.9.1...v1.0.0

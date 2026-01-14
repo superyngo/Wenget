@@ -176,6 +176,9 @@ pub struct PlatformBinary {
     /// Optional SHA256 checksum (for future use)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub checksum: Option<String>,
+
+    /// Original asset filename (used for variant identification and display)
+    pub asset_name: String,
 }
 
 /// Platform-specific script information (for multi-platform scripts)
@@ -212,7 +215,8 @@ pub struct Package {
     /// Platform-specific binaries
     /// Key format: "{os}-{arch}" or "{os}-{arch}-{variant}"
     /// Examples: "windows-x86_64", "linux-x86_64-musl", "macos-aarch64"
-    pub platforms: HashMap<String, PlatformBinary>,
+    /// Each platform can have multiple package variants (e.g., baseline, desktop, etc.)
+    pub platforms: HashMap<String, Vec<PlatformBinary>>,
 }
 
 /// Script item metadata (for bucket scripts)
@@ -412,6 +416,13 @@ pub struct InstalledPackage {
     /// Legacy single command name (for backward compatibility)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub command_name: Option<String>,
+
+    /// Original asset filename (for variant identification)
+    pub asset_name: String,
+
+    /// Parent package name (if this is a variant)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_package: Option<String>,
 }
 
 /// Installed manifest (installed.json)
@@ -474,6 +485,167 @@ impl Default for InstalledManifest {
     }
 }
 
+/// Extract variant identifier from asset filename
+///
+/// Removes repo name prefix, platform suffixes, and file extensions
+/// to identify the variant name (e.g., "baseline", "desktop")
+///
+/// # Examples
+/// ```
+/// use wenget::core::manifest::extract_variant_from_asset;
+///
+/// assert_eq!(extract_variant_from_asset("opencode-windows-x64.zip", "opencode"), None);
+/// assert_eq!(extract_variant_from_asset("opencode-windows-x64-baseline.zip", "opencode"), Some("baseline".to_string()));
+/// assert_eq!(extract_variant_from_asset("opencode-desktop-windows-x64.exe", "opencode"), Some("desktop".to_string()));
+/// ```
+pub fn extract_variant_from_asset(asset_name: &str, repo_name: &str) -> Option<String> {
+    // Remove file extensions
+    let name = asset_name
+        .trim_end_matches(".zip")
+        .trim_end_matches(".tar.gz")
+        .trim_end_matches(".tar.xz")
+        .trim_end_matches(".exe")
+        .trim_end_matches(".7z")
+        .trim_end_matches(".tgz");
+
+    // Remove repo name prefix (case-insensitive)
+    let repo_lower = repo_name.to_lowercase();
+    let name_lower = name.to_lowercase();
+
+    let without_repo = if name_lower.starts_with(&repo_lower) {
+        &name[repo_lower.len()..]
+    } else {
+        name
+    };
+
+    // Remove leading hyphens
+    let without_repo = without_repo.trim_start_matches('-');
+
+    // Remove version numbers (simple pattern matching)
+    // Split by '-' and filter out version-like segments (e.g., "1.0.0", "v1.0.0")
+    let segments: Vec<&str> = without_repo.split('-').collect();
+    let filtered_segments: Vec<&str> = segments
+        .into_iter()
+        .filter(|seg| {
+            // Skip segments that look like versions
+            !seg.starts_with('v')
+                && !seg
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_digit() && seg.contains('.'))
+        })
+        .collect();
+
+    let without_version = filtered_segments.join("-");
+
+    // Remove "unknown" keyword (common in Rust target triples)
+    let without_unknown = without_version.replace("unknown", "");
+
+    // Platform patterns to remove (ordered by specificity)
+    let platform_patterns = [
+        // OS-arch-variant combinations
+        "windows-x86_64-msvc",
+        "windows-x86_64-gnu",
+        "linux-x86_64-musl",
+        "linux-x86_64-gnu",
+        // OS-arch combinations
+        "windows-x86_64",
+        "windows-amd64",
+        "windows-x64",
+        "windows-i686",
+        "windows-x86",
+        "windows-arm64",
+        "windows-aarch64",
+        "linux-x86_64",
+        "linux-amd64",
+        "linux-x64",
+        "linux-i686",
+        "linux-x86",
+        "linux-arm64",
+        "linux-aarch64",
+        "linux-armv7",
+        "darwin-x86_64",
+        "darwin-amd64",
+        "darwin-x64",
+        "darwin-arm64",
+        "darwin-aarch64",
+        "macos-x86_64",
+        "macos-amd64",
+        "macos-x64",
+        "macos-arm64",
+        "macos-aarch64",
+        "freebsd-x86_64",
+        "freebsd-amd64",
+        "freebsd-x64",
+        // Generic arch patterns
+        "x86_64",
+        "amd64",
+        "x64",
+        "i686",
+        "x86",
+        "arm64",
+        "aarch64",
+        "armv7",
+        // OS-only patterns
+        "windows",
+        "linux",
+        "darwin",
+        "macos",
+        "freebsd",
+        // Other common patterns
+        "win32",
+        "win64",
+        "win",
+        "musl",
+        "gnu",
+        "msvc",
+    ];
+
+    let mut result = without_unknown;
+
+    // Remove platform patterns
+    for pattern in &platform_patterns {
+        // Try both with and without hyphens
+        result = result.replace(&format!("-{}", pattern), "");
+        result = result.replace(&format!("_{}", pattern), "");
+        result = result.replace(pattern, "");
+    }
+
+    // Clean up multiple hyphens/underscores
+    while result.contains("--") {
+        result = result.replace("--", "-");
+    }
+    while result.contains("__") {
+        result = result.replace("__", "_");
+    }
+
+    // Trim leading/trailing hyphens and underscores
+    let result = result.trim_matches('-').trim_matches('_').to_string();
+
+    if result.is_empty() {
+        None
+    } else {
+        Some(result)
+    }
+}
+
+/// Generate installed.json key from repo name and variant
+///
+/// # Examples
+/// ```
+/// use wenget::core::manifest::generate_installed_key;
+///
+/// assert_eq!(generate_installed_key("opencode", None), "opencode");
+/// assert_eq!(generate_installed_key("opencode", Some("baseline")), "opencode-baseline");
+/// assert_eq!(generate_installed_key("opencode", Some("desktop")), "opencode-desktop");
+/// ```
+pub fn generate_installed_key(repo_name: &str, variant: Option<&str>) -> String {
+    match variant {
+        Some(v) if !v.is_empty() => format!("{}-{}", repo_name, v),
+        _ => repo_name.to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -500,6 +672,8 @@ mod tests {
             description: "Test package".to_string(),
             command_names: vec!["test".to_string()],
             command_name: None,
+            asset_name: "test-windows-x64.zip".to_string(),
+            parent_package: None,
         };
 
         manifest.upsert_package("test".to_string(), package);

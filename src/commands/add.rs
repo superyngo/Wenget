@@ -308,6 +308,8 @@ fn install_single_script(
         description: format!("{} script from {}", script_type.display_name(), origin),
         command_names: vec![name.to_string()],
         command_name: None,
+        asset_name: format!("{}.{}", name, script_type.extension()),
+        parent_package: None,
     };
 
     Ok(inst_pkg)
@@ -484,6 +486,59 @@ fn install_from_urls(
     }
 
     Ok(())
+}
+
+/// Select packages from a platform that has multiple binaries
+///
+/// If only one binary: auto-select
+/// If multiple binaries and --yes: select all
+/// Otherwise: show MultiSelect dialog
+fn select_packages_for_platform(
+    pkg_name: &str,
+    binaries: &[crate::core::manifest::PlatformBinary],
+    yes: bool,
+) -> Result<Vec<usize>> {
+    if binaries.len() == 1 {
+        // Single package: auto-select
+        return Ok(vec![0]);
+    }
+
+    if yes {
+        // --yes flag: select all
+        println!(
+            "  {} Found {} packages for {}, selecting all (--yes)",
+            "ℹ".cyan(),
+            binaries.len(),
+            pkg_name
+        );
+        return Ok((0..binaries.len()).collect());
+    }
+
+    // Multiple packages: show selection dialog
+    use dialoguer::MultiSelect;
+
+    println!(
+        "\n  {} Found {} packages for {}:",
+        "ℹ".cyan(),
+        binaries.len(),
+        pkg_name
+    );
+
+    let items: Vec<String> = binaries
+        .iter()
+        .map(|b| format!("{} ({:.2} MB)", b.asset_name, b.size as f64 / 1_048_576.0))
+        .collect();
+
+    let selections = MultiSelect::new()
+        .with_prompt("Select packages to install (Space to select, Enter to confirm)")
+        .items(&items)
+        .interact()?;
+
+    if selections.is_empty() {
+        anyhow::bail!("No packages selected");
+    }
+
+    Ok(selections)
 }
 
 /// Install packages from cache or GitHub (existing logic)
@@ -675,9 +730,12 @@ fn install_packages(
                     "upgrade to".yellow(),
                     version.green()
                 );
-                // Show download URL for the matched platform
-                if let Some(binary) = resolved.package.platforms.get(&platform_match.platform_id) {
-                    println!("    {} {}", "↳".dimmed(), binary.url.dimmed());
+                // Show download URLs for the matched platform
+                if let Some(binaries) = resolved.package.platforms.get(&platform_match.platform_id)
+                {
+                    for binary in binaries {
+                        println!("    {} {}", "↳".dimmed(), binary.url.dimmed());
+                    }
                 }
                 to_update.push((resolved, platform_match));
             }
@@ -690,9 +748,11 @@ fn install_packages(
                 version,
                 "(new)".green()
             );
-            // Show download URL for the matched platform
-            if let Some(binary) = resolved.package.platforms.get(&platform_match.platform_id) {
-                println!("    {} {}", "↳".dimmed(), binary.url.dimmed());
+            // Show download URLs for the matched platform
+            if let Some(binaries) = resolved.package.platforms.get(&platform_match.platform_id) {
+                for binary in binaries {
+                    println!("    {} {}", "↳".dimmed(), binary.url.dimmed());
+                }
             }
             to_install.push((resolved, platform_match));
         }
@@ -793,42 +853,90 @@ fn install_packages(
             (resolved.package.clone(), "unknown".to_string(), true)
         };
 
-        println!("{} {} v{}...", "Installing".cyan(), pkg_name, version);
-        if using_fallback {
-            println!(
-                "  {} Falling back to bucket source download links",
-                "ℹ".cyan()
-            );
-        }
-
-        match install_package(
-            config,
-            paths,
-            &pkg_to_install,
-            &platform_match,
-            &version,
-            &resolved.source,
-            custom_name,
-            yes,
-        ) {
-            Ok(inst_pkg) => {
-                installed.upsert_package(pkg_name.clone(), inst_pkg);
-                config.save_installed(installed)?;
-
-                // Collect package for cache update if fetched from GitHub API
-                if !using_fallback {
-                    packages_to_cache.push((pkg_to_install.clone(), resolved.source.clone()));
-                }
-
-                println!("  {} Installed successfully", "✓".green());
-                success_count += 1;
+        // Get all binaries for this platform
+        let binaries = match pkg_to_install.platforms.get(&platform_match.platform_id) {
+            Some(bins) => bins,
+            None => {
+                println!("  {} Platform binary not found", "✗".red());
+                fail_count += 1;
+                continue;
             }
+        };
+
+        // Select which packages to install (single, all, or user selection)
+        let selected_indices = match select_packages_for_platform(pkg_name, binaries, yes) {
+            Ok(indices) => indices,
             Err(e) => {
                 println!("  {} {}", "✗".red(), e);
                 fail_count += 1;
+                continue;
             }
+        };
+
+        // Install each selected binary
+        let mut parent_key: Option<String> = None;
+
+        for (i, &idx) in selected_indices.iter().enumerate() {
+            let binary = &binaries[idx];
+
+            // Extract variant name from asset_name
+            let variant =
+                crate::core::manifest::extract_variant_from_asset(&binary.asset_name, pkg_name);
+            let installed_key =
+                crate::core::manifest::generate_installed_key(pkg_name, variant.as_deref());
+
+            // Determine parent package (first one is parent, rest are children)
+            let parent_package = if i == 0 {
+                parent_key = Some(installed_key.clone());
+                None
+            } else {
+                parent_key.clone()
+            };
+
+            println!("{} {} v{}...", "Installing".cyan(), installed_key, version);
+            if using_fallback {
+                println!(
+                    "  {} Falling back to bucket source download links",
+                    "ℹ".cyan()
+                );
+            }
+            if selected_indices.len() > 1 {
+                println!("  {} From: {}", "ℹ".cyan(), binary.asset_name.dimmed());
+            }
+
+            match install_package(
+                config,
+                paths,
+                &pkg_to_install,
+                &platform_match,
+                binary,
+                &version,
+                &resolved.source,
+                &installed_key,
+                parent_package.as_deref(),
+                custom_name,
+                yes,
+            ) {
+                Ok(inst_pkg) => {
+                    installed.upsert_package(installed_key.clone(), inst_pkg);
+                    config.save_installed(installed)?;
+
+                    // Collect package for cache update if fetched from GitHub API
+                    // (only once, not for each binary)
+                    if i == 0 && !using_fallback {
+                        packages_to_cache.push((pkg_to_install.clone(), resolved.source.clone()));
+                    }
+
+                    println!("  {} Installed successfully", "✓".green());
+                    success_count += 1;
+                }
+                Err(e) => {
+                    println!("  {} {}", "✗".red(), e);
+                    fail_count += 1;
+                }
+            }
+            println!();
         }
-        println!();
     }
 
     // Update cache with latest package info from GitHub API
@@ -905,17 +1013,14 @@ fn install_package(
     paths: &WenPaths,
     pkg: &crate::core::Package,
     platform_match: &crate::core::platform::PlatformMatch,
+    binary: &crate::core::manifest::PlatformBinary,
     version: &str,
     source: &PackageSource,
+    installed_key: &str,
+    parent_package: Option<&str>,
     custom_name: Option<&str>,
     yes: bool,
 ) -> Result<InstalledPackage> {
-    // Find platform binary using the matched platform_id
-    let binary = pkg
-        .platforms
-        .get(&platform_match.platform_id)
-        .context("Platform binary not found")?;
-
     // Log if using fallback
     if let Some(fallback_type) = &platform_match.fallback_type {
         log::info!(
@@ -942,8 +1047,8 @@ fn install_package(
 
     downloader::download_file(&binary.url, &download_path)?;
 
-    // Extract to app directory
-    let app_dir = paths.app_dir(&pkg.name);
+    // Extract to app directory (use installed_key for directory name)
+    let app_dir = paths.app_dir(installed_key);
 
     println!("  Extracting to {}...", app_dir.display());
 
@@ -1081,6 +1186,8 @@ fn install_package(
         description: pkg.description.clone(),
         command_names,
         command_name: None,
+        asset_name: binary.asset_name.clone(),
+        parent_package: parent_package.map(|s| s.to_string()),
     };
 
     Ok(inst_pkg)
@@ -1157,6 +1264,8 @@ fn install_script_from_bucket(
         description: format!("{} script from bucket", script_type.display_name()),
         command_names: vec![command_name.to_string()],
         command_name: None,
+        asset_name: format!("{}.{}", name, script_type.extension()),
+        parent_package: None,
     };
 
     // Update installed manifest

@@ -95,13 +95,14 @@ pub fn run(patterns: Vec<String>) -> Result<()> {
 
         for cached_pkg in &matching_packages {
             let pkg = &cached_pkg.package;
-            // Find the first matching platform
-            let platform_binary = platform_ids
+            // Find the first matching platform and its first binary
+            let platform_binaries = platform_ids
                 .iter()
                 .find_map(|id| pkg.platforms.get(id))
                 .unwrap();
 
-            let size_mb = platform_binary.size as f64 / 1_000_000.0;
+            let first_binary = platform_binaries.first().unwrap();
+            let size_mb = first_binary.size as f64 / 1_000_000.0;
 
             println!(
                 "{:<20} {:>8.1} MB  {}",

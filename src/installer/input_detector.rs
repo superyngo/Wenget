@@ -5,14 +5,37 @@ use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum InputType {
-    /// GitHub package name or generic identifier
+    /// GitHub package name or generic identifier (including GitHub repo URLs)
     PackageName,
     /// Local or remote script file
     Script,
     /// Local archive or binary file
     LocalFile,
-    /// Direct URL to archive or binary
+    /// Direct URL to archive or binary (NOT GitHub repo URLs)
     DirectUrl,
+}
+
+/// Check if a URL is a GitHub repository URL (not a direct download URL)
+fn is_github_repo_url(url: &str) -> bool {
+    // GitHub repo URLs: https://github.com/owner/repo
+    // NOT release download URLs: https://github.com/owner/repo/releases/download/...
+
+    if !url.contains("github.com") {
+        return false;
+    }
+
+    // If it contains "/releases/download/", it's a direct download URL
+    if url.contains("/releases/download/") {
+        return false;
+    }
+
+    // If it contains "/raw/", it's a direct file URL
+    if url.contains("/raw/") {
+        return false;
+    }
+
+    // Otherwise, it's likely a repo URL
+    true
 }
 
 pub fn detect_input_type(input: &str) -> InputType {
@@ -23,7 +46,14 @@ pub fn detect_input_type(input: &str) -> InputType {
 
     // Check if it's a URL
     if input.starts_with("http://") || input.starts_with("https://") {
-        return InputType::DirectUrl;
+        // Distinguish between GitHub repo URLs and direct download URLs
+        if is_github_repo_url(input) {
+            // GitHub repo URLs should be treated as package names
+            return InputType::PackageName;
+        } else {
+            // Direct download URLs
+            return InputType::DirectUrl;
+        }
     }
 
     // Check if it looks like a local file path

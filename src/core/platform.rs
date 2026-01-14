@@ -614,9 +614,12 @@ impl Platform {
     /// 1. Exact match with preferred compiler
     /// 2. Exact match with different compiler
     /// 3. Compatible fallback (with confirmation if needed)
+    ///
+    /// Note: Works with Vec<PlatformBinary> - checks if platform key exists,
+    /// regardless of how many binaries are available for that platform.
     pub fn find_best_match(
         &self,
-        available_platforms: &HashMap<String, crate::core::manifest::PlatformBinary>,
+        available_platforms: &HashMap<String, Vec<crate::core::manifest::PlatformBinary>>,
     ) -> Vec<PlatformMatch> {
         let mut matches = Vec::new();
 
@@ -900,12 +903,13 @@ impl BinarySelector {
 
     /// Extract platform information from available assets
     ///
-    /// Returns a map of platform identifiers to assets.
-    /// Now includes ALL matching variants, not just the highest-scored one.
+    /// Returns a map of platform identifiers to a VECTOR of assets.
+    /// Includes ALL matching variants for each platform.
     /// For example, if both musl and gnu variants exist for linux-x86_64,
-    /// both will be included in the result.
-    pub fn extract_platforms(assets: &[BinaryAsset]) -> HashMap<String, BinaryAsset> {
-        let mut platforms = HashMap::new();
+    /// both will be included in the result. Also captures multiple package
+    /// variants like baseline, desktop, etc.
+    pub fn extract_platforms(assets: &[BinaryAsset]) -> HashMap<String, Vec<BinaryAsset>> {
+        let mut platforms: HashMap<String, Vec<BinaryAsset>> = HashMap::new();
 
         // Try all common platform combinations
         let test_platforms = vec![
@@ -927,7 +931,7 @@ impl BinarySelector {
         ];
 
         for platform in test_platforms {
-            // NEW: Get ALL matching assets, not just the best one
+            // Get ALL matching assets for this platform
             let all_matches = Self::select_all_for_platform(assets, platform);
 
             for (_score, asset, compiler) in all_matches {
@@ -937,9 +941,8 @@ impl BinarySelector {
                     None => platform.to_string(),
                 };
 
-                // Only insert if we don't already have this exact platform_id
-                // (handles case where multiple assets match same platform without compiler info)
-                platforms.entry(platform_id).or_insert(asset);
+                // Push all matching assets into the vector
+                platforms.entry(platform_id).or_default().push(asset);
             }
         }
 
@@ -1343,11 +1346,12 @@ mod tests {
         let mut available = std::collections::HashMap::new();
         available.insert(
             "linux-i686".to_string(),
-            PlatformBinary {
+            vec![PlatformBinary {
                 url: "test".to_string(),
                 size: 0,
                 checksum: None,
-            },
+                asset_name: "test-linux-i686.tar.gz".to_string(),
+            }],
         );
 
         let platform = Platform::new(Os::Linux, Arch::X86_64);
@@ -1365,11 +1369,12 @@ mod tests {
         let mut available = std::collections::HashMap::new();
         available.insert(
             "macos-x86_64".to_string(),
-            PlatformBinary {
+            vec![PlatformBinary {
                 url: "test".to_string(),
                 size: 0,
                 checksum: None,
-            },
+                asset_name: "test-macos-x64.tar.gz".to_string(),
+            }],
         );
 
         let platform = Platform::new(Os::MacOS, Arch::Aarch64);
@@ -1399,19 +1404,21 @@ mod tests {
         let mut available = std::collections::HashMap::new();
         available.insert(
             "linux-x86_64-musl".to_string(),
-            PlatformBinary {
+            vec![PlatformBinary {
                 url: "musl".to_string(),
                 size: 0,
                 checksum: None,
-            },
+                asset_name: "test-linux-x64-musl.tar.gz".to_string(),
+            }],
         );
         available.insert(
             "linux-i686".to_string(),
-            PlatformBinary {
+            vec![PlatformBinary {
                 url: "i686".to_string(),
                 size: 0,
                 checksum: None,
-            },
+                asset_name: "test-linux-i686.tar.gz".to_string(),
+            }],
         );
 
         let platform = Platform::new(Os::Linux, Arch::X86_64);
