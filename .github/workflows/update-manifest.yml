@@ -85,7 +85,10 @@ jobs:
           - Updated by: wenget + GitHub Actions
 
           🤖 Automated update"
-          git push
+          
+          # Pull and rebase before push to handle concurrent changes
+          git pull --rebase origin main
+          git push origin main
 
       - name: Create summary
         if: always()
