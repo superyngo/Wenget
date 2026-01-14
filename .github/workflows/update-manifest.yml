@@ -1,0 +1,110 @@
+name: Update Bucket Manifest
+
+on:
+  # Run weekly on Monday at midnight UTC
+  schedule:
+    - cron: '0 0 * * 1'
+
+  # Allow manual trigger
+  workflow_dispatch:
+
+  # Trigger when source files or binary change
+  push:
+    paths:
+      - 'bucket/sources_repos.txt'
+      - 'bucket/sources_scripts.txt'
+      - 'bucket/wenget'
+
+jobs:
+  update-manifest:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate manifest with wenget
+        run: |
+          # Use bucket binary
+          chmod +x ./bucket/wenget
+          echo "wenget version: $(./bucket/wenget -V)"
+          ./bucket/wenget bucket create \
+            -r bucket/sources_repos.txt \
+            -s bucket/sources_scripts.txt \
+            -o bucket/manifest.json \
+            -u incremental
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate manifest
+        run: |
+          # Simple JSON validation and count
+          python3 -c "
+          import json
+          import sys
+          try:
+              data = json.load(open('bucket/manifest.json'))
+              pkgs = len(data.get('packages', []))
+              scripts = len(data.get('scripts', []))
+              print(f'✓ Valid manifest: {pkgs} packages, {scripts} scripts')
+          except Exception as e:
+              print(f'✗ Invalid manifest: {e}')
+              sys.exit(1)
+          "
+
+      - name: Check for changes
+        id: changes
+        run: |
+          if git diff --quiet bucket/manifest.json; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "📌 No changes detected"
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "✨ Changes detected"
+            echo ""
+            echo "Diff summary:"
+            git diff --stat bucket/manifest.json
+          fi
+
+      - name: Commit and push
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Count packages and scripts
+          COUNTS=$(python3 -c "import json; data=json.load(open('bucket/manifest.json')); print(f\"{len(data.get('packages', []))} packages, {len(data.get('scripts', []))} scripts\")")
+
+          git add bucket/manifest.json
+          git commit -m "chore: Update manifest - $(date -u +%Y-%m-%d)
+
+          - Total: $COUNTS
+          - Trigger: ${{ github.event_name }}
+          - Updated by: wenget + GitHub Actions
+
+          🤖 Automated update"
+          git push
+
+      - name: Create summary
+        if: always()
+        run: |
+          PACKAGE_COUNT=$(python3 -c "import json; data=json.load(open('bucket/manifest.json')); print(len(data.get('packages', [])))" 2>/dev/null || echo "N/A")
+          SCRIPT_COUNT=$(python3 -c "import json; data=json.load(open('bucket/manifest.json')); print(len(data.get('scripts', [])))" 2>/dev/null || echo "N/A")
+
+          echo "## 📦 Manifest Update Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Packages**: $PACKAGE_COUNT" >> $GITHUB_STEP_SUMMARY
+          echo "- **Scripts**: $SCRIPT_COUNT" >> $GITHUB_STEP_SUMMARY
+          echo "- **Changes**: ${{ steps.changes.outputs.changed }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Trigger**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Date**: $(date -u +%Y-%m-%d\ %H:%M:%S\ UTC)" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ steps.changes.outputs.changed }}" = "true" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 📊 Changes" >> $GITHUB_STEP_SUMMARY
+            echo '```diff' >> $GITHUB_STEP_SUMMARY
+            git diff HEAD~1 bucket/manifest.json --stat 2>/dev/null || echo "No previous commit"
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi

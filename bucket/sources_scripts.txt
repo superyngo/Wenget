@@ -1,0 +1,30 @@
+# Wenget Bucket - Script Sources
+#
+# Supports both Gist URLs and raw script URLs (one per line)
+# Comments start with #
+# Empty lines are ignored
+#
+# Formats:
+# - Gist: https://gist.github.com/USERNAME/GIST_ID
+#   (auto-extracts all .ps1, .sh, .bat, .cmd, .py scripts from the gist)
+#
+# - Raw script: https://raw.githubusercontent.com/USER/REPO/BRANCH/PATH/SCRIPT
+#   (detects script type from file extension or shebang line)
+
+# === Utility Scripts ===
+https://gist.github.com/superyngo/c77bbbf67759cc4213aac12ebe980225
+# wrtman
+https://gist.github.com/superyngo/7ff78b1ccc213ff6a6cb3b1b2dbd77d0
+# wappman
+https://gist.github.com/superyngo/a9543b560d59ceeb2d5fcb9eab87c560
+# rclonemm
+https://gist.github.com/superyngo/f74f4749882df654dfdf286b7f718a9e
+# ssh-copy-id for windows
+https://gist.github.com/superyngo/25df9a72b7baef3fd7227238ec37ce1b
+# Reformat vetoy
+https://gist.github.com/superyngo/4e972039cbf789a35eec99e29b16b903
+# GitHub Packages Generic Installation Script 
+https://gist.github.com/superyngo/a6b786af38b8b4c2ce15a70ae5387bd7
+
+# better-remove https://github.com/doggy8088/better-rm
+https://raw.githubusercontent.com/doggy8088/better-rm/refs/heads/main/better-rm

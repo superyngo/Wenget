@@ -8,6 +8,11 @@ use colored::Colorize;
 use std::env;
 use std::path::PathBuf;
 
+/// Default wenget bucket name and URL
+const WENGET_BUCKET_NAME: &str = "wenget";
+const WENGET_BUCKET_URL: &str =
+    "https://raw.githubusercontent.com/superyngo/Wenget/refs/heads/main/bucket/manifest.json";
+
 #[cfg(windows)]
 use std::path::Path;
 
@@ -55,9 +60,11 @@ impl PlannedChanges {
         }
 
         if self.add_bucket {
-            const BUCKET_URL: &str =
-                "https://raw.githubusercontent.com/superyngo/wenget-bucket/refs/heads/main/manifest.json";
-            println!("  • Add bucket: {} ({})", "wenget".cyan(), BUCKET_URL);
+            println!(
+                "  • Add bucket: {} ({})",
+                WENGET_BUCKET_NAME.cyan(),
+                WENGET_BUCKET_URL
+            );
         }
 
         println!();
@@ -659,9 +666,6 @@ fn is_in_path(dir: PathBuf) -> Result<bool> {
 
 /// Check if wenget bucket is already configured
 fn has_wenget_bucket(config: &Config) -> Result<bool> {
-    const WENGET_BUCKET_URL: &str =
-        "https://raw.githubusercontent.com/superyngo/wenget-bucket/refs/heads/main/manifest.json";
-
     match config.get_or_create_buckets() {
         Ok(bucket_config) => {
             // Check if any bucket has the wenget URL
@@ -676,10 +680,6 @@ fn has_wenget_bucket(config: &Config) -> Result<bool> {
 
 /// Add wenget bucket
 fn add_wenget_bucket(config: &Config) -> Result<()> {
-    const WENGET_BUCKET_NAME: &str = "wenget";
-    const WENGET_BUCKET_URL: &str =
-        "https://raw.githubusercontent.com/superyngo/wenget-bucket/refs/heads/main/manifest.json";
-
     println!();
     println!("{} wenget bucket...", "Adding".cyan());
 

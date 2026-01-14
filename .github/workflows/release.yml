@@ -312,30 +312,23 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Push musl binary to wenget-bucket
+      - name: Update bucket binary
         if: success()
         run: |
-          # Extract the musl binary from artifacts
+          # Extract the musl binary
           cd artifacts/wenget-linux-x86_64-musl
           tar -xzf wenget-linux-x86_64-musl.tar.gz
-
-          # Clone the target repository
-          git clone https://x-access-token:${{ secrets.WENGET_BUCKET_TOKEN }}@github.com/superyngo/wenget-bucket.git bucket-repo || echo "Failed to clone, continuing..."
-
-          if [ -d "bucket-repo" ]; then
-            # Copy the binary to repo root (overwriting old version)
-            cp wenget bucket-repo/wenget
-
-            # Commit and push
-            cd bucket-repo
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add wenget
-            git commit -m "Update wenget binary to ${{ github.ref_name }}" || echo "No changes to commit"
-            git push || echo "Push failed, but continuing"
-          else
-            echo "Could not clone wenget-bucket repository. Skipping binary push."
-          fi
+          
+          # Copy to bucket directory
+          cp wenget ../../bucket/wenget
+          
+          # Commit and push
+          cd ../..
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add bucket/wenget
+          git commit -m "chore: Update bucket binary to ${{ github.ref_name }}" || echo "No changes to commit"
+          git push || echo "Push failed, but continuing"
 
       # - name: Trigger WinGet workflow
       #   uses: actions/github-script@v7

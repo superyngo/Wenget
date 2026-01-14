@@ -436,10 +436,11 @@ impl ManifestGenerator {
 
         print!("  {} gist/{}...", "Fetching".cyan(), &gist_id[..8]);
 
-        // Fetch gist info (without auth token for public gists)
+        // Create HTTP client without token for public gists
+        // GitHub Actions GITHUB_TOKEN doesn't have gist read permission
+        let gist_http = HttpClient::new()?;
         let gist_url = format!("https://api.github.com/gists/{}", gist_id);
-        let gist: GistResponse = self
-            .http
+        let gist: GistResponse = gist_http
             .get_json(&gist_url)
             .with_context(|| format!("Failed to fetch gist {}", gist_id))?;
 
