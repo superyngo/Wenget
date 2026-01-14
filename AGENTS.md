@@ -232,10 +232,34 @@ cargo clippy -- -D warnings  # Fail on any warnings
 - `cargo fmt --check` shows formatting differences
 - `cargo clippy` reports any warnings or errors
 
-### 2. Commit All Updates
-- Ensure all changes are committed
+### 2. Commit All Updates (MANDATORY)
+**MUST ensure all changes are committed before proceeding:**
+
+```bash
+# Check for uncommitted changes
+git status
+
+# If there are uncommitted changes:
+# 1. Review all changes carefully
+git diff
+
+# 2. Stage and commit all changes
+git add .
+git commit -m "descriptive message"
+
+# 3. Verify working directory is clean
+git status  # Should show "nothing to commit, working tree clean"
+```
+
+**DO NOT proceed with release if:**
+- `git status` shows any uncommitted changes (modified, staged, or untracked files)
+- Working directory is not clean
+
+**Important Notes:**
+- All code changes must be committed before starting the release process
 - Organize commit messages clearly describing the updates
-- Verify code quality checks pass (fmt and clippy)
+- Verify code quality checks pass (fmt and clippy) for all committed code
+- The release process will create additional commits for version updates
 
 ### 3. Determine Version Number
 - Review changes to suggest appropriate version bump:
