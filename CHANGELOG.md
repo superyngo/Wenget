@@ -5,6 +5,21 @@ All notable changes to Wenget will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-01-14
+
+### Added
+
+- **Integrated Bucket Repository** - Merged official bucket repository into main repo
+  - New `bucket/` directory containing package manifests
+  - Includes README with bucket usage instructions
+  - Centralized manifest management in the main repository
+  - Simplifies bucket maintenance and distribution
+
+### Changed
+
+- Bucket manifest structure now co-located with main codebase
+- Official bucket available directly from the main repository
+
 ## [1.2.0] - 2026-01-14
 
 ### Added
@@ -554,6 +569,7 @@ Wenget is now production-ready for managing GitHub binaries across platforms.
 - GitHub integration
 - Package cache system
 
+[1.3.0]: https://github.com/superyngo/wenget/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/superyngo/wenget/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/superyngo/wenget/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/superyngo/wenget/compare/v1.0.0...v1.1.0
