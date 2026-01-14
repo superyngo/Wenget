@@ -215,26 +215,46 @@ eprintln!("{} {}", "Error:".red().bold(), e);
 
 When releasing a new version, follow these steps:
 
-### 1. Commit All Updates
+### 1. Code Quality Checks (MANDATORY)
+**MUST complete before proceeding with release:**
+
+```bash
+# Format code (must pass without changes)
+cargo fmt
+cargo fmt --check  # Verify no formatting issues remain
+
+# Lint code (must resolve all clippy warnings)
+cargo clippy -- -D warnings  # Fail on any warnings
+# Fix all clippy warnings before proceeding
+```
+
+**DO NOT proceed with release if:**
+- `cargo fmt --check` shows formatting differences
+- `cargo clippy` reports any warnings or errors
+
+### 2. Commit All Updates
 - Ensure all changes are committed
 - Organize commit messages clearly describing the updates
-- Run `cargo fmt` and `cargo clippy` before committing
+- Verify code quality checks pass (fmt and clippy)
 
-### 2. Determine Version Number
+### 3. Determine Version Number
 - Review changes to suggest appropriate version bump:
   - **PATCH** (x.x.+1): Bug fixes, minor improvements
   - **MINOR** (x.+1.0): New features, backward compatible
   - **MAJOR** (+1.0.0): Breaking changes
 - Ask user to confirm the new version number
 
-### 3. Collect Version Changes
+### 4. Collect Version Changes
 - Gather all changes since last release
 - Categorize: Added, Changed, Fixed, Removed
 - Write clear, user-facing descriptions
 
-### 4. Update Documentation
+### 5. Update Documentation
 - Update `Cargo.toml` version field
-- Update `README.md` if needed (new features, usage changes)
+- Update `README.md` version badge (MANDATORY):
+  - Change `[![Version](https://img.shields.io/badge/version-X.X.X-blue.svg)]` to new version
+  - Update usage examples if new features added
+  - Update feature descriptions if behavior changed
 - Update `CHANGELOG.md` with new version section:
   ```markdown
   ## [x.x.x] - YYYY-MM-DD
@@ -245,8 +265,12 @@ When releasing a new version, follow these steps:
   ### Fixed
   - Bug fix description
   ```
+- Add version comparison link at bottom of `CHANGELOG.md`:
+  ```markdown
+  [x.x.x]: https://github.com/superyngo/wenget/compare/vX.X.X...vX.X.X
+  ```
 
-### 5. Create Tag and Release
+### 6. Create Tag and Release
 ```bash
 # Create annotated tag
 git tag -a vX.X.X -m "Release vX.X.X"
@@ -259,7 +283,7 @@ git tag -a vX.X.X -m "Release vX.X.X
 "
 ```
 
-### 6. Push and Publish
+### 7. Push and Publish
 ```bash
 # Push commits and tags
 git push origin main
