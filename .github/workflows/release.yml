@@ -322,13 +322,26 @@ jobs:
           # Copy to bucket directory
           cp wenget ../../bucket/wenget
           
-          # Commit and push
+          # Switch to main branch and update
           cd ../..
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Fetch and checkout main branch
+          git fetch origin main
+          git checkout main
+          git pull origin main
+          
+          # Copy binary and commit
+          cp artifacts/wenget-linux-x86_64-musl/wenget bucket/wenget
           git add bucket/wenget
-          git commit -m "chore: Update bucket binary to ${{ github.ref_name }}" || echo "No changes to commit"
-          git push || echo "Push failed, but continuing"
+          
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: Update bucket binary to ${{ github.ref_name }}"
+            git push origin main
+          fi
 
       # - name: Trigger WinGet workflow
       #   uses: actions/github-script@v7
