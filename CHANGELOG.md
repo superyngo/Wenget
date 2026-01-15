@@ -5,6 +5,39 @@ All notable changes to Wenget will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.2] - 2026-01-15
+
+### Added
+
+- **Interactive Self-Deletion Menu** - Granular control over what gets removed
+  - New interactive menu when running `wenget del self` (without `-y` flag)
+  - Users can choose which components to remove:
+    - Apps & data (~/.wenget/)
+    - PATH configuration
+    - Wenget binary
+  - Multiple selections supported via checkboxes
+  - `-y` flag still removes everything for non-interactive use
+
+### Fixed
+
+- **Package Name Matching** - Fixed update command for packages with platform suffixes
+  - `wenget update` now correctly finds packages even when installed with variant suffixes (e.g., "uv-pc")
+  - Fallback matching strips trailing platform-related suffixes to find base package name
+  - Handles cases where old installations have platform identifiers in the package name
+
+- **Self-Update Platform Detection** - Better binary matching for self-updates
+  - `wenget update self` now uses same smart platform matching as `add` command
+  - Includes libc detection (musl vs glibc), compiler variants, and fallback support
+  - Shows informative messages when using compatible fallback binaries
+  - More reliable updates across different Linux distributions
+
+### Technical
+
+- Added `show_removal_menu()` function using `dialoguer::MultiSelect`
+- Added `RemovalOptions` struct for tracking user's deletion preferences
+- Enhanced `extract_variant_from_asset()` to include "pc" suffix (common in Rust target triples)
+- Refactored self-update to use `Platform::find_best_match()` API
+
 ## [1.3.1] - 2026-01-14
 
 ### Fixed
@@ -578,6 +611,7 @@ Wenget is now production-ready for managing GitHub binaries across platforms.
 - GitHub integration
 - Package cache system
 
+[1.3.2]: https://github.com/superyngo/wenget/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/superyngo/wenget/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/superyngo/wenget/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/superyngo/wenget/compare/v1.1.1...v1.2.0

@@ -85,10 +85,26 @@ fn find_upgradeable(
                 let cache = config.get_or_rebuild_cache()?;
 
                 // Find package in cache by name (cache is keyed by URL, not name)
+                // Try exact match first
                 let found = cache
                     .packages
                     .values()
                     .find(|cached_pkg| cached_pkg.package.name == *name);
+
+                // Fallback: try without variant suffix (for packages like "uv-pc" → "uv")
+                // This handles cases where old installations have platform-related suffixes
+                // that weren't properly stripped during installation
+                let found = found.or_else(|| {
+                    if let Some(pos) = name.rfind('-') {
+                        let base_name = &name[..pos];
+                        cache
+                            .packages
+                            .values()
+                            .find(|cached_pkg| cached_pkg.package.name == base_name)
+                    } else {
+                        None
+                    }
+                });
 
                 if let Some(cached_pkg) = found {
                     cached_pkg.package.repo.clone()
@@ -126,7 +142,6 @@ fn find_upgradeable(
 
 /// Upgrade wenget itself
 fn upgrade_self() -> Result<()> {
-    use crate::core::platform::Os;
     use crate::core::{Platform, WenPaths};
     use crate::downloader::download_file;
     use crate::installer::{extract_archive, find_executable};
@@ -165,21 +180,36 @@ fn upgrade_self() -> Result<()> {
     let package = provider.fetch_package("https://github.com/superyngo/wenget")?;
 
     // Select binary for current platform
+    // Note: Uses same platform matching logic as add command (see add.rs:592)
+    // This handles libc detection (musl vs glibc), compiler variants, and fallbacks
     let current_platform = Platform::current();
-    let platform_id = current_platform.to_string();
+    let matches = current_platform.find_best_match(&package.platforms);
 
-    let binaries = package
-        .platforms
-        .get(&platform_id)
-        .or_else(|| {
-            // Try with musl variant for Linux
-            if current_platform.os == Os::Linux {
-                package.platforms.get(&format!("{}-musl", platform_id))
-            } else {
-                None
-            }
-        })
-        .ok_or_else(|| anyhow::anyhow!("No binary available for platform: {}", platform_id))?;
+    if matches.is_empty() {
+        anyhow::bail!(
+            "No binary available for platform: {}. Available platforms: {}",
+            current_platform,
+            package
+                .platforms
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+
+    let best_match = &matches[0];
+    let binaries = &package.platforms[&best_match.platform_id];
+
+    // Show fallback information if using compatible binary
+    if let Some(fallback_type) = &best_match.fallback_type {
+        println!(
+            "  {} Using compatible binary: {} ({})",
+            "ℹ".cyan(),
+            best_match.platform_id,
+            fallback_type.description()
+        );
+    }
 
     // For self-update, just use the first binary if multiple exist
     let binary = binaries
