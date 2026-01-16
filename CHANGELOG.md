@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Unreleased Update - 2026-01-16
+
+#### Added
+
+- **Windows ARM64 Build Support** - Added aarch64-pc-windows-msvc target to CI/CD pipeline
+  - New build artifact: `wenget-windows-aarch64.exe`
+  - Supports Windows ARM64 devices (Snapdragon X Elite/Plus laptops, Windows Dev Kit 2023)
+  - Uses conservative optimization settings to avoid antivirus false positives (same as other Windows builds)
+  - Platform detection already supports ARM64 via existing `aarch64`/`arm64` keywords
+  - Includes fallback to x86_64 emulation when ARM64 binary unavailable
+
+- **Version Selection** - Add `-v/--ver` flag to install specific package versions
+  - Usage: `wenget add ripgrep -v 14.0.0` or `wenget add ripgrep --ver v14.0.0`
+  - Supports both `v1.0.0` and `1.0.0` formats (automatically handles 'v' prefix)
+  - Shows clear error message if specified version doesn't exist
+  - Note: Use `--verbose` (no short form) for verbose logging to avoid flag conflicts
+
+#### Changed
+
+- **Multiple Executable Detection** - Auto-install all executables with valid permissions
+  - Packages like `uv` (containing both `uv` and `uvx`) now install all executables automatically
+  - Changed from selecting only top-scoring candidate (score >= 80) to all candidates with score > 0
+  - Auto-selects up to 3 executables; shows interactive menu for more than 3 (unless `--yes` flag)
+  - Captures executables with execution permission even if name doesn't match package name
+
+- **Architecture Filtering** - Improved unsupported architecture detection
+  - Expanded UNSUPPORTED_ARCHS list to include all PowerPC variants (ppc, powerpc, powerpc64, powerpc64le)
+  - Added RISC-V variants (riscv, riscv32, riscv64)
+  - Added MIPS variants (mips, mips64, mipsel, mips64el)
+  - Added exotic architectures (alpha, sh4, hppa, ia64, loong64, loongarch64, s390)
+  - Prevents misclassification of unsupported binaries (e.g., `uv-powerpc64-unknown-linux-gnu.tar.gz` no longer incorrectly categorized under `linux-x86_64-gnu`)
+  - Added pattern detection for unknown architecture-like keywords
+  - Windows ARM64 support confirmed in test platforms
+
+#### Technical
+
+- Modified executable selection logic in `src/commands/add.rs` (line 1097-1146)
+- Added `fetch_release_by_tag()` method to `GitHubProvider` for version-specific fetches
+- Added `fetch_package_by_version()` method to fetch packages for specific versions
+- Updated install flow to use custom version when specified
+- Enhanced `ParsedAsset::contains_unknown_arch_pattern()` to detect unrecognized architecture patterns
+- Updated architecture matching logic to check for unsupported patterns before falling back to OS defaults
+
 ## [1.3.3] - 2026-01-16
 
 ### Changed

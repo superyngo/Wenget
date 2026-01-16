@@ -197,6 +197,37 @@ The `Cargo.toml` has aggressive optimization for small binary size:
 - `strip = true`: Strip debug symbols
 - `panic = "abort"`: Smaller panic handler
 
+## Supported Build Targets
+
+The CI/CD workflow (`.github/workflows/release.yml`) builds Wenget for the following platforms:
+
+**Linux (GNU):**
+- `x86_64-unknown-linux-gnu` - 64-bit Intel/AMD
+- `i686-unknown-linux-gnu` - 32-bit Intel/AMD
+- `aarch64-unknown-linux-gnu` - 64-bit ARM
+- `armv7-unknown-linux-gnueabihf` - 32-bit ARM
+
+**Linux (MUSL - statically linked):**
+- `x86_64-unknown-linux-musl` - 64-bit Intel/AMD
+- `i686-unknown-linux-musl` - 32-bit Intel/AMD
+- `aarch64-unknown-linux-musl` - 64-bit ARM
+- `armv7-unknown-linux-musleabihf` - 32-bit ARM
+
+**Windows (MSVC):**
+- `x86_64-pc-windows-msvc` - 64-bit Intel/AMD
+- `i686-pc-windows-msvc` - 32-bit Intel/AMD
+- `aarch64-pc-windows-msvc` - 64-bit ARM (Snapdragon X Elite/Plus, Windows Dev Kit 2023)
+
+**macOS:**
+- `x86_64-apple-darwin` - Intel Macs
+- `aarch64-apple-darwin` - Apple Silicon (M1/M2/M3)
+
+**Build Configuration Notes:**
+- Linux builds use aggressive optimization from Cargo.toml (opt-level="z", lto=true, strip=true)
+- Windows builds use conservative optimization to avoid antivirus false positives (opt-level="3", lto="thin", strip=false)
+- MUSL builds are statically linked and work on any Linux distribution
+- Windows ARM64 includes fallback to x86_64 emulation when ARM64 binaries unavailable
+
 ## Cross-Platform Considerations
 
 - Windows uses shims (`.cmd` files) in `~/.wenget/bin/`

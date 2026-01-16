@@ -77,6 +77,16 @@ jobs:
             strip: "false"
             codegen_units: "16"
             panic: "unwind"
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+            artifact_name: wenget.exe
+            asset_name: wenget-windows-aarch64.exe
+            rustflags: "-C target-feature=+crt-static"
+            opt_level: "3"
+            lto: "thin"
+            strip: "false"
+            codegen_units: "16"
+            panic: "unwind"
           # macOS builds - 使用 Cargo.toml 中的激進優化設定
           - os: macos-15-intel
             target: x86_64-apple-darwin
