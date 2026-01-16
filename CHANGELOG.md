@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed (2026-01-16)
+## [1.3.3] - 2026-01-16
+
+### Changed
 
 - **Platform Detection** - Improved architecture keyword matching
   - Added `386` keyword for I686 architecture detection
@@ -620,6 +622,7 @@ Wenget is now production-ready for managing GitHub binaries across platforms.
 - GitHub integration
 - Package cache system
 
+[1.3.3]: https://github.com/superyngo/wenget/compare/v1.3.2...v1.3.3
 [1.3.2]: https://github.com/superyngo/wenget/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/superyngo/wenget/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/superyngo/wenget/compare/v1.2.0...v1.3.0
