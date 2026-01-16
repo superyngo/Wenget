@@ -421,7 +421,18 @@ pub struct ParsedAsset {
 
 /// Unsupported architectures to filter out
 const UNSUPPORTED_ARCHS: &[&str] = &[
-    "s390x", "ppc64", "ppc64le", "riscv64", "mips", "mips64", "sparc64",
+    // IBM System z
+    "s390x", "s390",
+    // PowerPC variants (all forms)
+    "ppc64", "ppc64le", "ppc", "powerpc", "powerpc64", "powerpc64le",
+    // RISC-V
+    "riscv64", "riscv32", "riscv",
+    // MIPS variants
+    "mips", "mips64", "mipsel", "mips64el",
+    // SPARC
+    "sparc64", "sparc",
+    // Other exotic architectures
+    "alpha", "sh4", "hppa", "ia64", "loong64", "loongarch64",
 ];
 
 impl ParsedAsset {
@@ -451,6 +462,34 @@ impl ParsedAsset {
     pub fn contains_unsupported_arch(filename: &str) -> bool {
         let lower = filename.to_lowercase();
         UNSUPPORTED_ARCHS.iter().any(|arch| lower.contains(arch))
+    }
+
+    /// Check if filename contains an unrecognized architecture-like pattern
+    /// This catches patterns that look like architectures but aren't in our supported list
+    fn contains_unknown_arch_pattern(filename: &str) -> bool {
+        let lower = filename.to_lowercase();
+
+        // Pattern: word boundary + arch-like keyword + word boundary
+        // These are patterns that look like architectures but aren't supported
+        let arch_patterns = [
+            "powerpc", "ppc", "riscv", "mips", "sparc", "s390",
+            "alpha", "sh4", "hppa", "ia64", "loong",
+        ];
+
+        arch_patterns.iter().any(|p| {
+            // Check for word boundaries (not part of a larger word)
+            if let Some(pos) = lower.find(p) {
+                let before = pos == 0 || !lower.chars().nth(pos - 1).unwrap().is_alphanumeric();
+                let after_pos = pos + p.len();
+                let after = after_pos >= lower.len()
+                    || !lower.chars().nth(after_pos).unwrap().is_alphanumeric()
+                    || lower[after_pos..].starts_with("64")
+                    || lower[after_pos..].starts_with("le");
+                before && after
+            } else {
+                false
+            }
+        })
     }
 
     /// Detect OS from filename
@@ -852,7 +891,19 @@ impl BinarySelector {
                 return None;
             }
             None => {
-                // No explicit architecture - check if platform's arch matches OS default
+                // No explicit architecture detected
+                // Check if filename contains unsupported arch keywords - if so, reject
+                if ParsedAsset::contains_unsupported_arch(filename) {
+                    return None;
+                }
+
+                // Additional check: detect arch-like patterns that aren't in our supported list
+                // This catches cases like "powerpc64" that aren't in UNSUPPORTED_ARCHS
+                if ParsedAsset::contains_unknown_arch_pattern(filename) {
+                    return None;
+                }
+
+                // Fall back to OS default arch
                 if let Some(default_arch) = platform.os.default_arch() {
                     if platform.arch == default_arch {
                         // Use default architecture (lower score than explicit)

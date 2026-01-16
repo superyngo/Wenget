@@ -22,7 +22,7 @@ pub struct Cli {
     pub command: Option<Commands>,
 
     /// Enable verbose logging
-    #[arg(short, long, global = true)]
+    #[arg(long, global = true)]
     pub verbose: bool,
 }
 
@@ -52,6 +52,10 @@ pub enum Commands {
         /// Specify target platform (e.g., windows-x64, linux-x64, darwin-arm64)
         #[arg(short = 'p', long = "platform")]
         platform: Option<String>,
+
+        /// Specify version to install (e.g., v1.0.0, 1.0.0)
+        #[arg(short = 'v', long = "ver")]
+        pkg_version: Option<String>,
     },
 
     /// List installed packages

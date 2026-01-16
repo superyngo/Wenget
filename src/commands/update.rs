@@ -61,7 +61,7 @@ pub fn run(names: Vec<String>, yes: bool) -> Result<()> {
     }
 
     // Use add command to upgrade (reinstall)
-    add::run(expanded, yes, None, None)
+    add::run(expanded, yes, None, None, None)
 }
 
 /// Find upgradeable packages by checking their sources

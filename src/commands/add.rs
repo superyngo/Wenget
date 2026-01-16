@@ -31,6 +31,7 @@ pub fn run(
     yes: bool,
     script_name: Option<String>,
     platform: Option<String>,
+    version: Option<String>,
 ) -> Result<()> {
     let config = Config::new()?;
     let paths = WenPaths::new()?;
@@ -119,6 +120,7 @@ pub fn run(
             yes,
             script_name.as_deref(),
             platform.as_deref(),
+            version.as_deref(),
         )?;
     }
 
@@ -550,6 +552,7 @@ fn install_packages(
     yes: bool,
     custom_name: Option<&str>,
     custom_platform: Option<&str>,
+    custom_version: Option<&str>,
 ) -> Result<()> {
     // Get current platform
     let current_platform = if let Some(_custom_plat) = custom_platform {
@@ -702,8 +705,12 @@ fn install_packages(
         let pkg_name = &resolved.package.name;
         let repo = &resolved.package.repo;
 
-        // Fetch latest version
-        let version = if let Some(ref gh) = github {
+        // Fetch version (either custom or latest)
+        let version = if let Some(custom_ver) = custom_version {
+            // User specified a version
+            custom_ver.to_string()
+        } else if let Some(ref gh) = github {
+            // Fetch latest version
             gh.fetch_latest_version(repo)
                 .unwrap_or_else(|_| "unknown".to_string())
         } else {
@@ -819,33 +826,51 @@ fn install_packages(
         let pkg_name = &resolved.package.name;
         let repo_url = &resolved.package.repo;
 
-        // Try to fetch latest package info from GitHub API (includes latest download links)
+        // Try to fetch package info from GitHub API (includes download links)
         // If API rate limit is hit, fallback to cached package info
         let (pkg_to_install, version, using_fallback) = if let Some(ref gh) = github {
-            match gh.fetch_package(repo_url) {
-                Ok(latest_pkg) => {
-                    // Successfully fetched from GitHub API - use latest download links
-                    let version = gh
-                        .fetch_latest_version(repo_url)
-                        .unwrap_or_else(|_| "unknown".to_string());
-                    (latest_pkg, version, false)
+            if let Some(custom_ver) = custom_version {
+                // User specified a version - fetch that specific version
+                match gh.fetch_package_by_version(repo_url, custom_ver) {
+                    Ok(versioned_pkg) => {
+                        // Successfully fetched specific version from GitHub API
+                        let version = custom_ver.trim_start_matches('v').to_string();
+                        (versioned_pkg, version, false)
+                    }
+                    Err(e) => {
+                        // Version not found - error and abort
+                        println!("  {} {}", "✗".red(), e);
+                        fail_count += 1;
+                        continue;
+                    }
                 }
-                Err(e) => {
-                    // Failed to fetch from GitHub API (likely rate limit) - use cached package info
-                    log::warn!(
-                        "Failed to fetch latest package info from GitHub API for {}: {}",
-                        pkg_name,
-                        e
-                    );
-                    println!(
-                        "  {} Using cached download links (GitHub API unavailable)",
-                        "⚠".yellow()
-                    );
+            } else {
+                // No version specified - fetch latest
+                match gh.fetch_package(repo_url) {
+                    Ok(latest_pkg) => {
+                        // Successfully fetched from GitHub API - use latest download links
+                        let version = gh
+                            .fetch_latest_version(repo_url)
+                            .unwrap_or_else(|_| "unknown".to_string());
+                        (latest_pkg, version, false)
+                    }
+                    Err(e) => {
+                        // Failed to fetch from GitHub API (likely rate limit) - use cached package info
+                        log::warn!(
+                            "Failed to fetch latest package info from GitHub API for {}: {}",
+                            pkg_name,
+                            e
+                        );
+                        println!(
+                            "  {} Using cached download links (GitHub API unavailable)",
+                            "⚠".yellow()
+                        );
 
-                    let version = gh
-                        .fetch_latest_version(repo_url)
-                        .unwrap_or_else(|_| "unknown".to_string());
-                    (resolved.package.clone(), version, true)
+                        let version = gh
+                            .fetch_latest_version(repo_url)
+                            .unwrap_or_else(|_| "unknown".to_string());
+                        (resolved.package.clone(), version, true)
+                    }
                 }
             }
         } else {
@@ -1070,33 +1095,34 @@ fn install_package(
     }
 
     // Select executables
-    let selected_executables =
-        if candidates.len() == 1 || (candidates.len() > 1 && candidates[0].score >= 80) {
-            // Auto-select if only one candidate or if the top candidate has high confidence
-            let selected = &candidates[0];
-            println!(
-                "  Found executable: {} ({})",
-                selected.path, selected.reason
-            );
-            vec![candidates[0].path.clone()]
-        } else if yes {
-            // With --yes flag, select all candidates
-            println!(
-                "  Found {} executables, selecting all (--yes):",
-                candidates.len()
-            );
-            for candidate in &candidates {
-                println!(
-                    "    {} (score: {}, {})",
-                    candidate.path, candidate.score, candidate.reason
-                );
+    let selected_executables = if candidates.len() == 1 {
+        // Single candidate - auto-select
+        let selected = &candidates[0];
+        println!(
+            "  Found executable: {} ({})",
+            selected.path, selected.reason
+        );
+        vec![candidates[0].path.clone()]
+    } else {
+        // Multiple candidates - select all with valid scores (exec permission or name match)
+        // On Unix, exec permission gives +35 score, name match gives +50
+        // Files without any match get score 0 and should be filtered out
+        let auto_select: Vec<_> = candidates.iter()
+            .filter(|c| c.score > 0)  // All valid candidates
+            .collect();
+
+        if auto_select.len() <= 3 || yes {
+            // Auto-select if reasonable count (<=3) or --yes flag
+            println!("  Found {} executables:", auto_select.len());
+            for c in &auto_select {
+                println!("    {} ({})", c.path, c.reason);
             }
-            candidates.iter().map(|c| c.path.clone()).collect()
+            auto_select.into_iter().map(|c| c.path.clone()).collect()
         } else {
-            // Interactive multi-select
+            // Too many candidates - show interactive selection
             use dialoguer::MultiSelect;
 
-            println!("  Found multiple possible executables:");
+            println!("  Found {} possible executables:", candidates.len());
 
             let items: Vec<String> = candidates
                 .iter()
@@ -1116,7 +1142,8 @@ fn install_package(
                 .into_iter()
                 .map(|i| candidates[i].path.clone())
                 .collect()
-        };
+        }
+    };
 
     // Install all selected executables
     let mut command_names = Vec::new();

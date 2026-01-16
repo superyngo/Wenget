@@ -60,6 +60,33 @@ impl GitHubProvider {
             .with_context(|| format!("Failed to fetch latest release for {}/{}", owner, repo))
     }
 
+    /// Fetch a specific release by tag from GitHub API
+    pub fn fetch_release_by_tag(&self, owner: &str, repo: &str, tag: &str) -> Result<GitHubRelease> {
+        // Try with 'v' prefix if not present
+        let tags_to_try = if tag.starts_with('v') {
+            vec![tag.to_string(), tag.trim_start_matches('v').to_string()]
+        } else {
+            vec![format!("v{}", tag), tag.to_string()]
+        };
+
+        let mut last_error = None;
+        for try_tag in tags_to_try {
+            let url = format!(
+                "https://api.github.com/repos/{}/{}/releases/tags/{}",
+                owner, repo, try_tag
+            );
+
+            match self.http.get_json(&url) {
+                Ok(release) => return Ok(release),
+                Err(e) => last_error = Some(e),
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| {
+            anyhow::anyhow!("Version '{}' not found for {}/{}", tag, owner, repo)
+        }))
+    }
+
     /// Get repository information
     pub fn fetch_repo_info(&self, owner: &str, repo: &str) -> Result<GitHubRepo> {
         let url = format!("https://api.github.com/repos/{}/{}", owner, repo);
@@ -75,6 +102,68 @@ impl GitHubProvider {
             .ok_or_else(|| anyhow::anyhow!("Invalid GitHub URL: {}", repo_url))?;
         let release = self.fetch_latest_release(&owner, &repo)?;
         Ok(release.tag_name.trim_start_matches('v').to_string())
+    }
+
+    /// Fetch package information for a specific version
+    pub fn fetch_package_by_version(&self, url: &str, version: &str) -> Result<Package> {
+        log::info!("Fetching package from: {} (version: {})", url, version);
+
+        // Parse URL
+        let (owner, repo) = Self::parse_github_url(url)
+            .ok_or_else(|| anyhow::anyhow!("Invalid GitHub URL: {}", url))?;
+
+        // Fetch repo info for description and license
+        let repo_info = self.fetch_repo_info(&owner, &repo)?;
+
+        // Fetch specific release by tag
+        let release = self.fetch_release_by_tag(&owner, &repo, version)
+            .with_context(|| {
+                format!(
+                    "Version '{}' not found for {}/{}. Use 'wenget info {}' to see available versions.",
+                    version, owner, repo, repo
+                )
+            })?;
+
+        if release.assets.is_empty() {
+            anyhow::bail!(
+                "No binary assets found in release {} for {}/{}",
+                version,
+                owner,
+                repo
+            );
+        }
+
+        // Use shared platform extraction logic
+        let platforms = Self::extract_platform_binaries(&release.assets);
+
+        if platforms.is_empty() {
+            anyhow::bail!(
+                "No matching binaries found for any platform in {}/{} (version: {})",
+                owner,
+                repo,
+                version
+            );
+        }
+
+        // Create package
+        let package = Package {
+            name: repo.clone(),
+            description: repo_info.description.unwrap_or_else(|| repo.clone()),
+            repo: url.to_string(),
+            homepage: Some(repo_info.html_url),
+            license: repo_info.license.map(|l| l.name),
+            platforms,
+        };
+
+        let normalized_version = release.tag_name.trim_start_matches('v').to_string();
+        log::info!(
+            "✓ Found {} v{} with {} platform(s)",
+            package.name,
+            normalized_version,
+            package.platforms.len()
+        );
+
+        Ok(package)
     }
 
     /// Convert GitHub release assets to platform binaries map

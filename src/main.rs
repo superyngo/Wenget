@@ -72,7 +72,8 @@ fn main() {
             yes,
             script_name,
             platform,
-        } => commands::run_add(names, yes, script_name, platform),
+            pkg_version,
+        } => commands::run_add(names, yes, script_name, platform, pkg_version),
 
         Commands::List { all } => commands::run_list(all),
 
