@@ -149,9 +149,9 @@ impl Arch {
     pub fn keywords(&self) -> &[&str] {
         match self {
             Arch::X86_64 => &["x86_64", "x64", "amd64"],
-            Arch::I686 => &["i686", "x86", "i386", "win32"],
+            Arch::I686 => &["i686", "x86", "i386", "386", "win32"],
             Arch::Aarch64 => &["aarch64", "arm64"],
-            Arch::Armv7 => &["armv7", "armhf"],
+            Arch::Armv7 => &["armv7", "armhf", "armv6"],
         }
     }
 

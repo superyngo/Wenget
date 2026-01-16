@@ -18,3 +18,4 @@ Thumbs.db
 node_modules/
 .gemini/
 gha-creds-*.json
+bucket/wenget
