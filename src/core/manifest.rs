@@ -599,7 +599,7 @@ pub fn extract_variant_from_asset(asset_name: &str, repo_name: &str) -> Option<S
         "musl",
         "gnu",
         "msvc",
-        "pc",  // Common in Rust target triples (e.g., x86_64-pc-windows-msvc)
+        "pc", // Common in Rust target triples (e.g., x86_64-pc-windows-msvc)
     ];
 
     let mut result = without_unknown;

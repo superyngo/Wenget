@@ -310,34 +310,43 @@ fn delete_self(yes: bool) -> Result<()> {
     // Check if user selected nothing
     if !options.remove_data && !options.remove_path && !options.remove_binary {
         println!();
-        println!("{}", "Nothing selected for removal. Deletion cancelled.".yellow());
+        println!(
+            "{}",
+            "Nothing selected for removal. Deletion cancelled.".yellow()
+        );
         return Ok(());
     }
 
     // Show what will be removed
-    println!(
-        "{}",
-        "The following will be removed:".yellow()
-    );
+    println!("{}", "The following will be removed:".yellow());
     println!();
 
     let mut step_num = 1;
 
     if options.remove_data {
-        println!("  {} All Wenget directories and files:", format!("{}.", step_num).bold());
+        println!(
+            "  {} All Wenget directories and files:",
+            format!("{}.", step_num).bold()
+        );
         println!("     {}", paths.root().display());
         println!();
         step_num += 1;
     }
 
     if options.remove_path {
-        println!("  {} Wenget from PATH environment variable", format!("{}.", step_num).bold());
+        println!(
+            "  {} Wenget from PATH environment variable",
+            format!("{}.", step_num).bold()
+        );
         println!();
         step_num += 1;
     }
 
     if options.remove_binary {
-        println!("  {} The wenget executable itself", format!("{}.", step_num).bold());
+        println!(
+            "  {} The wenget executable itself",
+            format!("{}.", step_num).bold()
+        );
         println!("     {}", exe_path.display());
         println!();
     }
@@ -375,7 +384,10 @@ fn delete_self(yes: bool) -> Result<()> {
 
     // Step: Delete Wenget directories (if selected)
     if options.remove_data {
-        println!("{} Deleting Wenget directories...", format!("{}.", step_num).bold());
+        println!(
+            "{} Deleting Wenget directories...",
+            format!("{}.", step_num).bold()
+        );
         if exe_in_wenget && options.remove_binary {
             println!(
                 "   {} Scheduled for deletion (executable is inside .wenget)",
@@ -396,7 +408,10 @@ fn delete_self(yes: bool) -> Result<()> {
 
     // Step: Delete the executable (if selected)
     if options.remove_binary {
-        println!("{} Deleting wenget executable...", format!("{}.", step_num).bold());
+        println!(
+            "{} Deleting wenget executable...",
+            format!("{}.", step_num).bold()
+        );
         delete_executable(&exe_path, exe_in_wenget, paths.root())?;
     }
 
