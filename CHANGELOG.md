@@ -7,9 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Unreleased Update - 2026-01-16
+## [2.0.0] - 2026-01-16
 
-#### Added
+### Added
 
 - **Windows ARM64 Build Support** - Added aarch64-pc-windows-msvc target to CI/CD pipeline
   - New build artifact: `wenget-windows-aarch64.exe`
@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Uses conservative optimization settings to avoid antivirus false positives (same as other Windows builds)
   - Platform detection already supports ARM64 via existing `aarch64`/`arm64` keywords
   - Includes fallback to x86_64 emulation when ARM64 binary unavailable
+  - Total build targets increased from 12 to 13 platforms
 
 - **Version Selection** - Add `-v/--ver` flag to install specific package versions
   - Usage: `wenget add ripgrep -v 14.0.0` or `wenget add ripgrep --ver v14.0.0`
@@ -24,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Shows clear error message if specified version doesn't exist
   - Note: Use `--verbose` (no short form) for verbose logging to avoid flag conflicts
 
-#### Changed
+### Changed
 
 - **Multiple Executable Detection** - Auto-install all executables with valid permissions
   - Packages like `uv` (containing both `uv` and `uvx`) now install all executables automatically
@@ -41,14 +42,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added pattern detection for unknown architecture-like keywords
   - Windows ARM64 support confirmed in test platforms
 
-#### Technical
+### Fixed
 
-- Modified executable selection logic in `src/commands/add.rs` (line 1097-1146)
+- Resolved clippy warning for too many function arguments
+
+### Technical
+
+- Modified executable selection logic in `src/commands/add.rs`
 - Added `fetch_release_by_tag()` method to `GitHubProvider` for version-specific fetches
 - Added `fetch_package_by_version()` method to fetch packages for specific versions
 - Updated install flow to use custom version when specified
 - Enhanced `ParsedAsset::contains_unknown_arch_pattern()` to detect unrecognized architecture patterns
 - Updated architecture matching logic to check for unsupported patterns before falling back to OS defaults
+- Code formatting improvements and clippy compliance
 
 ## [1.3.3] - 2026-01-16
 
@@ -665,6 +671,7 @@ Wenget is now production-ready for managing GitHub binaries across platforms.
 - GitHub integration
 - Package cache system
 
+[2.0.0]: https://github.com/superyngo/wenget/compare/v1.3.3...v2.0.0
 [1.3.3]: https://github.com/superyngo/wenget/compare/v1.3.2...v1.3.3
 [1.3.2]: https://github.com/superyngo/wenget/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/superyngo/wenget/compare/v1.3.0...v1.3.1
