@@ -544,6 +544,7 @@ fn select_packages_for_platform(
 }
 
 /// Install packages from cache or GitHub (existing logic)
+#[allow(clippy::too_many_arguments)]
 fn install_packages(
     config: &Config,
     paths: &WenPaths,
