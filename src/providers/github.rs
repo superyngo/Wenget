@@ -61,7 +61,12 @@ impl GitHubProvider {
     }
 
     /// Fetch a specific release by tag from GitHub API
-    pub fn fetch_release_by_tag(&self, owner: &str, repo: &str, tag: &str) -> Result<GitHubRelease> {
+    pub fn fetch_release_by_tag(
+        &self,
+        owner: &str,
+        repo: &str,
+        tag: &str,
+    ) -> Result<GitHubRelease> {
         // Try with 'v' prefix if not present
         let tags_to_try = if tag.starts_with('v') {
             vec![tag.to_string(), tag.trim_start_matches('v').to_string()]

@@ -1107,8 +1107,9 @@ fn install_package(
         // Multiple candidates - select all with valid scores (exec permission or name match)
         // On Unix, exec permission gives +35 score, name match gives +50
         // Files without any match get score 0 and should be filtered out
-        let auto_select: Vec<_> = candidates.iter()
-            .filter(|c| c.score > 0)  // All valid candidates
+        let auto_select: Vec<_> = candidates
+            .iter()
+            .filter(|c| c.score > 0) // All valid candidates
             .collect();
 
         if auto_select.len() <= 3 || yes {

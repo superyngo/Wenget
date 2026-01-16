@@ -422,17 +422,34 @@ pub struct ParsedAsset {
 /// Unsupported architectures to filter out
 const UNSUPPORTED_ARCHS: &[&str] = &[
     // IBM System z
-    "s390x", "s390",
+    "s390x",
+    "s390",
     // PowerPC variants (all forms)
-    "ppc64", "ppc64le", "ppc", "powerpc", "powerpc64", "powerpc64le",
+    "ppc64",
+    "ppc64le",
+    "ppc",
+    "powerpc",
+    "powerpc64",
+    "powerpc64le",
     // RISC-V
-    "riscv64", "riscv32", "riscv",
+    "riscv64",
+    "riscv32",
+    "riscv",
     // MIPS variants
-    "mips", "mips64", "mipsel", "mips64el",
+    "mips",
+    "mips64",
+    "mipsel",
+    "mips64el",
     // SPARC
-    "sparc64", "sparc",
+    "sparc64",
+    "sparc",
     // Other exotic architectures
-    "alpha", "sh4", "hppa", "ia64", "loong64", "loongarch64",
+    "alpha",
+    "sh4",
+    "hppa",
+    "ia64",
+    "loong64",
+    "loongarch64",
 ];
 
 impl ParsedAsset {
@@ -472,8 +489,8 @@ impl ParsedAsset {
         // Pattern: word boundary + arch-like keyword + word boundary
         // These are patterns that look like architectures but aren't supported
         let arch_patterns = [
-            "powerpc", "ppc", "riscv", "mips", "sparc", "s390",
-            "alpha", "sh4", "hppa", "ia64", "loong",
+            "powerpc", "ppc", "riscv", "mips", "sparc", "s390", "alpha", "sh4", "hppa", "ia64",
+            "loong",
         ];
 
         arch_patterns.iter().any(|p| {
