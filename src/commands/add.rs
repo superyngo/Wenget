@@ -256,7 +256,11 @@ fn install_scripts(
         match install_single_script(paths, &name, &content, &script_type, &origin) {
             Ok(inst_pkg) => {
                 installed.upsert_package(name.clone(), inst_pkg);
-                config.save_installed(installed)?;
+                if let Err(e) = config.save_installed(installed) {
+                    println!("  {} Failed to save installed manifest: {}", "✗".red(), e);
+                    fail_count += 1;
+                    continue;
+                }
                 println!("  {} Installed successfully", "✓".green());
                 success_count += 1;
             }
@@ -349,14 +353,24 @@ fn install_local_files(
         match install_local_file(paths, path, custom_name, None) {
             Ok(inst_pkg) => {
                 // Use first command name as package name
-                let name = inst_pkg
-                    .command_names
-                    .first()
-                    .ok_or_else(|| anyhow::anyhow!("No command names found in installed package"))?
-                    .clone();
+                let name = match inst_pkg.command_names.first() {
+                    Some(n) => n.clone(),
+                    None => {
+                        println!(
+                            "  {} No command names found in installed package",
+                            "✗".red()
+                        );
+                        fail_count += 1;
+                        continue;
+                    }
+                };
                 let display_names = inst_pkg.command_names.join(", ");
                 installed.upsert_package(name.clone(), inst_pkg);
-                config.save_installed(installed)?;
+                if let Err(e) = config.save_installed(installed) {
+                    println!("  {} Failed to save installed manifest: {}", "✗".red(), e);
+                    fail_count += 1;
+                    continue;
+                }
                 println!(
                     "  {} Installed successfully as {}",
                     "✓".green(),
@@ -437,16 +451,24 @@ fn install_from_urls(
                 {
                     Ok(inst_pkg) => {
                         // Use first command name as package name
-                        let name = inst_pkg
-                            .command_names
-                            .first()
-                            .ok_or_else(|| {
-                                anyhow::anyhow!("No command names found in installed package")
-                            })?
-                            .clone();
+                        let name = match inst_pkg.command_names.first() {
+                            Some(n) => n.clone(),
+                            None => {
+                                println!(
+                                    "  {} No command names found in installed package",
+                                    "✗".red()
+                                );
+                                fail_count += 1;
+                                continue;
+                            }
+                        };
                         let display_names = inst_pkg.command_names.join(", ");
                         installed.upsert_package(name.clone(), inst_pkg);
-                        config.save_installed(installed)?;
+                        if let Err(e) = config.save_installed(installed) {
+                            println!("  {} Failed to save installed manifest: {}", "✗".red(), e);
+                            fail_count += 1;
+                            continue;
+                        }
                         println!(
                             "  {} Installed successfully as {}",
                             "✓".green(),
@@ -945,7 +967,11 @@ fn install_packages(
             ) {
                 Ok(inst_pkg) => {
                     installed.upsert_package(installed_key.clone(), inst_pkg);
-                    config.save_installed(installed)?;
+                    if let Err(e) = config.save_installed(installed) {
+                        println!("  {} Failed to save installed manifest: {}", "✗".red(), e);
+                        fail_count += 1;
+                        continue;
+                    }
 
                     // Collect package for cache update if fetched from GitHub API
                     // (only once, not for each binary)

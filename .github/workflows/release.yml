@@ -344,7 +344,7 @@ jobs:
           
           # Copy binary and commit
           cp artifacts/wenget-linux-x86_64-musl/wenget bucket/wenget
-          git add bucket/wenget
+          git add -f bucket/wenget
           
           if git diff --staged --quiet; then
             echo "No changes to commit"
