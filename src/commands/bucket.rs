@@ -417,6 +417,7 @@ impl ManifestGenerator {
             repo: repo_info.html_url.clone(),
             homepage: repo_info.homepage.clone().filter(|h| !h.is_empty()),
             license: repo_info.license.as_ref().and_then(|l| l.spdx_id.clone()),
+            version: Some(release.tag_name.trim_start_matches('v').to_string()),
             platforms,
         };
 

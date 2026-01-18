@@ -314,6 +314,7 @@ mod tests {
             repo: "https://github.com/test/test".to_string(),
             homepage: None,
             license: None,
+            version: None,
             platforms: HashMap::new(),
         };
 

@@ -728,12 +728,15 @@ fn install_packages(
         let pkg_name = &resolved.package.name;
         let repo = &resolved.package.repo;
 
-        // Fetch version (either custom or latest)
+        // Fetch version (either custom, from package, or latest from API)
         let version = if let Some(custom_ver) = custom_version {
             // User specified a version
             custom_ver.to_string()
+        } else if let Some(ref v) = resolved.package.version {
+            // Use version from package (bucket or API)
+            v.clone()
         } else if let Some(ref gh) = github {
-            // Fetch latest version
+            // Fall back to fetching latest version from API
             gh.fetch_latest_version(repo)
                 .unwrap_or_else(|_| "unknown".to_string())
         } else {
@@ -872,9 +875,11 @@ fn install_packages(
                 match gh.fetch_package(repo_url) {
                     Ok(latest_pkg) => {
                         // Successfully fetched from GitHub API - use latest download links
-                        let version = gh
-                            .fetch_latest_version(repo_url)
-                            .unwrap_or_else(|_| "unknown".to_string());
+                        // Version is now included in the package struct
+                        let version = latest_pkg
+                            .version
+                            .clone()
+                            .unwrap_or_else(|| "unknown".to_string());
                         (latest_pkg, version, false)
                     }
                     Err(e) => {
@@ -889,16 +894,24 @@ fn install_packages(
                             "⚠".yellow()
                         );
 
-                        let version = gh
-                            .fetch_latest_version(repo_url)
-                            .unwrap_or_else(|_| "unknown".to_string());
+                        // Use version from cached package if available
+                        let version = resolved
+                            .package
+                            .version
+                            .clone()
+                            .unwrap_or_else(|| "unknown".to_string());
                         (resolved.package.clone(), version, true)
                     }
                 }
             }
         } else {
             // No GitHub provider available, use cached package info
-            (resolved.package.clone(), "unknown".to_string(), true)
+            let version = resolved
+                .package
+                .version
+                .clone()
+                .unwrap_or_else(|| "unknown".to_string());
+            (resolved.package.clone(), version, true)
         };
 
         // Get all binaries for this platform

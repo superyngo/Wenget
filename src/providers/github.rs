@@ -157,6 +157,7 @@ impl GitHubProvider {
             repo: url.to_string(),
             homepage: Some(repo_info.html_url),
             license: repo_info.license.map(|l| l.name),
+            version: Some(release.tag_name.trim_start_matches('v').to_string()),
             platforms,
         };
 
@@ -250,6 +251,7 @@ impl SourceProvider for GitHubProvider {
             repo: url.to_string(),
             homepage: Some(repo_info.html_url),
             license: repo_info.license.map(|l| l.name),
+            version: Some(release.tag_name.trim_start_matches('v').to_string()),
             platforms,
         };
 

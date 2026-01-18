@@ -212,6 +212,11 @@ pub struct Package {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub license: Option<String>,
 
+    /// Package version (e.g., "14.1.0")
+    /// Populated when fetching from GitHub API, optional for bucket manifests
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+
     /// Platform-specific binaries
     /// Key format: "{os}-{arch}" or "{os}-{arch}-{variant}"
     /// Examples: "windows-x86_64", "linux-x86_64-musl", "macos-aarch64"

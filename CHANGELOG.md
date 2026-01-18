@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **ARM Platform Detection** - Fix `arm-unknown-linux-musleabihf` binaries being misclassified (2026-01-19)
+  - Added "arm" keyword to Armv7 architecture detection in `src/core/platform.rs`
+  - Previously, files like `uv-arm-unknown-linux-musleabihf.tar.gz` would incorrectly appear under x86_64, i686, and aarch64 platforms
+  - Now correctly classified under armv7 platforms only
+  - Note: Existing bucket manifests need to be regenerated to reflect this fix
+
+- **Package Version "unknown"** - Fix version showing "unknown" after installation (2026-01-19)
+  - Added `version` field to `Package` struct in `src/core/manifest.rs`
+  - GitHub API responses now populate version directly in the Package object
+  - `add.rs` now uses package.version instead of making extra API calls to fetch version
+  - Reduces GitHub API usage and eliminates version lookup failures during rate limiting
+  - Bucket manifests can now optionally include version information
+
 - **Update Manifest Workflow** - Fix detection of new manifest.json when file was deleted (2026-01-18)
   - Changed `git diff` to `git add` + `git diff --staged` to detect untracked new files
 
