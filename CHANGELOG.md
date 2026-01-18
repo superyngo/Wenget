@@ -7,16 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-01-18
+
 ### Fixed
 
-- **Batch Installation Error Handling** - Single package failure no longer interrupts entire operation (2026-01-18)
+- **Batch Installation Error Handling** - Single package failure no longer interrupts entire operation
   - Modified `add` command to continue processing remaining packages when one fails
   - Changed `?` operators to explicit error handling with `fail_count` tracking
   - Applies to: script installations, local file installations, URL installations, and package installations
   - Failed packages are now reported in summary instead of aborting the entire batch
   - Improves `update` command behavior: failed package updates no longer block other updates
 
-- **Release Workflow** - Fix "Update bucket binary" step failing due to .gitignore (2026-01-16)
+- **Release Workflow** - Fix "Update bucket binary" step failing due to .gitignore
   - Changed `git add` to `git add -f` to force-add ignored bucket/wenget binary
 
 ## [2.0.0] - 2026-01-16
