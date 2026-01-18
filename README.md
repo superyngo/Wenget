@@ -1,6 +1,6 @@
 # Wenget - Wen Package Manager
 
-[![Version](https://img.shields.io/badge/version-2.0.1-blue.svg)](https://github.com/superyngo/Wenget/releases)
+[![Version](https://img.shields.io/badge/version-2.0.2-blue.svg)](https://github.com/superyngo/Wenget/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/superyngo/Wenget)
 
