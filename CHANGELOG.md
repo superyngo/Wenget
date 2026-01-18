@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Update Manifest Workflow** - Fix detection of new manifest.json when file was deleted (2026-01-18)
+  - Changed `git diff` to `git add` + `git diff --staged` to detect untracked new files
+
 ## [2.0.1] - 2026-01-18
 
 ### Fixed

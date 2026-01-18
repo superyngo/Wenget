@@ -57,15 +57,18 @@ jobs:
       - name: Check for changes
         id: changes
         run: |
-          if git diff --quiet bucket/manifest.json; then
+          # Check both tracked changes and untracked new file
+          git add bucket/manifest.json
+          if git diff --staged --quiet bucket/manifest.json; then
             echo "changed=false" >> $GITHUB_OUTPUT
             echo "📌 No changes detected"
+            git restore --staged bucket/manifest.json 2>/dev/null || true
           else
             echo "changed=true" >> $GITHUB_OUTPUT
             echo "✨ Changes detected"
             echo ""
             echo "Diff summary:"
-            git diff --stat bucket/manifest.json
+            git diff --staged --stat bucket/manifest.json
           fi
 
       - name: Commit and push
