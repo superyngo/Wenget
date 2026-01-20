@@ -39,6 +39,8 @@ https://github.com/Heavrnl/nexus-terminal
 https://github.com/itefixnet/wincdu
 https://github.com/ClementTsang/bottom
 https://github.com/pranshuparmar/witr
+https://github.com/fastfetch-cli/fastfetch
+
 
 # === File Management ===
 https://github.com/rn7s2/rsync-win
