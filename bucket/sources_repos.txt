@@ -49,6 +49,7 @@ https://github.com/rclone/rclone
 https://github.com/sinelaw/fresh
 https://github.com/sharkdp/bat
 https://github.com/sharkdp/hexyl
+https://github.com/sxyazi/yazi
 
 # === Media ===
 https://github.com/llychao/m3u8-downloader
@@ -63,3 +64,13 @@ https://github.com/nilaoda/N_m3u8DL-RE
 # https://github.com/extrawurst/gitui
 # https://github.com/Termix-SSH/Termix
 # https://github.com/Heavrnl/nexus-terminal
+# discordo: https://github.com/ayn2op/discordo
+# btop: https://github.com/aristocratos/btop
+# bluetui: https://github.com/pythops/bluetui
+# impala: https://github.com/pythops/impala
+# wiremix: https://github.com/tsowell/wiremix
+# lazygit: https://github.com/jesseduffield/lazygit
+# neovim: https://github.com/neovim/neovim
+
+# lynx: https://lynx.invisible-island.net/
+# ncdu: https://dev.yorhel.nl/ncdu
