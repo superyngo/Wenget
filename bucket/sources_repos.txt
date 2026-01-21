@@ -32,8 +32,7 @@ https://github.com/Genymobile/scrcpy
 https://github.com/rustdesk/rustdesk-server
 https://github.com/rustdesk/rustdesk
 https://github.com/cloudflare/cloudflared
-https://github.com/Termix-SSH/Termix
-https://github.com/Heavrnl/nexus-terminal
+https://github.com/wavetermdev/waveterm
 
 # === System Monitoring ===
 https://github.com/itefixnet/wincdu
@@ -61,3 +60,5 @@ https://github.com/nilaoda/N_m3u8DL-RE
 # https://github.com/ajeetdsouza/zoxide
 # https://github.com/sharkdp/hyperfine
 # https://github.com/extrawurst/gitui
+# https://github.com/Termix-SSH/Termix
+# https://github.com/Heavrnl/nexus-terminal
