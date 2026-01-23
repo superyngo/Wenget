@@ -7,35 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-01-23
+
 ### Added
 
-- **Variant Filtering** - Added `--variant` parameter to `add` and `del` commands (2026-01-23)
+- **Variant Filtering** - Added `--variant` parameter to `add` and `del` commands
   - `wenget add bun --variant baseline` - Install only the baseline variant
   - `wenget del bun --variant profile` - Delete only the profile variant
   - Shows available variants when specified variant is not found
   - Helps manage packages with multiple release binaries more precisely
   - Note: Only long form `--variant` is available (no short flag to avoid conflict with `--version`)
 
-- **7z Archive Support** - Added support for `.7z` archive extraction (2026-01-22)
+- **7z Archive Support** - Added support for `.7z` archive extraction
   - Added `sevenz-rust` crate dependency
   - New `extract_7z()` function in `src/installer/extractor.rs`
   - Automatically sets executable permissions on Unix for extracted binaries
 
-- **tar.bz2 Archive Support** - Added support for `.tar.bz2` and `.tbz` archive extraction (2026-01-22)
+- **tar.bz2 Archive Support** - Added support for `.tar.bz2` and `.tbz` archive extraction
   - Added `bzip2` crate dependency
   - New `extract_tar_bz2()` function in `src/installer/extractor.rs`
 
 ### Changed
 
-- **Variant Command Naming** - Fixed command name conflict resolution for variants (2026-01-23)
+- **Variant Command Naming** - Fixed command name conflict resolution for variants
 
 ### Fixed
 
-- **Info Platform Filtering** - Fixed `info` command to only show `[Installed]` markers for packages installed on the current platform (2026-01-23)
+- **Info Platform Filtering** - Fixed `info` command to only show `[Installed]` markers for packages installed on the current platform
   - Previously showed `[Installed]` for all platforms when a package was installed
   - Now correctly filters by comparing `inst_pkg.platform` with displayed platform
 
-- **Variant Symlink Creation** - Fixed symlink/shim naming for package variants (2026-01-23)
+- **Variant Symlink Creation** - Fixed symlink/shim naming for package variants
   - Previously created symlinks using base name before variant resolution
   - Now resolves variant-suffixed names before creating symlinks
   - **Smart variant suffix handling**: Avoids duplicate suffixes when binary name already contains variant info
@@ -47,13 +49,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Previous behavior: default could be pushed to `bun-1` when variants existed
   - New behavior: ensures predictable and stable command naming
 
-- **Info Command Enhancement** - Improved variant display in `wenget info` (2026-01-23)
+- **Info Command Enhancement** - Improved variant display in `wenget info`
   - Shows all variant command names in "Command name(s)" field
   - Displays detailed variant list with version and command mappings
   - Supported platforms section now shows variant labels (e.g., `[baseline]`, `[profile]`)
   - Indicates installation status for each variant: `[Installed: bun-baseline]`
 
-- **Variant Handling Refactor** - Major refactoring of package variant handling (2026-01-22)
+- **Variant Handling Refactor** - Major refactoring of package variant handling
   - Added `repo_name` and `variant` fields to `InstalledPackage` struct
   - Changed installed.json key format from `{repo}-{variant}` to `{repo}::{variant}` for clarity
   - Deprecated `parent_package` field (kept for backward compatibility)
@@ -64,7 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - List command shows grouped variants under their repository name with tree structure
   - Automatic migration from old format on first load
 
-- **Enhanced Installation Summary** - Installation summaries now display package names (2026-01-22)
+- **Enhanced Installation Summary** - Installation summaries now display package names
   - Summary now shows: `✓ 2 package(s) installed: ripgrep fd`
   - Applies to all installation methods: packages, scripts, local files, and URLs
   - Failed packages are also listed by name for easier troubleshooting
