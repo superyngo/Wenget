@@ -114,20 +114,27 @@ impl<'a> PackageResolver<'a> {
     /// Resolve package from cache (supports glob patterns)
     /// Falls back to checking installed packages if not found in cache
     fn resolve_from_cache(&self, name: &str) -> Result<Vec<ResolvedPackage>> {
+        // Handle repo::variant format - extract base name for cache lookup
+        let base_name = if let Some(pos) = name.find("::") {
+            &name[..pos]
+        } else {
+            name
+        };
+
         // Filter packages by name pattern
-        let matches: Vec<_> = if name.contains('*') {
+        let matches: Vec<_> = if base_name.contains('*') {
             // Glob pattern matching
             self.cache
                 .packages
                 .values()
-                .filter(|cached| glob_match(&cached.package.name, name))
+                .filter(|cached| glob_match(&cached.package.name, base_name))
                 .collect()
         } else {
             // Exact name matching
             self.cache
                 .packages
                 .values()
-                .filter(|cached| cached.package.name == name)
+                .filter(|cached| cached.package.name == base_name)
                 .collect()
         };
 

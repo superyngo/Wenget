@@ -46,7 +46,7 @@ pub enum Commands {
         yes: bool,
 
         /// Custom command name (overrides the default executable name)
-        #[arg(short = 'n', long = "name")]
+        #[arg(short = 'c', long = "command")]
         script_name: Option<String>,
 
         /// Specify target platform (e.g., windows-x64, linux-x64, darwin-arm64)

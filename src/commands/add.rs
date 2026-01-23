@@ -135,13 +135,30 @@ pub fn run(
 /// 1. If variant exists, use base_name-{variant}
 /// 2. Otherwise, use base_name
 /// 3. If name is taken, try base_name-{number}
+/// 4. If is_custom is true, skip variant suffix appending and go directly to conflict checking
 fn resolve_command_name(
     base_name: &str,
     variant: Option<&str>,
     installed: &crate::core::InstalledManifest,
     exclude_key: Option<&str>,
+    is_custom: bool,
 ) -> String {
-    // 1. If it's a variant, construct the desired command name
+    // 1. If custom name provided, skip variant suffix - just check for conflicts
+    if is_custom {
+        if !installed.is_command_taken(base_name, exclude_key) {
+            return base_name.to_string();
+        }
+        // Custom name taken, try numeric suffixes
+        for i in 1..=99 {
+            let numbered = format!("{}-{}", base_name, i);
+            if !installed.is_command_taken(&numbered, exclude_key) {
+                return numbered;
+            }
+        }
+        return base_name.to_string();
+    }
+
+    // 2. If it's a variant, construct the desired command name
     if let Some(var) = variant {
         // Check if base_name already ends with the variant suffix
         // This handles cases where the binary itself contains the variant name
@@ -173,12 +190,12 @@ fn resolve_command_name(
         return desired_name;
     }
 
-    // 2. No variant - try base_name first
+    // 3. No variant - try base_name first
     if !installed.is_command_taken(base_name, exclude_key) {
         return base_name.to_string();
     }
 
-    // 3. Try numeric suffixes for non-variant
+    // 4. Try numeric suffixes for non-variant
     for i in 1..=99 {
         let numbered = format!("{}-{}", base_name, i);
         if !installed.is_command_taken(&numbered, exclude_key) {
@@ -725,12 +742,15 @@ fn install_packages(
 
     // Resolve all inputs and collect packages/scripts to install
     let resolver = PackageResolver::new(config, &cache)?;
-    let mut packages_to_install: Vec<(ResolvedPackage, crate::core::platform::PlatformMatch)> =
-        Vec::new();
+    let mut packages_to_install: Vec<(
+        String,
+        ResolvedPackage,
+        crate::core::platform::PlatformMatch,
+    )> = Vec::new();
     let mut scripts_to_install: Vec<(String, String, ScriptType, String)> = Vec::new(); // (name, url, type, origin)
 
-    for name in &names {
-        let input = PackageInput::parse(name);
+    for original_name in &names {
+        let input = PackageInput::parse(original_name);
 
         match resolver.resolve(&input) {
             Ok(resolved) => {
@@ -801,12 +821,16 @@ fn install_packages(
                         }
                     }
 
-                    packages_to_install.push((pkg_resolved, best_match.clone()));
+                    packages_to_install.push((
+                        original_name.to_string(),
+                        pkg_resolved,
+                        best_match.clone(),
+                    ));
                 }
             }
             Err(_) => {
                 // If not found as package, check if it's a script in cache
-                if let Some(cached_script) = cache.find_script(name) {
+                if let Some(cached_script) = cache.find_script(original_name) {
                     let script = &cached_script.script;
 
                     // Get installable script for current platform (checks if interpreter exists)
@@ -832,7 +856,7 @@ fn install_packages(
                         );
                     }
                 } else {
-                    eprintln!("{} {}: Not found", "Error".red().bold(), name);
+                    eprintln!("{} {}: Not found", "Error".red().bold(), original_name);
                 }
             }
         }
@@ -855,10 +879,18 @@ fn install_packages(
         println!("{}", "Packages to install:".bold());
     }
 
-    let mut to_install: Vec<(ResolvedPackage, crate::core::platform::PlatformMatch)> = Vec::new();
-    let mut to_update: Vec<(ResolvedPackage, crate::core::platform::PlatformMatch)> = Vec::new();
+    let mut to_install: Vec<(
+        String,
+        ResolvedPackage,
+        crate::core::platform::PlatformMatch,
+    )> = Vec::new();
+    let mut to_update: Vec<(
+        String,
+        ResolvedPackage,
+        crate::core::platform::PlatformMatch,
+    )> = Vec::new();
 
-    for (resolved, platform_match) in packages_to_install {
+    for (original_name, resolved, platform_match) in packages_to_install {
         let pkg_name = &resolved.package.name;
         let repo = &resolved.package.repo;
 
@@ -877,14 +909,29 @@ fn install_packages(
             "unknown".to_string()
         };
 
-        if installed.is_installed(pkg_name) {
+        // Check if already installed
+        // Determine which key to check based on input type and variant filter
+        let variant_key; // Storage for temporary String if needed
+        let check_name: &str = if original_name.contains("::") {
+            // Input like "bun::baseline" - check that specific variant
+            original_name.as_str()
+        } else if let Some(filter) = variant_filter {
+            // Base name with --variant flag - generate the variant key
+            variant_key = crate::core::manifest::generate_installed_key(pkg_name, Some(filter));
+            &variant_key
+        } else {
+            // Base name without variant - check the base package
+            pkg_name
+        };
+
+        if installed.is_installed(check_name) {
             // Package already installed
-            let inst_pkg = installed.get_package(pkg_name).unwrap();
+            let inst_pkg = installed.get_package(check_name).unwrap();
             if inst_pkg.version == version {
                 println!(
                     "  {} {} v{} {}",
                     "•".cyan(),
-                    pkg_name,
+                    check_name,
                     version,
                     "(already installed, same version)".dimmed()
                 );
@@ -892,7 +939,7 @@ fn install_packages(
                 println!(
                     "  {} {} v{} {} → {}",
                     "•".yellow(),
-                    pkg_name,
+                    check_name,
                     inst_pkg.version.dimmed(),
                     "upgrade to".yellow(),
                     version.green()
@@ -904,7 +951,7 @@ fn install_packages(
                         println!("    {} {}", "↳".dimmed(), binary.url.dimmed());
                     }
                 }
-                to_update.push((resolved, platform_match));
+                to_update.push((original_name.clone(), resolved, platform_match));
             }
         } else {
             // New installation
@@ -921,7 +968,7 @@ fn install_packages(
                     println!("    {} {}", "↳".dimmed(), binary.url.dimmed());
                 }
             }
-            to_install.push((resolved, platform_match));
+            to_install.push((original_name.clone(), resolved, platform_match));
         }
     }
 
@@ -984,7 +1031,7 @@ fn install_packages(
     // Collect packages to update in cache (packages fetched from GitHub API)
     let mut packages_to_cache: Vec<(crate::core::Package, PackageSource)> = Vec::new();
 
-    for (resolved, platform_match) in all_packages {
+    for (_original_input_name, resolved, platform_match) in all_packages {
         let pkg_name = &resolved.package.name;
         let repo_url = &resolved.package.repo;
 
@@ -1417,17 +1464,17 @@ fn install_package(
         }
 
         // Extract the actual command name from the executable path
-        let base_name = if let Some(custom) = custom_name {
+        let (base_name, is_custom) = if let Some(custom) = custom_name {
             // Use custom name if provided (only for first executable)
             if command_names.is_empty() {
-                custom.to_string()
+                (custom.to_string(), true)
             } else {
                 // For additional executables, use auto-detected name
                 let raw_name = exe_path
                     .file_name()
                     .and_then(|s| s.to_str())
                     .context("Failed to extract command name")?;
-                normalize_command_name(raw_name)
+                (normalize_command_name(raw_name), false)
             }
         } else {
             // Auto-detect and normalize command name
@@ -1437,7 +1484,7 @@ fn install_package(
                 .context("Failed to extract command name")?;
 
             // Apply smart normalization to remove platform suffixes
-            normalize_command_name(raw_name)
+            (normalize_command_name(raw_name), false)
         };
 
         // Resolve command name with variant to avoid conflicts
@@ -1446,6 +1493,7 @@ fn install_package(
             variant_opt.as_deref(),
             &installed_manifest,
             Some(installed_key),
+            is_custom,
         );
 
         println!("  Command will be available as: {}", resolved_name);

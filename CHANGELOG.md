@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **[2026-01-23]** Renamed `-n/--name` parameter to `-c/--command` in `add` command for better clarity (Breaking change)
+
+### Fixed
+
+- **[2026-01-23]** Fixed `--variant` + `-c/--command` behavior: custom command names now use the exact user-specified name without appending variant suffix
+
 ## [2.1.0] - 2026-01-23
 
 ### Added

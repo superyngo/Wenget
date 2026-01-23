@@ -43,12 +43,16 @@ pub fn run(
         .map(|p| Pattern::new(p))
         .collect::<Result<_, _>>()?;
 
-    // Find matching packages
+    // Find matching packages (match against both key and repo_name)
     let matching_packages: Vec<String> = installed
         .packages
-        .keys()
-        .filter(|name| glob_patterns.iter().any(|pattern| pattern.matches(name)))
-        .cloned()
+        .iter()
+        .filter(|(key, pkg)| {
+            glob_patterns
+                .iter()
+                .any(|pattern| pattern.matches(key) || pattern.matches(&pkg.repo_name))
+        })
+        .map(|(key, _)| key.clone())
         .collect();
 
     if matching_packages.is_empty() {
