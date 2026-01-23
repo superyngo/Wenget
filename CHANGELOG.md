@@ -7,13 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-01-23
+
+### Added
+
+- **Variant Handling Enhancements**
+  - Added support for `repo::variant` format in package resolution
+  - Improved `wenget add` to correctly check for existing variant installations
+  - Enhanced `wenget del` to match against repository names, enabling bulk deletion of all variants for a repository
+
 ### Changed
 
-- **[2026-01-23]** Renamed `-n/--name` parameter to `-c/--command` in `add` command for better clarity (Breaking change)
+- **Command Name Resolution**
+  - Renamed `-n/--name` parameter to `-c/--command` in `add` command for better clarity (Breaking change)
+  - Custom command names (via `-c/--command`) now skip variant suffixing and use the exact user-specified name (with conflict resolution if needed)
 
 ### Fixed
 
-- **[2026-01-23]** Fixed `--variant` + `-c/--command` behavior: custom command names now use the exact user-specified name without appending variant suffix
+- Fixed unused variable warning in `src/commands/add.rs`
+- Fixed `--variant` + `-c/--command` behavior to ensure custom names are respected without unnecessary suffixes
 
 ## [2.1.0] - 2026-01-23
 
