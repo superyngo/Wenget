@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Update Command Version Comparison** - Fix packages not being updated due to stale cache version
+  - 2026-01-23: Version comparison in `add` command now fetches latest version from GitHub API first
+  - Previously used cached bucket version for comparison, causing false "already up to date" results
+  - Root cause: `find_upgradeable` correctly detected new versions, but `add` command compared against stale cache
+
 ## [2.2.0] - 2026-01-23
 
 ### Added

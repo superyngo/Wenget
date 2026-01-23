@@ -894,17 +894,25 @@ fn install_packages(
         let pkg_name = &resolved.package.name;
         let repo = &resolved.package.repo;
 
-        // Fetch version (either custom, from package, or latest from API)
+        // Fetch version (either custom, or latest from API, falling back to cache)
+        // IMPORTANT: Always fetch from GitHub API first to ensure accurate version comparison
+        // for update detection. Cached bucket version may be stale.
         let version = if let Some(custom_ver) = custom_version {
             // User specified a version
             custom_ver.to_string()
-        } else if let Some(ref v) = resolved.package.version {
-            // Use version from package (bucket or API)
-            v.clone()
         } else if let Some(ref gh) = github {
-            // Fall back to fetching latest version from API
-            gh.fetch_latest_version(repo)
-                .unwrap_or_else(|_| "unknown".to_string())
+            // Fetch latest version from API for accurate comparison
+            gh.fetch_latest_version(repo).unwrap_or_else(|_| {
+                // API failed - fall back to cached version
+                resolved
+                    .package
+                    .version
+                    .clone()
+                    .unwrap_or_else(|| "unknown".to_string())
+            })
+        } else if let Some(ref v) = resolved.package.version {
+            // No GitHub provider available - use cached version
+            v.clone()
         } else {
             "unknown".to_string()
         };
