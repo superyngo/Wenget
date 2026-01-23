@@ -73,7 +73,8 @@ fn main() {
             script_name,
             platform,
             pkg_version,
-        } => commands::run_add(names, yes, script_name, platform, pkg_version),
+            variant,
+        } => commands::run_add(names, yes, script_name, platform, pkg_version, variant),
 
         Commands::List { all } => commands::run_list(all),
 
@@ -83,7 +84,12 @@ fn main() {
 
         Commands::Update { names, yes } => commands::run_update(names, yes),
 
-        Commands::Del { names, yes, force } => commands::run_delete(names, yes, force),
+        Commands::Del {
+            names,
+            yes,
+            force,
+            variant,
+        } => commands::run_delete(names, yes, force, variant),
 
         Commands::Repair { force } => commands::run_repair(force),
     };

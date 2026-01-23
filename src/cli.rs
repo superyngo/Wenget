@@ -56,6 +56,10 @@ pub enum Commands {
         /// Specify version to install (e.g., v1.0.0, 1.0.0)
         #[arg(short = 'v', long = "ver")]
         pkg_version: Option<String>,
+
+        /// Specify variant to install (e.g., baseline, profile)
+        #[arg(long = "variant")]
+        variant: Option<String>,
     },
 
     /// List installed packages
@@ -106,6 +110,10 @@ pub enum Commands {
         /// Force deletion (allow deleting wenget itself)
         #[arg(short, long)]
         force: bool,
+
+        /// Specify variant to delete (e.g., baseline, profile)
+        #[arg(long = "variant")]
+        variant: Option<String>,
     },
 
     /// Initialize Wenget (create directories and set up PATH)

@@ -34,40 +34,43 @@ fn list_installed_packages(config: &Config) -> Result<()> {
     println!("{}", "Installed packages".bold());
     println!();
     println!(
-        "{:<20} {:<15} {:<10} {:<12} {}",
+        "{:<20} {:<10} {:<12} {}",
         "NAME".bold(),
-        "COMMAND".bold(),
         "VERSION".bold(),
         "SOURCE".bold(),
         "DESCRIPTION".bold()
     );
     println!("{}", "─".repeat(100));
 
-    // Group packages: parent packages and their variants
-    let mut parent_packages: Vec<(&String, &crate::core::InstalledPackage)> = Vec::new();
-    let mut variants_map: std::collections::HashMap<
-        String,
-        Vec<(&String, &crate::core::InstalledPackage)>,
-    > = std::collections::HashMap::new();
+    // Group packages by repo_name
+    let grouped = manifest.group_by_repo();
 
-    for (name, pkg) in &manifest.packages {
-        if let Some(ref parent) = pkg.parent_package {
-            variants_map
-                .entry(parent.clone())
-                .or_default()
-                .push((name, pkg));
-        } else {
-            parent_packages.push((name, pkg));
-        }
-    }
-
-    // Sort parent packages
-    parent_packages.sort_by(|a, b| a.0.cmp(b.0));
+    // Sort repo names alphabetically
+    let mut repo_names: Vec<_> = grouped.keys().collect();
+    repo_names.sort();
 
     // Display packages with tree structure
-    for (name, pkg) in &parent_packages {
+    for repo_name in repo_names {
+        let variants = &grouped[repo_name];
+
+        // Sort variants: None (default) first, then alphabetically
+        let mut sorted_variants = variants.clone();
+        sorted_variants.sort_by(|a, b| {
+            let a_variant = &a.1.variant;
+            let b_variant = &b.1.variant;
+            match (a_variant, b_variant) {
+                (None, None) => std::cmp::Ordering::Equal,
+                (None, Some(_)) => std::cmp::Ordering::Less,
+                (Some(_), None) => std::cmp::Ordering::Greater,
+                (Some(a), Some(b)) => a.cmp(b),
+            }
+        });
+
+        // Display the first (main/default) variant as the parent
+        let (first_key, first_pkg) = sorted_variants[0];
+
         // Get source display
-        let source_display = match &pkg.source {
+        let source_display = match &first_pkg.source {
             crate::core::manifest::PackageSource::Bucket { name } => name.clone(),
             crate::core::manifest::PackageSource::DirectRepo { .. } => "url".to_string(),
             crate::core::manifest::PackageSource::Script { script_type, .. } => {
@@ -76,62 +79,74 @@ fn list_installed_packages(config: &Config) -> Result<()> {
         };
 
         // Truncate description if too long
-        let description = if pkg.description.len() > 30 {
-            format!("{}...", &pkg.description[..27])
+        let description = if first_pkg.description.len() > 50 {
+            format!("{}...", &first_pkg.description[..47])
         } else {
-            pkg.description.clone()
+            first_pkg.description.clone()
+        };
+
+        // Display main package
+        let display_name = if sorted_variants.len() == 1 {
+            // Only one variant, show it normally
+            if first_pkg.variant.is_none() {
+                repo_name.green()
+            } else {
+                first_key.green()
+            }
+        } else {
+            // Multiple variants, show repo name
+            repo_name.green()
         };
 
         println!(
-            "{:<20} {:<15} {:<10} {:<12} {}",
-            name.green(),
-            pkg.command_names.join(", ").yellow(),
-            pkg.version,
+            "{:<20} {:<10} {:<12} {}",
+            display_name,
+            first_pkg.version,
             source_display.cyan(),
             description
         );
 
-        // Display variants (tree structure)
-        if let Some(variants) = variants_map.get(*name) {
-            let mut sorted_variants = variants.clone();
-            sorted_variants.sort_by(|a, b| a.0.cmp(b.0));
+        // Display command for first variant
+        if sorted_variants.len() == 1 {
+            let cmd_display = format!("  [Command: {}]", first_pkg.command_names.join(", "));
+            println!("{}", cmd_display.yellow().dimmed());
+        } else {
+            // Show first variant with tree structure
+            let variant_label = first_pkg.variant.as_deref().unwrap_or("(default)");
+            let cmd_display = format!("[Command: {}]", first_pkg.command_names.join(", "));
+            println!(
+                "  ├─ {:<30} {}",
+                variant_label.dimmed(),
+                cmd_display.yellow().dimmed()
+            );
 
-            for (i, (var_name, var_pkg)) in sorted_variants.iter().enumerate() {
-                let prefix = if i == sorted_variants.len() - 1 {
-                    "└─"
-                } else {
-                    "├─"
-                };
+            // Display other variants (tree structure)
+            for (i, (_var_key, var_pkg)) in sorted_variants.iter().skip(1).enumerate() {
+                let is_last = i == sorted_variants.len() - 2; // -2 because we skipped first
+                let prefix = if is_last { "└─" } else { "├─" };
 
-                // Truncate variant description
-                let var_desc = if var_pkg.description.len() > 25 {
-                    format!("{}...", &var_pkg.description[..22])
-                } else {
-                    var_pkg.description.clone()
-                };
+                let variant_label = var_pkg.variant.as_deref().unwrap_or("(default)");
+                let cmd_display = format!("[Command: {}]", var_pkg.command_names.join(", "));
 
                 println!(
-                    "  {} {:<17} {:<15} {:<10} {}",
+                    "  {} {:<30} {}",
                     prefix.dimmed(),
-                    var_name.green(),
-                    var_pkg.command_names.join(", ").yellow(),
-                    var_pkg.version.dimmed(),
-                    var_desc.dimmed()
+                    variant_label.dimmed(),
+                    cmd_display.yellow().dimmed()
                 );
             }
         }
     }
 
-    // Calculate total (including variants)
-    let total_variants: usize = variants_map.values().map(|v| v.len()).sum();
+    // Calculate total
     let total_packages = manifest.packages.len();
+    let total_repos = grouped.len();
 
     println!();
-    if total_variants > 0 {
+    if total_repos < total_packages {
         println!(
-            "Total: {} package(s) installed ({} with variants)",
-            total_packages,
-            parent_packages.len()
+            "Total: {} package(s) installed from {} repositories",
+            total_packages, total_repos
         );
     } else {
         println!("Total: {} package(s) installed", total_packages);

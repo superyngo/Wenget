@@ -28,6 +28,8 @@ zip = "0.6"
 tar = "0.4"
 flate2 = "1.0"
 xz2 = "0.1"
+sevenz-rust = "0.6"
+bzip2 = "0.5"
 
 # Progress bar
 indicatif = "0.17"

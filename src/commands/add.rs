@@ -32,6 +32,7 @@ pub fn run(
     script_name: Option<String>,
     platform: Option<String>,
     version: Option<String>,
+    variant_filter: Option<String>,
 ) -> Result<()> {
     let config = Config::new()?;
     let paths = WenPaths::new()?;
@@ -121,10 +122,91 @@ pub fn run(
             script_name.as_deref(),
             platform.as_deref(),
             version.as_deref(),
+            variant_filter.as_deref(),
         )?;
     }
 
     Ok(())
+}
+
+/// Resolve command name to avoid conflicts
+///
+/// Priority:
+/// 1. If variant exists, use base_name-{variant}
+/// 2. Otherwise, use base_name
+/// 3. If name is taken, try base_name-{number}
+fn resolve_command_name(
+    base_name: &str,
+    variant: Option<&str>,
+    installed: &crate::core::InstalledManifest,
+    exclude_key: Option<&str>,
+) -> String {
+    // 1. If it's a variant, construct the desired command name
+    if let Some(var) = variant {
+        // Check if base_name already ends with the variant suffix
+        // This handles cases where the binary itself contains the variant name
+        // e.g., base_name="bun-profile", variant="profile" -> keep as "bun-profile"
+        // e.g., base_name="bun-profile", variant="baseline-profile" -> change to "bun-baseline-profile"
+
+        let desired_name = if base_name.ends_with(&format!("-{}", var)) {
+            // Base name already ends with variant, use as-is
+            base_name.to_string()
+        } else if let Some(base_stripped) = extract_repo_name_from_command(base_name, var) {
+            // Base name contains part of the variant, reconstruct with full variant
+            // e.g., "bun-profile" with variant "baseline-profile" -> "bun-baseline-profile"
+            format!("{}-{}", base_stripped, var)
+        } else {
+            // Normal case: append variant to base name
+            format!("{}-{}", base_name, var)
+        };
+
+        if !installed.is_command_taken(&desired_name, exclude_key) {
+            return desired_name;
+        }
+        // Desired name taken, try numeric suffixes
+        for i in 1..=99 {
+            let numbered = format!("{}-{}", desired_name, i);
+            if !installed.is_command_taken(&numbered, exclude_key) {
+                return numbered;
+            }
+        }
+        return desired_name;
+    }
+
+    // 2. No variant - try base_name first
+    if !installed.is_command_taken(base_name, exclude_key) {
+        return base_name.to_string();
+    }
+
+    // 3. Try numeric suffixes for non-variant
+    for i in 1..=99 {
+        let numbered = format!("{}-{}", base_name, i);
+        if !installed.is_command_taken(&numbered, exclude_key) {
+            return numbered;
+        }
+    }
+
+    base_name.to_string()
+}
+
+/// Extract repo name from a command name that may contain partial variant info
+/// e.g., "bun-profile" with variant "baseline-profile" -> Some("bun")
+/// e.g., "bun" with variant "baseline" -> None
+fn extract_repo_name_from_command(command_name: &str, variant: &str) -> Option<String> {
+    // Split variant by '-' to get all parts
+    let variant_parts: Vec<&str> = variant.split('-').collect();
+
+    // Check if command_name ends with any part of the variant
+    for part in &variant_parts {
+        if command_name.ends_with(&format!("-{}", part)) {
+            // Strip this part and return the base
+            if let Some(stripped) = command_name.strip_suffix(&format!("-{}", part)) {
+                return Some(stripped.to_string());
+            }
+        }
+    }
+
+    None
 }
 
 /// Install scripts from local paths or URLs
@@ -244,6 +326,8 @@ fn install_scripts(
 
     let mut success_count = 0;
     let mut fail_count = 0;
+    let mut successful_scripts: Vec<String> = Vec::new();
+    let mut failed_scripts: Vec<String> = Vec::new();
 
     for (name, content, script_type, origin) in scripts_to_install {
         println!(
@@ -259,14 +343,17 @@ fn install_scripts(
                 if let Err(e) = config.save_installed(installed) {
                     println!("  {} Failed to save installed manifest: {}", "✗".red(), e);
                     fail_count += 1;
+                    failed_scripts.push(name);
                     continue;
                 }
                 println!("  {} Installed successfully", "✓".green());
                 success_count += 1;
+                successful_scripts.push(name);
             }
             Err(e) => {
                 println!("  {} {}", "✗".red(), e);
                 fail_count += 1;
+                failed_scripts.push(name);
             }
         }
     }
@@ -274,10 +361,20 @@ fn install_scripts(
     println!();
     println!("{}", "Summary:".bold());
     if success_count > 0 {
-        println!("  {} {} script(s) installed", "✓".green(), success_count);
+        println!(
+            "  {} {} script(s) installed: {}",
+            "✓".green(),
+            success_count,
+            successful_scripts.join(" ")
+        );
     }
     if fail_count > 0 {
-        println!("  {} {} script(s) failed", "✗".red(), fail_count);
+        println!(
+            "  {} {} script(s) failed: {}",
+            "✗".red(),
+            fail_count,
+            failed_scripts.join(" ")
+        );
     }
 
     Ok(())
@@ -302,6 +399,8 @@ fn install_single_script(
 
     // Create installed package info
     let inst_pkg = InstalledPackage {
+        repo_name: name.to_string(),
+        variant: None,
         version: "script".to_string(),
         platform: format!("{}-script", script_type.display_name().to_lowercase()),
         installed_at: Utc::now(),
@@ -345,6 +444,8 @@ fn install_local_files(
 
     let mut success_count = 0;
     let mut fail_count = 0;
+    let mut successful_files: Vec<String> = Vec::new();
+    let mut failed_files: Vec<String> = Vec::new();
 
     for file in files {
         println!("{} {}...", "Installing".cyan(), file);
@@ -361,6 +462,7 @@ fn install_local_files(
                             "✗".red()
                         );
                         fail_count += 1;
+                        failed_files.push(file.to_string());
                         continue;
                     }
                 };
@@ -369,6 +471,7 @@ fn install_local_files(
                 if let Err(e) = config.save_installed(installed) {
                     println!("  {} Failed to save installed manifest: {}", "✗".red(), e);
                     fail_count += 1;
+                    failed_files.push(name.clone());
                     continue;
                 }
                 println!(
@@ -377,10 +480,12 @@ fn install_local_files(
                     display_names
                 );
                 success_count += 1;
+                successful_files.push(name);
             }
             Err(e) => {
                 println!("  {} Failed to install {}: {}", "✗".red(), file, e);
                 fail_count += 1;
+                failed_files.push(file.to_string());
             }
         }
         println!();
@@ -388,10 +493,20 @@ fn install_local_files(
 
     println!("{}", "Summary:".bold());
     if success_count > 0 {
-        println!("  {} {} file(s) installed", "✓".green(), success_count);
+        println!(
+            "  {} {} file(s) installed: {}",
+            "✓".green(),
+            success_count,
+            successful_files.join(" ")
+        );
     }
     if fail_count > 0 {
-        println!("  {} {} file(s) failed", "✗".red(), fail_count);
+        println!(
+            "  {} {} file(s) failed: {}",
+            "✗".red(),
+            fail_count,
+            failed_files.join(" ")
+        );
     }
 
     Ok(())
@@ -421,6 +536,8 @@ fn install_from_urls(
 
     let mut success_count = 0;
     let mut fail_count = 0;
+    let mut successful_urls: Vec<String> = Vec::new();
+    let mut failed_urls: Vec<String> = Vec::new();
 
     // Create temp dir for downloads
     let temp_dir = paths.cache_dir().join("downloads");
@@ -434,6 +551,7 @@ fn install_from_urls(
             None => {
                 println!("  {} Invalid URL", "✗".red());
                 fail_count += 1;
+                failed_urls.push(url.to_string());
                 continue;
             }
         };
@@ -459,6 +577,7 @@ fn install_from_urls(
                                     "✗".red()
                                 );
                                 fail_count += 1;
+                                failed_urls.push(filename.to_string());
                                 continue;
                             }
                         };
@@ -467,6 +586,7 @@ fn install_from_urls(
                         if let Err(e) = config.save_installed(installed) {
                             println!("  {} Failed to save installed manifest: {}", "✗".red(), e);
                             fail_count += 1;
+                            failed_urls.push(name.clone());
                             continue;
                         }
                         println!(
@@ -475,16 +595,19 @@ fn install_from_urls(
                             display_names
                         );
                         success_count += 1;
+                        successful_urls.push(name);
                     }
                     Err(e) => {
                         println!("  {} Failed to install {}: {}", "✗".red(), filename, e);
                         fail_count += 1;
+                        failed_urls.push(filename.to_string());
                     }
                 }
             }
             Err(e) => {
                 println!("  {} Failed to download {}: {}", "✗".red(), url, e);
                 fail_count += 1;
+                failed_urls.push(url.to_string());
             }
         }
 
@@ -503,10 +626,20 @@ fn install_from_urls(
 
     println!("{}", "Summary:".bold());
     if success_count > 0 {
-        println!("  {} {} URL(s) installed", "✓".green(), success_count);
+        println!(
+            "  {} {} URL(s) installed: {}",
+            "✓".green(),
+            success_count,
+            successful_urls.join(" ")
+        );
     }
     if fail_count > 0 {
-        println!("  {} {} URL(s) failed", "✗".red(), fail_count);
+        println!(
+            "  {} {} URL(s) failed: {}",
+            "✗".red(),
+            fail_count,
+            failed_urls.join(" ")
+        );
     }
 
     Ok(())
@@ -576,6 +709,7 @@ fn install_packages(
     custom_name: Option<&str>,
     custom_platform: Option<&str>,
     custom_version: Option<&str>,
+    variant_filter: Option<&str>,
 ) -> Result<()> {
     // Get current platform
     let current_platform = if let Some(_custom_plat) = custom_platform {
@@ -841,6 +975,8 @@ fn install_packages(
     // Install/update packages
     let mut success_count = 0;
     let mut fail_count = 0;
+    let mut successful_packages: Vec<String> = Vec::new();
+    let mut failed_packages: Vec<String> = Vec::new();
 
     // Combine new installs and updates
     let all_packages: Vec<_> = to_install.into_iter().chain(to_update).collect();
@@ -920,16 +1056,63 @@ fn install_packages(
             None => {
                 println!("  {} Platform binary not found", "✗".red());
                 fail_count += 1;
+                failed_packages.push(pkg_name.to_string());
                 continue;
             }
         };
 
+        // Apply variant filter if specified
+        let (filtered_binaries, _original_indices): (Vec<_>, Vec<_>) =
+            if let Some(filter) = variant_filter {
+                binaries
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, binary)| {
+                        let variant = crate::core::manifest::extract_variant_from_asset(
+                            &binary.asset_name,
+                            pkg_name,
+                        );
+                        variant.as_deref() == Some(filter)
+                    })
+                    .map(|(idx, binary)| (binary.clone(), idx))
+                    .unzip()
+            } else {
+                (binaries.clone(), (0..binaries.len()).collect())
+            };
+
+        // Check if any binaries remain after filtering
+        if filtered_binaries.is_empty() {
+            if let Some(filter) = variant_filter {
+                println!(
+                    "  {} No binaries found for variant '{}'. Available variants:",
+                    "✗".red(),
+                    filter
+                );
+                for binary in binaries {
+                    let variant = crate::core::manifest::extract_variant_from_asset(
+                        &binary.asset_name,
+                        pkg_name,
+                    );
+                    if let Some(v) = variant {
+                        println!("    - {}", v);
+                    } else {
+                        println!("    - (default)");
+                    }
+                }
+            }
+            fail_count += 1;
+            failed_packages.push(pkg_name.to_string());
+            continue;
+        }
+
         // Select which packages to install (single, all, or user selection)
-        let selected_indices = match select_packages_for_platform(pkg_name, binaries, yes) {
+        let selected_indices = match select_packages_for_platform(pkg_name, &filtered_binaries, yes)
+        {
             Ok(indices) => indices,
             Err(e) => {
                 println!("  {} {}", "✗".red(), e);
                 fail_count += 1;
+                failed_packages.push(pkg_name.to_string());
                 continue;
             }
         };
@@ -938,7 +1121,7 @@ fn install_packages(
         let mut parent_key: Option<String> = None;
 
         for (i, &idx) in selected_indices.iter().enumerate() {
-            let binary = &binaries[idx];
+            let binary = &filtered_binaries[idx];
 
             // Extract variant name from asset_name
             let variant =
@@ -983,6 +1166,7 @@ fn install_packages(
                     if let Err(e) = config.save_installed(installed) {
                         println!("  {} Failed to save installed manifest: {}", "✗".red(), e);
                         fail_count += 1;
+                        failed_packages.push(installed_key.clone());
                         continue;
                     }
 
@@ -994,10 +1178,12 @@ fn install_packages(
 
                     println!("  {} Installed successfully", "✓".green());
                     success_count += 1;
+                    successful_packages.push(installed_key.clone());
                 }
                 Err(e) => {
                     println!("  {} {}", "✗".red(), e);
                     fail_count += 1;
+                    failed_packages.push(installed_key.clone());
                 }
             }
             println!();
@@ -1020,6 +1206,8 @@ fn install_packages(
     // Install scripts from bucket cache
     let mut script_success_count = 0;
     let mut script_fail_count = 0;
+    let mut successful_scripts: Vec<String> = Vec::new();
+    let mut failed_scripts: Vec<String> = Vec::new();
 
     for (name, url, script_type, origin) in scripts_to_process {
         println!(
@@ -1040,10 +1228,12 @@ fn install_packages(
             Ok(_) => {
                 println!("  {} Installed successfully", "✓".green());
                 script_success_count += 1;
+                successful_scripts.push(name);
             }
             Err(e) => {
                 println!("  {} {}", "✗".red(), e);
                 script_fail_count += 1;
+                failed_scripts.push(name);
             }
         }
         println!();
@@ -1052,20 +1242,36 @@ fn install_packages(
     // Summary
     println!("{}", "Summary:".bold());
     if success_count > 0 {
-        println!("  {} {} package(s) installed", "✓".green(), success_count);
+        println!(
+            "  {} {} package(s) installed: {}",
+            "✓".green(),
+            success_count,
+            successful_packages.join(" ")
+        );
     }
     if fail_count > 0 {
-        println!("  {} {} package(s) failed", "✗".red(), fail_count);
+        println!(
+            "  {} {} package(s) failed: {}",
+            "✗".red(),
+            fail_count,
+            failed_packages.join(" ")
+        );
     }
     if script_success_count > 0 {
         println!(
-            "  {} {} script(s) installed",
+            "  {} {} script(s) installed: {}",
             "✓".green(),
-            script_success_count
+            script_success_count,
+            successful_scripts.join(" ")
         );
     }
     if script_fail_count > 0 {
-        println!("  {} {} script(s) failed", "✗".red(), script_fail_count);
+        println!(
+            "  {} {} script(s) failed: {}",
+            "✗".red(),
+            script_fail_count,
+            failed_scripts.join(" ")
+        );
     }
 
     Ok(())
@@ -1074,7 +1280,7 @@ fn install_packages(
 /// Install a single package
 #[allow(clippy::too_many_arguments)]
 fn install_package(
-    _config: &Config,
+    config: &Config,
     paths: &WenPaths,
     pkg: &crate::core::Package,
     platform_match: &crate::core::platform::PlatformMatch,
@@ -1082,7 +1288,7 @@ fn install_package(
     version: &str,
     source: &PackageSource,
     installed_key: &str,
-    parent_package: Option<&str>,
+    _parent_package: Option<&str>, // Deprecated parameter, kept for compatibility
     custom_name: Option<&str>,
     yes: bool,
 ) -> Result<InstalledPackage> {
@@ -1189,6 +1395,20 @@ fn install_package(
     // Install all selected executables
     let mut command_names = Vec::new();
 
+    // Extract repo_name and variant from installed_key for resolve_command_name
+    // installed_key format: "repo_name" or "repo_name::variant"
+    let (_, variant_opt) = if let Some(pos) = installed_key.find("::") {
+        (
+            installed_key[..pos].to_string(),
+            Some(installed_key[pos + 2..].to_string()),
+        )
+    } else {
+        (installed_key.to_string(), None)
+    };
+
+    // Load installed manifest for command name resolution
+    let installed_manifest = config.get_or_create_installed()?;
+
     for exe_relative in selected_executables {
         let exe_path = app_dir.join(&exe_relative);
 
@@ -1197,7 +1417,7 @@ fn install_package(
         }
 
         // Extract the actual command name from the executable path
-        let command_name = if let Some(custom) = custom_name {
+        let base_name = if let Some(custom) = custom_name {
             // Use custom name if provided (only for first executable)
             if command_names.is_empty() {
                 custom.to_string()
@@ -1220,10 +1440,18 @@ fn install_package(
             normalize_command_name(raw_name)
         };
 
-        println!("  Command will be available as: {}", command_name);
+        // Resolve command name with variant to avoid conflicts
+        let resolved_name = resolve_command_name(
+            &base_name,
+            variant_opt.as_deref(),
+            &installed_manifest,
+            Some(installed_key),
+        );
 
-        // Create symlink/shim using the actual executable name
-        let bin_path = paths.bin_shim_path(&command_name);
+        println!("  Command will be available as: {}", resolved_name);
+
+        // Create symlink/shim using the resolved name
+        let bin_path = paths.bin_shim_path(&resolved_name);
 
         println!("  Creating launcher at {}...", bin_path.display());
 
@@ -1234,17 +1462,33 @@ fn install_package(
 
         #[cfg(windows)]
         {
-            create_shim(&exe_path, &bin_path, &command_name)?;
+            create_shim(&exe_path, &bin_path, &resolved_name)?;
         }
 
-        command_names.push(command_name);
+        command_names.push(resolved_name);
     }
 
     // Clean up download
     fs::remove_file(&download_path)?;
 
+    // Extract repo_name and variant from installed_key
+    // installed_key format: "repo_name" or "repo_name::variant"
+    let (repo_name, variant) = if let Some(pos) = installed_key.find("::") {
+        (
+            installed_key[..pos].to_string(),
+            Some(installed_key[pos + 2..].to_string()),
+        )
+    } else {
+        (installed_key.to_string(), None)
+    };
+
+    // Command names were already resolved during symlink creation
+    let resolved_command_names = command_names;
+
     // Create installed package info
     let inst_pkg = InstalledPackage {
+        repo_name,
+        variant,
         version: version.to_string(),
         platform: platform_match.platform_id.clone(),
         installed_at: Utc::now(),
@@ -1252,10 +1496,10 @@ fn install_package(
         files: extracted_files,
         source: source.clone(),
         description: pkg.description.clone(),
-        command_names,
+        command_names: resolved_command_names,
         command_name: None,
         asset_name: binary.asset_name.clone(),
-        parent_package: parent_package.map(|s| s.to_string()),
+        parent_package: None, // Deprecated field
     };
 
     Ok(inst_pkg)
@@ -1320,6 +1564,8 @@ fn install_script_from_bucket(
 
     // Create installed package info
     let inst_pkg = InstalledPackage {
+        repo_name: command_name.to_string(),
+        variant: None,
         version: "script".to_string(),
         platform: std::env::consts::OS.to_string(),
         installed_at: Utc::now(),

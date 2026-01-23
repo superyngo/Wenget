@@ -47,21 +47,25 @@ pub fn run(names: Vec<String>, yes: bool) -> Result<()> {
         names
     };
 
-    // Expand: include all variants when upgrading a parent package
+    // Expand: include all variants when upgrading a repo
     let mut expanded = Vec::new();
     for name in &to_upgrade {
-        expanded.push(name.clone());
+        // Check if this is a repo name or a specific variant
+        if name.contains("::") {
+            // This is a specific variant like "bun::baseline"
+            expanded.push(name.clone());
+            continue; // Don't expand, only update this variant
+        }
 
-        // Find all variants of this package
-        for (key, pkg) in &installed.packages {
-            if pkg.parent_package.as_deref() == Some(name) {
-                expanded.push(key.clone());
-            }
+        // Find all variants of this repo and add them to be upgraded
+        let variants = installed.find_by_repo(name);
+        for (key, _pkg) in variants {
+            expanded.push(key.clone());
         }
     }
 
     // Use add command to upgrade (reinstall)
-    add::run(expanded, yes, None, None, None)
+    add::run(expanded, yes, None, None, None, None)
 }
 
 /// Find upgradeable packages by checking their sources
@@ -72,11 +76,12 @@ fn find_upgradeable(
 ) -> Result<Vec<(String, String, String)>> {
     let mut upgradeable = Vec::new();
 
-    for (name, inst_pkg) in &installed.packages {
-        // Skip variants - only check parent packages
-        if inst_pkg.parent_package.is_some() {
-            continue;
-        }
+    // Group packages by repo_name to check only once per repo
+    let grouped = installed.group_by_repo();
+
+    for (repo_name, variants) in grouped {
+        // Use the first variant to get version and source info
+        let (_key, inst_pkg) = variants[0];
 
         // Determine repo URL based on source
         let repo_url = match &inst_pkg.source {
@@ -84,27 +89,11 @@ fn find_upgradeable(
                 // Get package info from cache for bucket packages
                 let cache = config.get_or_rebuild_cache()?;
 
-                // Find package in cache by name (cache is keyed by URL, not name)
-                // Try exact match first
+                // Find package in cache by repo_name
                 let found = cache
                     .packages
                     .values()
-                    .find(|cached_pkg| cached_pkg.package.name == *name);
-
-                // Fallback: try without variant suffix (for packages like "uv-pc" → "uv")
-                // This handles cases where old installations have platform-related suffixes
-                // that weren't properly stripped during installation
-                let found = found.or_else(|| {
-                    if let Some(pos) = name.rfind('-') {
-                        let base_name = &name[..pos];
-                        cache
-                            .packages
-                            .values()
-                            .find(|cached_pkg| cached_pkg.package.name == base_name)
-                    } else {
-                        None
-                    }
-                });
+                    .find(|cached_pkg| cached_pkg.package.name == repo_name);
 
                 if let Some(cached_pkg) = found {
                     cached_pkg.package.repo.clone()
@@ -112,7 +101,7 @@ fn find_upgradeable(
                     eprintln!(
                         "{} Package {} not found in bucket {} cache, skipping update check",
                         "Warning:".yellow(),
-                        name,
+                        repo_name,
                         bucket_name
                     );
                     continue;
@@ -124,7 +113,10 @@ fn find_upgradeable(
             }
             PackageSource::Script { .. } => {
                 // Scripts don't support updates
-                log::debug!("Skipping script '{}' - scripts don't support updates", name);
+                log::debug!(
+                    "Skipping script '{}' - scripts don't support updates",
+                    repo_name
+                );
                 continue;
             }
         };
@@ -132,7 +124,7 @@ fn find_upgradeable(
         // Fetch latest version from GitHub
         if let Ok(latest_version) = github.fetch_latest_version(&repo_url) {
             if inst_pkg.version != latest_version {
-                upgradeable.push((name.clone(), inst_pkg.version.clone(), latest_version));
+                upgradeable.push((repo_name.clone(), inst_pkg.version.clone(), latest_version));
             }
         }
     }

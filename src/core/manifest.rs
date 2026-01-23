@@ -393,6 +393,16 @@ pub enum PackageSource {
 /// Installed package information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InstalledPackage {
+    /// Canonical repository name (e.g., "bun", "cli")
+    /// This is the base name from the repository, without variant suffix
+    #[serde(default)]
+    pub repo_name: String,
+
+    /// Variant identifier (e.g., "baseline-profile", "desktop")
+    /// None indicates the default/main variant
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub variant: Option<String>,
+
     /// Installed version
     pub version: String,
 
@@ -425,7 +435,8 @@ pub struct InstalledPackage {
     /// Original asset filename (for variant identification)
     pub asset_name: String,
 
-    /// Parent package name (if this is a variant)
+    /// DEPRECATED: Parent package name (if this is a variant)
+    /// Kept for backward compatibility during migration
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_package: Option<String>,
 }
@@ -471,13 +482,111 @@ impl InstalledManifest {
         self.packages.keys().map(|s| s.as_str()).collect()
     }
 
+    /// Group packages by their repo_name
+    /// Returns a HashMap where keys are repo names and values are vectors of (key, package) tuples
+    pub fn group_by_repo(&self) -> HashMap<String, Vec<(&String, &InstalledPackage)>> {
+        let mut grouped: HashMap<String, Vec<(&String, &InstalledPackage)>> = HashMap::new();
+
+        for (key, package) in &self.packages {
+            let repo_name = if package.repo_name.is_empty() {
+                // Fallback for packages without repo_name (old format)
+                // Try to extract from key
+                if let Some(pos) = key.find("::") {
+                    &key[..pos]
+                } else {
+                    key.as_str()
+                }
+            } else {
+                &package.repo_name
+            };
+
+            grouped
+                .entry(repo_name.to_string())
+                .or_default()
+                .push((key, package));
+        }
+
+        grouped
+    }
+
+    /// Find all packages from a specific repository
+    pub fn find_by_repo(&self, repo_name: &str) -> Vec<(&String, &InstalledPackage)> {
+        self.packages
+            .iter()
+            .filter(|(_, pkg)| {
+                if !pkg.repo_name.is_empty() {
+                    pkg.repo_name == repo_name
+                } else {
+                    // Fallback for old format
+                    let key_repo = if let Some(pos) = pkg.asset_name.find('-') {
+                        &pkg.asset_name[..pos]
+                    } else {
+                        &pkg.asset_name
+                    };
+                    key_repo.eq_ignore_ascii_case(repo_name)
+                }
+            })
+            .collect()
+    }
+
+    /// Check if a command name is already taken by another package
+    pub fn is_command_taken(&self, command_name: &str, exclude_key: Option<&str>) -> bool {
+        for (key, package) in &self.packages {
+            if let Some(exclude) = exclude_key {
+                if key == exclude {
+                    continue;
+                }
+            }
+            if package.command_names.contains(&command_name.to_string()) {
+                return true;
+            }
+        }
+        false
+    }
+
     /// Migrate old format (single command_name) to new format (command_names vec)
+    /// Also migrates parent_package to repo_name/variant
     pub fn migrate(&mut self) {
-        for package in self.packages.values_mut() {
-            // If command_names is empty but command_name exists, migrate
+        for (key, package) in self.packages.iter_mut() {
+            // Migrate command_name to command_names
             if package.command_names.is_empty() {
                 if let Some(ref name) = package.command_name {
                     package.command_names = vec![name.clone()];
+                }
+            }
+
+            // Migrate parent_package to repo_name/variant
+            if package.repo_name.is_empty() {
+                // Parse repo_name and variant from key
+                if let Some(pos) = key.find("::") {
+                    // New format key: "repo::variant"
+                    package.repo_name = key[..pos].to_string();
+                    package.variant = Some(key[pos + 2..].to_string());
+                } else if key.contains('-') && package.parent_package.is_some() {
+                    // Old format with parent_package
+                    package.repo_name = package.parent_package.clone().unwrap_or_else(|| {
+                        // Try to extract from key by removing variant suffix
+                        if let Some(pos) = key.rfind('-') {
+                            key[..pos].to_string()
+                        } else {
+                            key.clone()
+                        }
+                    });
+
+                    // Extract variant from key
+                    if let Some(pos) = key.rfind('-') {
+                        let potential_variant = &key[pos + 1..];
+                        // Only set variant if it's not empty and looks like a variant
+                        if !potential_variant.is_empty()
+                            && !potential_variant.chars().next().unwrap().is_numeric()
+                        {
+                            package.variant = Some(potential_variant.to_string());
+                        }
+                    }
+                } else {
+                    // No variant, just use key as repo_name
+                    package.repo_name = key.clone();
+                    package.variant = None;
                 }
             }
         }
@@ -637,17 +746,21 @@ pub fn extract_variant_from_asset(asset_name: &str, repo_name: &str) -> Option<S
 
 /// Generate installed.json key from repo name and variant
 ///
+/// When a package has no variant, the key is just the repo_name.
+/// When a package has a variant, the key is "{repo_name}::{variant}"
+/// This ensures all packages from the same repo can be easily identified.
+///
 /// # Examples
 /// ```
 /// use wenget::core::manifest::generate_installed_key;
 ///
-/// assert_eq!(generate_installed_key("opencode", None), "opencode");
-/// assert_eq!(generate_installed_key("opencode", Some("baseline")), "opencode-baseline");
-/// assert_eq!(generate_installed_key("opencode", Some("desktop")), "opencode-desktop");
+/// assert_eq!(generate_installed_key("bun", None), "bun");
+/// assert_eq!(generate_installed_key("bun", Some("baseline-profile")), "bun::baseline-profile");
+/// assert_eq!(generate_installed_key("cli", Some("v2")), "cli::v2");
 /// ```
 pub fn generate_installed_key(repo_name: &str, variant: Option<&str>) -> String {
     match variant {
-        Some(v) if !v.is_empty() => format!("{}-{}", repo_name, v),
+        Some(v) if !v.is_empty() => format!("{}::{}", repo_name, v),
         _ => repo_name.to_string(),
     }
 }
@@ -667,6 +780,8 @@ mod tests {
         let mut manifest = InstalledManifest::new();
 
         let package = InstalledPackage {
+            repo_name: "test".to_string(),
+            variant: None,
             version: "1.0.0".to_string(),
             platform: "windows-x86_64".to_string(),
             installed_at: Utc::now(),

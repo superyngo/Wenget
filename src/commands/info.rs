@@ -149,46 +149,45 @@ fn display_package_info(
     }
 
     // Installation status and variants
-    if let Some(inst_pkg) = installed.get_package(&pkg.name) {
-        println!(
-            "  {} {} (v{})",
-            "Status:".bold(),
-            "Installed".green(),
-            inst_pkg.version
-        );
-        println!(
-            "  {} {}",
-            "Command name:".bold(),
-            inst_pkg.command_names.join(", ").yellow()
-        );
-        println!("  {} {}", "Installed at:".bold(), inst_pkg.installed_at);
-        println!("  {} {}", "Platform:".bold(), inst_pkg.platform);
-        println!("  {} {}", "Install path:".bold(), inst_pkg.install_path);
+    let all_variants = installed.find_by_repo(&pkg.name);
 
-        // Display variant information if any
-        let variants: Vec<_> = installed
-            .packages
+    if !all_variants.is_empty() {
+        println!("  {} {}", "Status:".bold(), "Installed".green());
+
+        // Collect all command names from all variants
+        let all_commands: Vec<String> = all_variants
             .iter()
-            .filter(|(_, p)| p.parent_package.as_deref() == Some(&pkg.name))
+            .flat_map(|(_, p)| p.command_names.clone())
             .collect();
 
-        if !variants.is_empty() {
-            println!();
+        println!(
+            "  {} {}",
+            "Command name(s):".bold(),
+            all_commands.join(", ").yellow()
+        );
+
+        // Show variant details
+        println!(
+            "  {} {} variant(s):",
+            "Variants:".bold(),
+            all_variants.len()
+        );
+        for (_key, inst_pkg) in &all_variants {
+            let variant_label = inst_pkg.variant.as_deref().unwrap_or("(default)");
             println!(
-                "  {} {} variant(s) installed:",
-                "Variants:".bold(),
-                variants.len()
+                "    {} {} - v{} [{}]",
+                "└─".dimmed(),
+                variant_label.green(),
+                inst_pkg.version,
+                inst_pkg.command_names.join(", ").yellow()
             );
-            for (var_name, var_pkg) in &variants {
-                println!(
-                    "    {} {} ({}) [v{}]",
-                    "└─".dimmed(),
-                    var_name.green(),
-                    var_pkg.asset_name.dimmed(),
-                    var_pkg.version.dimmed()
-                );
-            }
         }
+
+        // Show first variant's details
+        let (_key, first_pkg) = &all_variants[0];
+        println!("  {} {}", "Installed at:".bold(), first_pkg.installed_at);
+        println!("  {} {}", "Platform:".bold(), first_pkg.platform);
+        println!("  {} {}", "Install path:".bold(), first_pkg.install_path);
     } else {
         println!("  {} {}", "Status:".bold(), "Not installed".yellow());
     }
@@ -208,11 +207,31 @@ fn display_package_info(
         let binaries = &pkg.platforms[platform];
         if binaries.len() == 1 {
             let b = &binaries[0];
+
+            // Check if this binary is installed
+            let variant =
+                crate::core::manifest::extract_variant_from_asset(&b.asset_name, &pkg.name);
+            let installed_key =
+                crate::core::manifest::generate_installed_key(&pkg.name, variant.as_deref());
+            let install_status = if let Some(inst_pkg) = installed.get_package(&installed_key) {
+                // Only show [Installed] if the platform matches
+                if inst_pkg.platform == *platform {
+                    format!(" [Installed: {}]", inst_pkg.command_names.join(", "))
+                        .green()
+                        .to_string()
+                } else {
+                    String::new()
+                }
+            } else {
+                String::new()
+            };
+
             println!(
-                "    {} {} ({:.2} MB)",
+                "    {} {} ({:.2} MB){}",
                 "•".cyan(),
                 platform,
-                b.size as f64 / 1_048_576.0
+                b.size as f64 / 1_048_576.0,
+                install_status
             );
         } else {
             println!(
@@ -222,11 +241,33 @@ fn display_package_info(
                 binaries.len()
             );
             for b in binaries {
+                // Extract variant and check installation status
+                let variant =
+                    crate::core::manifest::extract_variant_from_asset(&b.asset_name, &pkg.name);
+                let installed_key =
+                    crate::core::manifest::generate_installed_key(&pkg.name, variant.as_deref());
+
+                let variant_label = variant.as_deref().unwrap_or("(default)");
+                let install_status = if let Some(inst_pkg) = installed.get_package(&installed_key) {
+                    // Only show [Installed] if the platform matches
+                    if inst_pkg.platform == *platform {
+                        format!(" [Installed: {}]", inst_pkg.command_names.join(", "))
+                            .green()
+                            .to_string()
+                    } else {
+                        String::new()
+                    }
+                } else {
+                    String::new()
+                };
+
                 println!(
-                    "      {} {} ({:.2} MB)",
+                    "      {} {} ({:.2} MB) [{}]{}",
                     "─".dimmed(),
                     b.asset_name,
-                    b.size as f64 / 1_048_576.0
+                    b.size as f64 / 1_048_576.0,
+                    variant_label,
+                    install_status
                 );
             }
         }

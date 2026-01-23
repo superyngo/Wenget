@@ -1,6 +1,7 @@
 //! Archive extraction utilities
 
 use anyhow::{Context, Result};
+use bzip2::read::BzDecoder;
 use flate2::read::GzDecoder;
 use std::fs::{self, File};
 use std::path::Path;
@@ -31,8 +32,12 @@ pub fn extract_archive(archive_path: &Path, dest_dir: &Path) -> Result<Vec<Strin
         extract_tar_gz(archive_path, dest_dir)?
     } else if filename.ends_with(".tar.xz") {
         extract_tar_xz(archive_path, dest_dir)?
+    } else if filename.ends_with(".tar.bz2") || filename.ends_with(".tbz") {
+        extract_tar_bz2(archive_path, dest_dir)?
     } else if filename.ends_with(".zip") {
         extract_zip(archive_path, dest_dir)?
+    } else if filename.ends_with(".7z") {
+        extract_7z(archive_path, dest_dir)?
     } else {
         anyhow::bail!("Unsupported archive format: {}", filename);
     };
@@ -115,6 +120,83 @@ fn extract_tar_xz(archive_path: &Path, dest_dir: &Path) -> Result<Vec<String>> {
     let mut archive = Archive::new(decoder);
 
     extract_tar_archive(&mut archive, dest_dir)
+}
+
+/// Extract a .tar.bz2 or .tbz file
+fn extract_tar_bz2(archive_path: &Path, dest_dir: &Path) -> Result<Vec<String>> {
+    let file = File::open(archive_path)
+        .with_context(|| format!("Failed to open archive: {}", archive_path.display()))?;
+
+    let decoder = BzDecoder::new(file);
+    let mut archive = Archive::new(decoder);
+
+    extract_tar_archive(&mut archive, dest_dir)
+}
+
+/// Extract a .7z file
+fn extract_7z(archive_path: &Path, dest_dir: &Path) -> Result<Vec<String>> {
+    use sevenz_rust::decompress_file;
+
+    // Extract the 7z archive
+    decompress_file(archive_path, dest_dir)
+        .with_context(|| format!("Failed to extract 7z archive: {}", archive_path.display()))?;
+
+    // Collect all extracted files
+    let mut extracted_files = Vec::new();
+    collect_files_recursively(dest_dir, dest_dir, &mut extracted_files)?;
+
+    // Set executable permissions on Unix for files that should be executable
+    #[cfg(unix)]
+    {
+        for file_path in &extracted_files {
+            let full_path = dest_dir.join(file_path);
+            if let Ok(metadata) = fs::metadata(&full_path) {
+                if metadata.is_file() {
+                    let filename = Path::new(file_path)
+                        .file_name()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("");
+
+                    // Set executable permission for files that could be executables
+                    if could_be_executable(filename, file_path)
+                        && !is_excluded_file(filename, file_path)
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        let mut perms = metadata.permissions();
+                        perms.set_mode(0o755);
+                        fs::set_permissions(&full_path, perms)?;
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(extracted_files)
+}
+
+/// Recursively collect all files in a directory (helper for 7z extraction)
+fn collect_files_recursively(
+    base_dir: &Path,
+    current_dir: &Path,
+    files: &mut Vec<String>,
+) -> Result<()> {
+    for entry in fs::read_dir(current_dir)
+        .with_context(|| format!("Failed to read directory: {}", current_dir.display()))?
+    {
+        let entry = entry?;
+        let path = entry.path();
+
+        if path.is_dir() {
+            collect_files_recursively(base_dir, &path, files)?;
+        } else if path.is_file() {
+            // Get relative path from base directory
+            if let Ok(relative) = path.strip_prefix(base_dir) {
+                files.push(relative.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// Extract a tar archive (common logic for .tar.gz and .tar.xz)

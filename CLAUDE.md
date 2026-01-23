@@ -150,6 +150,17 @@ The `WenPaths` struct in `src/core/paths.rs` auto-detects privilege level via `i
 
 ## Important Implementation Details
 
+### Package Variant Handling
+When a package has multiple release binaries (e.g., `bun`, `bun-baseline`, `bun-profile`), Wenget treats them as variants:
+- **Installed key format**: `{repo_name}` for default, `{repo_name}::{variant}` for variants
+  - Example: `bun`, `bun::baseline`, `bun::profile`
+- **InstalledPackage fields**:
+  - `repo_name`: Canonical repository name (e.g., "bun")
+  - `variant`: Optional variant identifier (e.g., "baseline")
+- **Command name conflict resolution**: If a command name is already taken, Wenget automatically appends the variant suffix or numeric suffix
+- **Grouped display**: `wenget ls` groups variants under their repo name
+- **Bulk operations**: `wenget update bun` updates all variants; `wenget del bun` deletes all variants
+
 ### Platform Detection
 - Platform detection is in `src/core/platform.rs`
 - Uses fuzzy matching for binary names (e.g., "ripgrep-linux-x64" matches "linux-x86_64")

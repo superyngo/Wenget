@@ -9,7 +9,12 @@ use std::fs;
 use std::path::Path;
 
 /// Delete installed packages
-pub fn run(names: Vec<String>, yes: bool, force: bool) -> Result<()> {
+pub fn run(
+    names: Vec<String>,
+    yes: bool,
+    force: bool,
+    variant_filter: Option<String>,
+) -> Result<()> {
     // Check for self-deletion request
     if names.len() == 1 && names[0].to_lowercase() == "self" {
         return delete_self(yes);
@@ -61,76 +66,104 @@ pub fn run(names: Vec<String>, yes: bool, force: bool) -> Result<()> {
         return Ok(());
     }
 
-    // Group packages: find parents and their variants
+    // Group packages by repo: find repos and their variants
+    // Support both repo names ("bun") and specific variants ("bun::baseline")
     let mut packages_to_delete: Vec<(String, Vec<String>)> = Vec::new();
     let mut processed: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut final_to_delete: Vec<String> = Vec::new();
 
     for name in &matching_packages {
         if processed.contains(name) {
             continue;
         }
 
-        let pkg = installed.get_package(name).unwrap();
-
-        // If this is a variant (has parent_package), skip - it will be handled with its parent
-        if pkg.parent_package.is_some() {
+        // Check if this is a specific variant request (contains "::")
+        if name.contains("::") {
+            // User wants to delete a specific variant
+            final_to_delete.push(name.clone());
+            processed.insert(name.clone());
             continue;
         }
 
-        // Find all variants of this package
-        let variants: Vec<String> = installed
-            .packages
-            .iter()
-            .filter(|(_, p)| p.parent_package.as_deref() == Some(name))
-            .map(|(key, _)| key.clone())
-            .collect();
+        // This is a repo name - find all variants
+        let all_variants = installed.find_by_repo(name);
 
-        processed.insert(name.clone());
-        for v in &variants {
-            processed.insert(v.clone());
+        if all_variants.is_empty() {
+            continue;
         }
 
-        packages_to_delete.push((name.clone(), variants));
+        // Apply variant filter if specified
+        let variants: Vec<_> = if let Some(ref filter) = variant_filter {
+            all_variants
+                .into_iter()
+                .filter(|(_, pkg)| pkg.variant.as_deref() == Some(filter.as_str()))
+                .collect()
+        } else {
+            all_variants
+        };
+
+        if variants.is_empty() {
+            // No variants match the filter
+            if let Some(ref filter) = variant_filter {
+                println!(
+                    "  {} No variant '{}' found for package '{}'",
+                    "✗".yellow(),
+                    filter,
+                    name
+                );
+            }
+            continue;
+        }
+
+        // Collect all variant keys
+        let variant_keys: Vec<String> = variants.iter().map(|(key, _)| (*key).clone()).collect();
+
+        for key in &variant_keys {
+            processed.insert(key.clone());
+        }
+
+        packages_to_delete.push((name.clone(), variant_keys));
     }
 
     // Show packages to delete
     println!("{}", "Packages to delete:".bold());
-    for (parent, variants) in &packages_to_delete {
-        let pkg = installed.get_package(parent).unwrap();
-        println!("  • {} v{}", parent.red(), pkg.version);
-        for variant in variants {
-            let var_pkg = installed.get_package(variant).unwrap();
-            println!("    └─ {} v{}", variant.red(), var_pkg.version);
+    for (repo_name, variants) in &packages_to_delete {
+        // Show repo name with variant filter info if applicable
+        if let Some(ref filter) = variant_filter {
+            println!("  • {} (variant: {})", repo_name.red(), filter);
+        } else {
+            println!("  • {} (all variants)", repo_name.red());
+        }
+        for variant_key in variants {
+            let var_pkg = installed.get_package(variant_key).unwrap();
+            let variant_label = var_pkg.variant.as_deref().unwrap_or("(default)");
+            println!("    └─ {} v{}", variant_label.dimmed(), var_pkg.version);
         }
     }
 
     // If there are variants and not using -y, ask which ones to delete
-    let mut final_to_delete: Vec<String> = Vec::new();
-
     if !yes {
-        for (parent, variants) in &packages_to_delete {
-            if variants.is_empty() {
-                // No variants, just add the parent
-                final_to_delete.push(parent.clone());
+        for (repo_name, variants) in &packages_to_delete {
+            if variants.len() == 1 {
+                // Only one variant, just add it
+                final_to_delete.push(variants[0].clone());
             } else {
-                // Has variants, show selection dialog
+                // Has multiple variants, show selection dialog
                 use dialoguer::MultiSelect;
 
-                let mut all_options = vec![parent.clone()];
-                all_options.extend(variants.clone());
-
-                let items: Vec<String> = all_options
+                let items: Vec<String> = variants
                     .iter()
-                    .map(|name| {
-                        let pkg = installed.get_package(name).unwrap();
-                        format!("{} ({})", name, pkg.asset_name)
+                    .map(|key| {
+                        let pkg = installed.get_package(key).unwrap();
+                        let variant_label = pkg.variant.as_deref().unwrap_or("(default)");
+                        format!("{} ({})", variant_label, pkg.asset_name)
                     })
                     .collect();
 
                 println!(
                     "\nFound {} variant(s) of '{}'. Select which to remove:",
                     variants.len(),
-                    parent
+                    repo_name
                 );
 
                 let selections = MultiSelect::new()
@@ -140,19 +173,18 @@ pub fn run(names: Vec<String>, yes: bool, force: bool) -> Result<()> {
                     .interact()?;
 
                 if selections.is_empty() {
-                    println!("  Skipped {}", parent);
+                    println!("  Skipped {}", repo_name);
                     continue;
                 }
 
                 for &idx in &selections {
-                    final_to_delete.push(all_options[idx].clone());
+                    final_to_delete.push(variants[idx].clone());
                 }
             }
         }
     } else {
         // -y flag: delete all
-        for (parent, variants) in &packages_to_delete {
-            final_to_delete.push(parent.clone());
+        for (_repo_name, variants) in &packages_to_delete {
             final_to_delete.extend(variants.clone());
         }
     }

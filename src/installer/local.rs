@@ -132,6 +132,8 @@ pub fn install_local_file(
     };
 
     Ok(InstalledPackage {
+        repo_name: name.clone(),
+        variant: None,
         version: "local".to_string(), // We don't know the version from a file
         platform: "local".to_string(),
         installed_at: Utc::now(),
