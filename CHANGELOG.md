@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Update Command Optimization** - 2026-01-23
+  - Update command now refreshes bucket cache before checking versions
+  - Added fallback to cache version when GitHub API fails, preventing silent skips
+  - Improves reliability when API rate limits are exceeded or network issues occur
+
+- **Delete Command Display Bug** - 2026-01-23
+  - Fixed rm command not displaying variant packages when deleting by repo name
+  - Previously, variant packages were skipped during display due to incorrect logic
+  - Now correctly shows all matching packages before deletion confirmation
+
 ## [2.2.1] - 2026-01-23
 
 ### Fixed

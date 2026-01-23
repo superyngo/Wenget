@@ -81,15 +81,29 @@ pub fn run(
             continue;
         }
 
-        // Check if this is a specific variant request (contains "::")
-        if name.contains("::") {
-            // User wants to delete a specific variant
+        // Get the package to find repo_name
+        let pkg = installed.get_package(name).unwrap();
+        let _repo_name = &pkg.repo_name;
+
+        // Check if user explicitly requested this specific variant
+        // (i.e., user input contained "::" AND matched this exact key)
+        let is_specific_variant_request = names.iter().any(|user_input| {
+            user_input.contains("::")
+                && (user_input == name
+                    || Pattern::new(user_input)
+                        .map(|p| p.matches(name))
+                        .unwrap_or(false))
+        });
+
+        if is_specific_variant_request {
+            // User explicitly requested this variant - show it individually
+            packages_to_delete.push((name.clone(), vec![name.clone()]));
             final_to_delete.push(name.clone());
             processed.insert(name.clone());
             continue;
         }
 
-        // This is a repo name - find all variants
+        // This is a repo-level request - find all variants
         let all_variants = installed.find_by_repo(name);
 
         if all_variants.is_empty() {

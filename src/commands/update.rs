@@ -23,13 +23,17 @@ pub fn run(names: Vec<String>, yes: bool) -> Result<()> {
         return Ok(());
     }
 
+    // Force refresh bucket cache to ensure we have latest versions
+    println!("{}", "Refreshing bucket cache...".cyan());
+    let cache = config.rebuild_cache()?;
+
     // Create GitHub provider to fetch latest versions
     let github = GitHubProvider::new()?;
 
     // Determine which packages to upgrade
     let to_upgrade: Vec<String> = if names.is_empty() || (names.len() == 1 && names[0] == "all") {
         // List upgradeable packages
-        let upgradeable = find_upgradeable(&config, &installed, &github)?;
+        let upgradeable = find_upgradeable(&installed, &github, &cache)?;
 
         if upgradeable.is_empty() {
             println!("{}", "All packages are up to date".green());
@@ -70,9 +74,9 @@ pub fn run(names: Vec<String>, yes: bool) -> Result<()> {
 
 /// Find upgradeable packages by checking their sources
 fn find_upgradeable(
-    config: &Config,
     installed: &crate::core::InstalledManifest,
     github: &GitHubProvider,
+    cache: &crate::cache::ManifestCache,
 ) -> Result<Vec<(String, String, String)>> {
     let mut upgradeable = Vec::new();
 
@@ -87,8 +91,6 @@ fn find_upgradeable(
         let repo_url = match &inst_pkg.source {
             PackageSource::Bucket { name: bucket_name } => {
                 // Get package info from cache for bucket packages
-                let cache = config.get_or_rebuild_cache()?;
-
                 // Find package in cache by repo_name
                 let found = cache
                     .packages
@@ -122,9 +124,54 @@ fn find_upgradeable(
         };
 
         // Fetch latest version from GitHub
-        if let Ok(latest_version) = github.fetch_latest_version(&repo_url) {
-            if inst_pkg.version != latest_version {
-                upgradeable.push((repo_name.clone(), inst_pkg.version.clone(), latest_version));
+        match github.fetch_latest_version(&repo_url) {
+            Ok(latest_version) => {
+                if inst_pkg.version != latest_version {
+                    upgradeable.push((repo_name.clone(), inst_pkg.version.clone(), latest_version));
+                }
+            }
+            Err(e) => {
+                // API failed - try to use cache version as fallback
+                log::debug!(
+                    "GitHub API failed for {}: {}. Trying cache fallback...",
+                    repo_name,
+                    e
+                );
+
+                // Find package in cache by repo_name
+                if let Some(cached_pkg) = cache
+                    .packages
+                    .values()
+                    .find(|p| p.package.name == repo_name)
+                {
+                    if let Some(cache_version) = &cached_pkg.package.version {
+                        if inst_pkg.version != *cache_version {
+                            eprintln!(
+                                "{} Using cached version for {}: {} (API unavailable)",
+                                "Info:".cyan(),
+                                repo_name,
+                                cache_version
+                            );
+                            upgradeable.push((
+                                repo_name.clone(),
+                                inst_pkg.version.clone(),
+                                cache_version.clone(),
+                            ));
+                        }
+                    } else {
+                        eprintln!(
+                            "{} No version info in cache for {}, skipping",
+                            "Warning:".yellow(),
+                            repo_name
+                        );
+                    }
+                } else {
+                    eprintln!(
+                        "{} Failed to check updates for {}: API error and no cache available",
+                        "Warning:".yellow(),
+                        repo_name
+                    );
+                }
             }
         }
     }
