@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Variant Identification & Matching**
+  - Improved version number filtering in `extract_variant_from_asset` to handle both `-` and `_` separators
+  - Fixed incorrect variant identification when version numbers use underscores (e.g., `gh_2.86.0_linux_amd64.tar.gz`)
+  - Single binary packages now correctly identified as default (no variant) when no filters are applied
+  - Update command now correctly filters to only update already-installed variants, avoiding MultiSelect dialog
+  - **Fixed delete command not finding packages when only variants are installed** - rm command now correctly matches repo name even when only variant packages exist (e.g., `wenget rm bun` now works when only `bun::baseline` is installed)
+
+- **Add Command User Experience**
+  - Add command now prompts to reinstall when same version is already installed (instead of silently skipping)
+  - Update command respects variant-specific inputs (e.g., `wenget update bun::baseline` only updates that variant)
+
 ## [2.2.2] - 2026-01-24
 
 ### Fixed

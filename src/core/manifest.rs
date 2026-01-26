@@ -632,21 +632,28 @@ pub fn extract_variant_from_asset(asset_name: &str, repo_name: &str) -> Option<S
         name
     };
 
-    // Remove leading hyphens
-    let without_repo = without_repo.trim_start_matches('-');
+    // Remove leading hyphens and underscores
+    let without_repo = without_repo.trim_start_matches('-').trim_start_matches('_');
 
-    // Remove version numbers (simple pattern matching)
-    // Split by '-' and filter out version-like segments (e.g., "1.0.0", "v1.0.0")
-    let segments: Vec<&str> = without_repo.split('-').collect();
+    // Normalize separators: replace all underscores with hyphens for consistent processing
+    let normalized = without_repo.replace('_', "-");
+
+    // Remove version numbers (improved pattern matching)
+    // Split by '-' and filter out version-like segments (e.g., "1.0.0", "v1.0.0", "2.86.0")
+    let segments: Vec<&str> = normalized.split('-').collect();
     let filtered_segments: Vec<&str> = segments
         .into_iter()
         .filter(|seg| {
-            // Skip segments that look like versions
-            !seg.starts_with('v')
-                && !seg
-                    .chars()
-                    .next()
-                    .is_some_and(|c| c.is_ascii_digit() && seg.contains('.'))
+            // Helper to check if a segment is a version number
+            let is_version = |s: &str| -> bool {
+                let s = s.trim_start_matches('v');
+                // Must start with a digit and contain at least one dot
+                s.chars().next().is_some_and(|c| c.is_ascii_digit())
+                    && s.contains('.')
+                    && s.chars().all(|c| c.is_ascii_digit() || c == '.')
+            };
+
+            !is_version(seg)
         })
         .collect();
 

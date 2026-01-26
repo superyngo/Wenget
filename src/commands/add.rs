@@ -936,6 +936,7 @@ fn install_packages(
             // Package already installed
             let inst_pkg = installed.get_package(check_name).unwrap();
             if inst_pkg.version == version {
+                // Same version installed - ask if user wants to reinstall
                 println!(
                     "  {} {} v{} {}",
                     "•".cyan(),
@@ -943,6 +944,11 @@ fn install_packages(
                     version,
                     "(already installed, same version)".dimmed()
                 );
+                if !yes && crate::utils::prompt::confirm_no_default("  Reinstall?")? {
+                    // User wants to reinstall
+                    to_install.push((original_name.clone(), resolved, platform_match));
+                }
+                // If user says no or --yes flag is used, skip reinstallation
             } else {
                 println!(
                     "  {} {} v{} {} → {}",
@@ -1039,9 +1045,23 @@ fn install_packages(
     // Collect packages to update in cache (packages fetched from GitHub API)
     let mut packages_to_cache: Vec<(crate::core::Package, PackageSource)> = Vec::new();
 
-    for (_original_input_name, resolved, platform_match) in all_packages {
+    for (original_input_name, resolved, platform_match) in all_packages {
         let pkg_name = &resolved.package.name;
         let repo_url = &resolved.package.repo;
+
+        // Extract variant from input name (e.g., "bun::baseline" -> Some("baseline"))
+        // This takes precedence over the global variant_filter parameter
+        let input_variant = if original_input_name.contains("::") {
+            original_input_name
+                .split("::")
+                .nth(1)
+                .map(|s| s.to_string())
+        } else {
+            None
+        };
+
+        // Determine effective variant filter: input-specific variant takes precedence
+        let effective_variant_filter = input_variant.as_deref().or(variant_filter);
 
         // Try to fetch package info from GitHub API (includes download links)
         // If API rate limit is hit, fallback to cached package info
@@ -1118,7 +1138,7 @@ fn install_packages(
 
         // Apply variant filter if specified
         let (filtered_binaries, _original_indices): (Vec<_>, Vec<_>) =
-            if let Some(filter) = variant_filter {
+            if let Some(filter) = effective_variant_filter {
                 binaries
                     .iter()
                     .enumerate()
@@ -1137,7 +1157,7 @@ fn install_packages(
 
         // Check if any binaries remain after filtering
         if filtered_binaries.is_empty() {
-            if let Some(filter) = variant_filter {
+            if let Some(filter) = effective_variant_filter {
                 println!(
                     "  {} No binaries found for variant '{}'. Available variants:",
                     "✗".red(),
@@ -1179,8 +1199,16 @@ fn install_packages(
             let binary = &filtered_binaries[idx];
 
             // Extract variant name from asset_name
-            let variant =
-                crate::core::manifest::extract_variant_from_asset(&binary.asset_name, pkg_name);
+            // If platform originally has only one binary and no filters applied, treat as default (no variant)
+            let variant = if binaries.len() == 1
+                && effective_variant_filter.is_none()
+                && custom_platform.is_none()
+            {
+                // Platform has only one binary originally, treat as default
+                None
+            } else {
+                crate::core::manifest::extract_variant_from_asset(&binary.asset_name, pkg_name)
+            };
             let installed_key =
                 crate::core::manifest::generate_installed_key(pkg_name, variant.as_deref());
 

@@ -83,7 +83,7 @@ pub fn run(
 
         // Get the package to find repo_name
         let pkg = installed.get_package(name).unwrap();
-        let _repo_name = &pkg.repo_name;
+        let repo_name = &pkg.repo_name;
 
         // Check if user explicitly requested this specific variant
         // (i.e., user input contained "::" AND matched this exact key)
@@ -104,7 +104,7 @@ pub fn run(
         }
 
         // This is a repo-level request - find all variants
-        let all_variants = installed.find_by_repo(name);
+        let all_variants = installed.find_by_repo(repo_name);
 
         if all_variants.is_empty() {
             continue;
