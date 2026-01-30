@@ -27,6 +27,7 @@ https://github.com/oven-sh/bun
 https://github.com/containers/podman
 https://github.com/anomalyco/opencode
 https://github.com/unhappychoice/gitlogue
+https://github.com/Schniz/fnm
 
 # === Remote ===
 https://github.com/Genymobile/scrcpy
