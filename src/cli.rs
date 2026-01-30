@@ -129,6 +129,21 @@ pub enum Commands {
         #[arg(short, long)]
         force: bool,
     },
+
+    /// Edit configuration file with default editor
+    #[command(visible_alias = "c")]
+    Config,
+
+    /// Rename an installed command
+    #[command(visible_alias = "mv")]
+    #[command(visible_alias = "rn")]
+    Rename {
+        /// Current command name or package key
+        old_name: String,
+
+        /// New command name (if omitted, will prompt interactively)
+        new_name: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]

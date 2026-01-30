@@ -1,6 +1,6 @@
 # Wenget - Wen Package Manager
 
-[![Version](https://img.shields.io/badge/version-2.0.2-blue.svg)](https://github.com/superyngo/Wenget/releases)
+[![Version](https://img.shields.io/badge/version-2.2.3-blue.svg)](https://github.com/superyngo/Wenget/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/superyngo/Wenget)
 
@@ -168,6 +168,9 @@ wenget bucket create -d https://github.com/user/repo,https://gist.github.com/use
 ### System
 
 - `wenget init` - Initialize Wenget directories and configuration
+- `wenget config` - Edit user preferences (config.toml) with default editor
+- `wenget rename <old> [new]` - Rename an installed command
+- `wenget repair` - Repair corrupted configuration files
 - `wenget --version` - Show version information
 - `wenget --help` - Show help message
 
@@ -191,6 +194,7 @@ wenget bucket create -d https://github.com/user/repo,https://gist.github.com/use
 ├── cache/                 # Download and package cache
 │   ├── manifest-cache.json  # Cached package list
 │   └── downloads/        # Downloaded archives
+├── config.toml           # User preferences (platform, paths, etc.)
 ├── buckets.json          # Bucket configuration
 └── installed.json        # Installed packages info (with descriptions)
 ```
@@ -225,6 +229,37 @@ wenget bucket create -d https://github.com/user/repo,https://gist.github.com/use
 ├── buckets.json
 └── installed.json
 ```
+
+## Configuration
+
+Wenget supports user preferences via `~/.wenget/config.toml`. Edit with:
+
+```bash
+wenget config
+```
+
+### Available Settings
+
+**Preferred Platform** - Override automatic platform detection:
+```toml
+preferred_platform = "x86_64-unknown-linux-musl"
+```
+
+Common platform identifiers:
+- Linux x86_64 (glibc): `x86_64-unknown-linux-gnu`
+- Linux x86_64 (musl): `x86_64-unknown-linux-musl`
+- Linux ARM64: `aarch64-unknown-linux-gnu`
+- macOS Intel: `x86_64-apple-darwin`
+- macOS Apple Silicon: `aarch64-apple-darwin`
+- Windows x86_64: `x86_64-pc-windows-msvc`
+- Windows ARM64: `aarch64-pc-windows-msvc`
+
+**Custom Bin Directory** - Override default bin location:
+```toml
+custom_bin_path = "/usr/local/bin"
+```
+
+Useful for custom PATH setups or when `~/.wenget/bin` cannot be added to PATH.
 
 ## Bucket System
 

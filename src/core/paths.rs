@@ -19,6 +19,20 @@ use crate::core::privilege::is_elevated;
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
+/// Sanitize a path component by replacing invalid filesystem characters
+///
+/// Specifically converts `::` (used in variant keys) to `-` for filesystem compatibility.
+/// This allows internal keys like "bun::baseline" to become safe paths like "bun-baseline".
+///
+/// # Examples
+/// ```
+/// assert_eq!(sanitize_path_component("bun::baseline"), "bun-baseline");
+/// assert_eq!(sanitize_path_component("ripgrep"), "ripgrep");
+/// ```
+pub fn sanitize_path_component(name: &str) -> String {
+    name.replace("::", "-")
+}
+
 /// Wenget paths manager
 #[derive(Debug, Clone)]
 pub struct WenPaths {
@@ -26,6 +40,8 @@ pub struct WenPaths {
     root: PathBuf,
     /// Whether this is a system-level installation
     is_system_install: bool,
+    /// Custom bin directory (overrides default)
+    custom_bin_dir: Option<PathBuf>,
 }
 
 impl WenPaths {
@@ -40,6 +56,11 @@ impl WenPaths {
     /// # Errors
     /// Returns an error if the home directory cannot be determined (for user installs)
     pub fn new() -> Result<Self> {
+        Self::new_with_custom_bin(None)
+    }
+
+    /// Create a new WenPaths instance with optional custom bin directory
+    pub fn new_with_custom_bin(custom_bin_dir: Option<PathBuf>) -> Result<Self> {
         let is_system = is_elevated();
 
         let root = if is_system {
@@ -51,6 +72,7 @@ impl WenPaths {
         Ok(Self {
             root,
             is_system_install: is_system,
+            custom_bin_dir,
         })
     }
 
@@ -62,6 +84,7 @@ impl WenPaths {
         Ok(Self {
             root: Self::user_root_path()?,
             is_system_install: false,
+            custom_bin_dir: None,
         })
     }
 
@@ -73,6 +96,7 @@ impl WenPaths {
         Self {
             root: Self::system_root_path(),
             is_system_install: true,
+            custom_bin_dir: None,
         }
     }
 
@@ -135,7 +159,7 @@ impl WenPaths {
 
     /// Get a specific app's directory
     pub fn app_dir(&self, name: &str) -> PathBuf {
-        self.apps_dir().join(name)
+        self.apps_dir().join(sanitize_path_component(name))
     }
 
     /// Get a specific app's bin directory
@@ -146,9 +170,14 @@ impl WenPaths {
 
     /// Get the bin directory
     ///
-    /// For system installs on Linux, this returns /usr/local/bin for symlinks.
-    /// For all other cases, this returns {root}/bin
+    /// Returns custom bin directory if set, otherwise:
+    /// - For system installs on Linux: /usr/local/bin for symlinks
+    /// - For all other cases: {root}/bin
     pub fn bin_dir(&self) -> PathBuf {
+        if let Some(ref custom) = self.custom_bin_dir {
+            return custom.clone();
+        }
+
         #[cfg(unix)]
         {
             if self.is_system_install {
@@ -180,6 +209,11 @@ impl WenPaths {
     /// Get the downloads directory
     pub fn downloads_dir(&self) -> PathBuf {
         self.cache_dir().join("downloads")
+    }
+
+    /// Get the config file path (config.toml)
+    pub fn config_toml(&self) -> PathBuf {
+        self.root.join("config.toml")
     }
 
     /// Initialize all required directories

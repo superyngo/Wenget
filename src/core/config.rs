@@ -8,6 +8,7 @@
 
 use super::manifest::{InstalledManifest, SourceManifest};
 use super::paths::WenPaths;
+use super::preferences::Preferences;
 use crate::bucket::BucketConfig;
 use crate::cache::ManifestCache;
 use anyhow::{Context, Result};
@@ -17,18 +18,41 @@ use std::path::Path;
 /// Configuration manager
 pub struct Config {
     paths: WenPaths,
+    #[allow(dead_code)]
+    preferences: Preferences,
 }
 
 impl Config {
     /// Create a new Config instance
     pub fn new() -> Result<Self> {
-        let paths = WenPaths::new()?;
-        Ok(Self { paths })
+        // First, create a temporary WenPaths to get the config file path
+        let temp_paths = WenPaths::new()?;
+        let config_path = temp_paths.config_toml();
+
+        // Load preferences
+        let preferences = Preferences::load(&config_path)?;
+
+        // Validate preferences
+        if let Err(e) = preferences.validate() {
+            log::warn!("Invalid preferences in config.toml: {}", e);
+            log::warn!("Using default preferences instead");
+        }
+
+        // Create WenPaths with custom bin directory if specified
+        let paths = WenPaths::new_with_custom_bin(preferences.custom_bin_path.clone())?;
+
+        Ok(Self { paths, preferences })
     }
 
     /// Get the paths manager
     pub fn paths(&self) -> &WenPaths {
         &self.paths
+    }
+
+    /// Get the preferences
+    #[allow(dead_code)]
+    pub fn preferences(&self) -> &Preferences {
+        &self.preferences
     }
 
     /// Initialize WenPM (create directories if needed)

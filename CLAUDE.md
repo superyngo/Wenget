@@ -208,6 +208,22 @@ The `Cargo.toml` has aggressive optimization for small binary size:
 - `strip = true`: Strip debug symbols
 - `panic = "abort"`: Smaller panic handler
 
+### Automated Release Workflow
+
+**IMPORTANT**: This repository has an automated GitHub Actions release workflow (`.github/workflows/release.yml`).
+
+**When using `/push-update` skill**:
+- The skill will automatically detect the presence of `release.yml`
+- After pushing a new tag (e.g., `v2.2.3`), GitHub Actions will:
+  - Build binaries for all supported platforms
+  - Create a GitHub Release automatically
+  - Upload all platform binaries as release assets
+- **Do NOT manually create GitHub Releases** - the workflow handles this automatically
+- Track build progress at: https://github.com/superyngo/Wenget/actions
+- View releases at: https://github.com/superyngo/Wenget/releases
+
+**Workflow Trigger**: Pushing any tag matching `v*.*.*` pattern
+
 ## Supported Build Targets
 
 The CI/CD workflow (`.github/workflows/release.yml`) builds Wenget for the following platforms:

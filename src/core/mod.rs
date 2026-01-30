@@ -4,6 +4,7 @@ pub mod config;
 pub mod manifest;
 pub mod paths;
 pub mod platform;
+pub mod preferences;
 pub mod privilege;
 pub mod registry;
 pub mod repair;
@@ -18,6 +19,7 @@ pub use manifest::{
 pub use paths::WenPaths;
 #[allow(unused_imports)]
 pub use platform::{Arch, BinaryAsset, BinarySelector, Compiler, FileExtension, Os, Platform};
+pub use preferences::Preferences;
 pub use privilege::is_elevated;
 #[allow(unused_imports)]
 pub use registry::{add_to_system_path, remove_from_system_path};

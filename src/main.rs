@@ -92,6 +92,16 @@ fn main() {
         } => commands::run_delete(names, yes, force, variant),
 
         Commands::Repair { force } => commands::run_repair(force),
+
+        Commands::Config => (|| {
+            let config = core::Config::new()?;
+            commands::run_config(&config)
+        })(),
+
+        Commands::Rename { old_name, new_name } => (|| {
+            let config = core::Config::new()?;
+            commands::run_rename(old_name, new_name, &config)
+        })(),
     };
 
     // Handle errors

@@ -546,7 +546,10 @@ impl InstalledManifest {
 
     /// Migrate old format (single command_name) to new format (command_names vec)
     /// Also migrates parent_package to repo_name/variant
+    /// Also migrates install paths with `::` to use `-` separator (for Windows compatibility)
     pub fn migrate(&mut self) {
+        use std::path::Path;
+
         for (key, package) in self.packages.iter_mut() {
             // Migrate command_name to command_names
             if package.command_names.is_empty() {
@@ -588,6 +591,35 @@ impl InstalledManifest {
                     package.repo_name = key.clone();
                     package.variant = None;
                 }
+            }
+
+            // Migrate install_path: replace `::` with `-` for filesystem compatibility
+            if package.install_path.contains("::") {
+                let old_path = Path::new(&package.install_path);
+
+                // Try to rename the actual directory if it exists
+                if old_path.exists() {
+                    let new_path_str = package.install_path.replace("::", "-");
+                    let new_path = Path::new(&new_path_str);
+
+                    if let Err(e) = std::fs::rename(old_path, new_path) {
+                        log::warn!(
+                            "Failed to rename directory from {} to {}: {}",
+                            old_path.display(),
+                            new_path.display(),
+                            e
+                        );
+                    } else {
+                        log::info!(
+                            "Migrated package directory: {} -> {}",
+                            old_path.display(),
+                            new_path.display()
+                        );
+                    }
+                }
+
+                // Update install_path in metadata
+                package.install_path = package.install_path.replace("::", "-");
             }
         }
     }

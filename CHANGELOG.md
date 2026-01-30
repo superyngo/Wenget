@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-01-30
+
+### Added
+
+- **Windows Variant Path Compatibility**
+  - Variant installation paths now use `-` separator instead of `::` (e.g., `apps/bun-baseline/` instead of `apps/bun::baseline/`)
+  - Maintains `::` format for internal `installed.json` keys
+  - Automatic migration of existing installations with `::` in paths on first load
+  - Fixes Windows filesystem compatibility issues
+
+- **User Configuration System (config.toml)**
+  - New `wenget config` command to edit preferences in default editor ($EDITOR / nano / notepad)
+  - Support for persistent user preferences in `~/.wenget/config.toml`
+  - **Platform preference override**: Force specific platform builds (e.g., musl on glibc systems)
+  - **Custom bin directory**: Override default bin location for custom PATH setups
+  - Auto-generated config file with helpful comments and examples
+  - Validation on save to catch configuration errors
+
+- **Command Renaming**
+  - New `wenget rename` command to rename installed commands without reinstalling
+  - Direct mode: `wenget rename <old> <new>` - specify both names
+  - Interactive mode: `wenget rename <package>` - select from multiple commands if applicable
+  - Conflict detection prevents duplicate command names
+  - Updates symlinks/shims and `installed.json` atomically
+  - Preserves `repo_name` for proper update tracking
+
+### Changed
+
+- `WenPaths::app_dir()` now sanitizes path components by converting `::` to `-`
+- `Config::new()` now loads user preferences from `config.toml` and applies custom bin directory if set
+- Platform detection can now be overridden via `config.toml` preferences
+
+### Fixed
+
+- Windows: Package variants can now be installed without filesystem path errors
+- Path sanitization prevents invalid characters in directory names across all platforms
+
 ## [2.2.3] - 2026-01-26
 
 ### Fixed
@@ -827,6 +864,15 @@ Wenget is now production-ready for managing GitHub binaries across platforms.
 - GitHub integration
 - Package cache system
 
+[2.3.0]: https://github.com/superyngo/wenget/compare/v2.2.3...v2.3.0
+[2.2.3]: https://github.com/superyngo/wenget/compare/v2.2.2...v2.2.3
+[2.2.2]: https://github.com/superyngo/wenget/compare/v2.2.1...v2.2.2
+[2.2.1]: https://github.com/superyngo/wenget/compare/v2.2.0...v2.2.1
+[2.2.0]: https://github.com/superyngo/wenget/compare/v2.1.1...v2.2.0
+[2.1.1]: https://github.com/superyngo/wenget/compare/v2.1.0...v2.1.1
+[2.1.0]: https://github.com/superyngo/wenget/compare/v2.0.2...v2.1.0
+[2.0.2]: https://github.com/superyngo/wenget/compare/v2.0.1...v2.0.2
+[2.0.1]: https://github.com/superyngo/wenget/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/superyngo/wenget/compare/v1.3.3...v2.0.0
 [1.3.3]: https://github.com/superyngo/wenget/compare/v1.3.2...v1.3.3
 [1.3.2]: https://github.com/superyngo/wenget/compare/v1.3.1...v1.3.2
