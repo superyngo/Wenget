@@ -195,8 +195,12 @@ fn rename_command(
     #[cfg(windows)]
     {
         let binary = find_binary_in_path(install_path, &package.files)?;
-        installer::create_shim(&binary, &paths.bin_dir().join(format!("{}.cmd", new_cmd)))
-            .context("Failed to create new shim")?;
+        installer::create_shim(
+            &binary,
+            &paths.bin_dir().join(format!("{}.cmd", new_cmd)),
+            new_cmd,
+        )
+        .context("Failed to create new shim")?;
     }
 
     log::info!("Created new shim/symlink: {}", new_cmd);
