@@ -39,11 +39,11 @@ function Get-InstallMode {
         $script:SYSTEM_INSTALL = $false
         $script:WENGET_HOME = "$env:USERPROFILE\.wenget"
         $script:INSTALL_DIR = "$env:USERPROFILE\.wenget\apps\wenget"
-        $script:BIN_DIR = "$env:USERPROFILE\.wenget\bin"
+        $script:BIN_DIR = "$env:USERPROFILE\.local\bin"
         $script:BIN_PATH = "$script:INSTALL_DIR\$APP_NAME.exe"
         Write-Info "Running as user - using user-level installation"
         Write-Info "  App directory: $env:USERPROFILE\.wenget\apps"
-        Write-Info "  Bin directory: $env:USERPROFILE\.wenget\bin"
+        Write-Info "  Bin directory: $env:USERPROFILE\.local\bin"
     }
     Write-Info ""
 }

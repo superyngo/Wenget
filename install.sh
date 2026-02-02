@@ -32,10 +32,10 @@ detect_install_mode() {
     else
         SYSTEM_INSTALL=false
         INSTALL_DIR="$HOME/.wenget/apps/wenget"
-        BIN_DIR="$HOME/.wenget/bin"
+        BIN_DIR="$HOME/.local/bin"
         print_info "Running as user - using user-level installation"
         print_info "  App directory: $HOME/.wenget/apps"
-        print_info "  Bin directory: $HOME/.wenget/bin"
+        print_info "  Bin directory: $HOME/.local/bin"
     fi
     BIN_PATH="$INSTALL_DIR/$APP_NAME"
     echo ""

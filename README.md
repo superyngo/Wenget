@@ -1,6 +1,6 @@
 # Wenget - Wen Package Manager
 
-[![Version](https://img.shields.io/badge/version-2.3.1-blue.svg)](https://github.com/superyngo/Wenget/releases)
+[![Version](https://img.shields.io/badge/version-0.3.0-blue.svg)](https://github.com/superyngo/Wenget/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/superyngo/Wenget)
 
@@ -52,8 +52,8 @@ The install scripts automatically detect elevated privileges and switch to syste
 
 | Mode | Platform | App Directory | Bin Directory |
 |------|----------|---------------|---------------|
-| User | Linux/macOS | `~/.wenget/apps` | `~/.wenget/bin` |
-| User | Windows | `%USERPROFILE%\.wenget\apps` | `%USERPROFILE%\.wenget\bin` |
+| User | Linux/macOS | `~/.wenget/apps` | `~/.local/bin` |
+| User | Windows | `%USERPROFILE%\.wenget\apps` | `%USERPROFILE%\.local\bin` |
 | Root/Admin | Linux/macOS | `/opt/wenget/app` | `/usr/local/bin` (symlinks) |
 | Root/Admin | Windows | `%ProgramW6432%\wenget\app` | `%ProgramW6432%\wenget\bin` |
 
@@ -71,6 +71,20 @@ sudo curl -fsSL https://raw.githubusercontent.com/superyngo/Wenget/main/install.
 # Run PowerShell as Administrator, then:
 irm https://raw.githubusercontent.com/superyngo/Wenget/main/install.ps1 | iex
 ```
+
+> **⚠️ Important Notice for Existing Users (v0.2.x → v0.3.0)**
+> 
+> Version 0.3.0 changes the default bin directory for user-level installations:
+> - **Unix**: `~/.wenget/bin/` → `~/.local/bin/`
+> - **Windows**: `%USERPROFILE%\.wenget\bin\` → `%USERPROFILE%\.local\bin\`
+> 
+> **Migration Required:**
+> 1. Uninstall existing version: `wenget del self --yes` (or use `install.sh uninstall` / `install.ps1 -Uninstall`)
+> 2. Remove old PATH entry for `~/.wenget/bin` from your shell config
+> 3. Reinstall with the script above
+> 4. Reinstall your packages
+> 
+> System-level installations (root/Administrator) are **not affected** by this change.
 
 ### Method 3: Manual Installation
 
@@ -259,7 +273,7 @@ Common platform identifiers:
 custom_bin_path = "/usr/local/bin"
 ```
 
-Useful for custom PATH setups or when `~/.wenget/bin` cannot be added to PATH.
+Useful for custom PATH setups or when `~/.local/bin` cannot be added to PATH.
 
 ## Bucket System
 
@@ -407,7 +421,7 @@ Wenget supports the following platforms:
 3. **Binary Selection**: Identifies the appropriate binary from GitHub Releases
 4. **Download**: Downloads and caches the binary
 5. **Installation**: Extracts and places the binary in `~/.wenget/apps/<package>/`
-6. **Shim Creation**: Creates a shim/symlink in `~/.wenget/bin/` for easy access
+6. **Shim Creation**: Creates a shim/symlink in `~/.local/bin/` for easy access
 
 ## GitHub API Rate Limits
 
@@ -596,8 +610,8 @@ wenget bucket refresh
 ### Permission Errors (Linux/macOS)
 
 ```bash
-# Ensure ~/.wenget/bin is in PATH and has correct permissions
-chmod +x ~/.wenget/bin/*
+# Ensure ~/.local/bin is in PATH and has correct permissions
+chmod +x ~/.local/bin/*
 ```
 
 ## Contributing

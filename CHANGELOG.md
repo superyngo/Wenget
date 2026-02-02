@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-02-02
+
+### Changed
+
+- **⚠️ BREAKING: User-level bin directory relocated for XDG compliance**
+  - Unix/Linux user installs: `~/.wenget/bin/` → `~/.local/bin/`
+  - Windows user installs: `%USERPROFILE%\.wenget\bin\` → `%USERPROFILE%\.local\bin\`
+  - System-level installations (root/Administrator) remain unchanged
+  - Aligns with XDG Base Directory specification on Unix-like systems
+  - Improves cross-platform directory structure consistency
+  
+- **Migration Required for Existing Users**
+  - No automatic migration - fresh installation recommended
+  - Uninstall old version, remove old PATH entry, reinstall with new scripts
+  - Packages must be reinstalled after migration
+
+### Updated
+
+- Installation scripts (`install.sh`, `install.ps1`) updated for new paths
+- Documentation updated with migration instructions
+- Unit tests updated to reflect new directory structure
+
 ## [2.3.1] - 2026-02-01
 
 ### Fixed
@@ -889,6 +911,11 @@ Wenget is now production-ready for managing GitHub binaries across platforms.
 [1.3.0]: https://github.com/superyngo/wenget/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/superyngo/wenget/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/superyngo/wenget/compare/v1.1.0...v1.1.1
+[2.3.1]: https://github.com/superyngo/wenget/compare/v2.3.0...v2.3.1
+[2.3.0]: https://github.com/superyngo/wenget/compare/v2.2.0...v2.3.0
+[2.2.0]: https://github.com/superyngo/wenget/compare/v2.1.0...v2.2.0
+[2.1.0]: https://github.com/superyngo/wenget/compare/v2.0.0...v2.1.0
+[2.0.0]: https://github.com/superyngo/wenget/compare/v1.1.0...v2.0.0
 [1.1.0]: https://github.com/superyngo/wenget/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/superyngo/wenget/compare/v0.9.1...v1.0.0
 [0.9.1]: https://github.com/superyngo/wenget/compare/v0.9.0...v0.9.1
@@ -906,6 +933,6 @@ Wenget is now production-ready for managing GitHub binaries across platforms.
 [0.5.1]: https://github.com/superyngo/wenget/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/superyngo/wenget/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/superyngo/wenget/compare/v0.3.0...v0.4.0
-[0.3.0]: https://github.com/superyngo/wenget/compare/v0.2.0...v0.3.0
+[0.3.0]: https://github.com/superyngo/wenget/compare/v2.3.1...v0.3.0
 [0.2.0]: https://github.com/superyngo/wenget/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/superyngo/wenget/releases/tag/v0.1.0

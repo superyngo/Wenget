@@ -233,6 +233,12 @@ pub fn run(yes: bool) -> Result<()> {
         }
     } else {
         println!("{}", "Initializing Wenget...".cyan());
+        let config = Config::new()?;
+        println!("  Apps: {}", config.paths().apps_dir().display());
+        println!(
+            "  Bin:  {} (symlinks/shims)",
+            config.paths().bin_dir().display()
+        );
     }
     println!();
 

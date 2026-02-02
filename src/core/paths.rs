@@ -8,7 +8,7 @@
 //! - Buckets config: ~/.wenget/buckets.json
 //! - Manifest cache: ~/.wenget/manifest-cache.json
 //! - Apps directory: ~/.wenget/apps/
-//! - Bin directory: ~/.wenget/bin/
+//! - Bin directory: ~/.local/bin/
 //! - Cache directory: ~/.wenget/cache/
 //!
 //! ## System-level installation (when running as root/Administrator):
@@ -172,24 +172,26 @@ impl WenPaths {
     ///
     /// Returns custom bin directory if set, otherwise:
     /// - For system installs on Linux: /usr/local/bin for symlinks
-    /// - For all other cases: {root}/bin
+    /// - For user installs: ~/.local/bin
     pub fn bin_dir(&self) -> PathBuf {
         if let Some(ref custom) = self.custom_bin_dir {
             return custom.clone();
         }
 
-        #[cfg(unix)]
-        {
-            if self.is_system_install {
+        if self.is_system_install {
+            #[cfg(unix)]
+            {
                 PathBuf::from("/usr/local/bin")
-            } else {
+            }
+
+            #[cfg(not(unix))]
+            {
                 self.root.join("bin")
             }
-        }
-
-        #[cfg(not(unix))]
-        {
-            self.root.join("bin")
+        } else {
+            // User-level installation: use ~/.local/bin
+            let home = dirs::home_dir().expect("Failed to determine home directory");
+            home.join(".local").join("bin")
         }
     }
 
@@ -221,29 +223,27 @@ impl WenPaths {
     /// Creates the following directories if they don't exist:
     /// - {root}/
     /// - {root}/apps/
-    /// - {root}/bin/ (or /usr/local/bin for system installs on Linux)
+    /// - ~/.local/bin/ (or /usr/local/bin for system installs on Linux)
     /// - {root}/cache/downloads/
     pub fn init_dirs(&self) -> Result<()> {
         std::fs::create_dir_all(&self.root).context("Failed to create Wenget root directory")?;
 
         std::fs::create_dir_all(self.apps_dir()).context("Failed to create apps directory")?;
 
-        // For system installs on Linux, /usr/local/bin should already exist
-        // For other cases, create the bin directory
-        #[cfg(unix)]
-        {
-            if !self.is_system_install {
+        // Create bin directory based on installation level
+        if self.is_system_install {
+            // For system installs on Linux, /usr/local/bin should already exist
+            // For Windows system installs, create {root}/bin
+            #[cfg(not(unix))]
+            {
                 std::fs::create_dir_all(self.bin_dir())
                     .context("Failed to create bin directory")?;
             }
-            // For system installs, /usr/local/bin should already exist
-            // but we also need the internal bin dir for Windows compatibility
+            // Also need internal bin dir
             std::fs::create_dir_all(self.internal_bin_dir())
                 .context("Failed to create internal bin directory")?;
-        }
-
-        #[cfg(not(unix))]
-        {
+        } else {
+            // For user installs, create ~/.local/bin
             std::fs::create_dir_all(self.bin_dir()).context("Failed to create bin directory")?;
         }
 
@@ -365,12 +365,12 @@ mod tests {
 
         #[cfg(windows)]
         {
-            assert!(shim.ends_with("bin\\test.cmd"));
+            assert!(shim.ends_with(".local\\bin\\test.cmd"));
         }
 
         #[cfg(not(windows))]
         {
-            assert!(shim.ends_with("bin/test"));
+            assert!(shim.ends_with(".local/bin/test"));
         }
     }
 

@@ -118,7 +118,7 @@ The codebase follows a layered architecture:
 5. `Platform` selects appropriate binary for current OS/arch
 6. `Downloader` downloads and caches the archive
 7. `Installer` extracts binary to `~/.wenget/apps/ripgrep/`
-8. Shim/symlink created in `~/.wenget/bin/`
+8. Shim/symlink created in `~/.local/bin/`
 9. Installation recorded in `installed.json`
 
 **Installing from a GitHub URL:**
@@ -134,12 +134,14 @@ The codebase follows a layered architecture:
 ```
 ~/.wenget/
 ├── apps/              # Installed binaries (each in own subdirectory)
-├── bin/               # Shims/symlinks (added to PATH)
 ├── cache/             # Downloaded archives and manifest cache
 │   ├── manifest-cache.json
 │   └── downloads/
 ├── buckets.json       # Bucket configuration
 └── installed.json     # Installed package metadata
+
+~/.local/
+└── bin/               # Shims/symlinks (added to PATH)
 ```
 
 **System-level (when running as root/Administrator):**
@@ -176,7 +178,7 @@ Packages can come from three sources (see `PackageSource` enum in `src/core/mani
 ### Script Support
 - Scripts can be PowerShell (.ps1), Bash (.sh), Batch (.bat), or Python (.py)
 - Scripts are installed to `~/.wenget/apps/<script-name>/`
-- Shims are created to execute them from `~/.wenget/bin/`
+- Shims are created to execute them from `~/.local/bin/`
 
 ### GitHub API Rate Limits
 - Unauthenticated: 60 requests/hour
@@ -257,10 +259,11 @@ The CI/CD workflow (`.github/workflows/release.yml`) builds Wenget for the follo
 
 ## Cross-Platform Considerations
 
-- Windows uses shims (`.cmd` files) in `~/.wenget/bin/`
-- Unix uses symlinks in `~/.wenget/bin/`
+- Windows uses shims (`.cmd` files) in `~/.local/bin/` for user installs
+- Unix uses symlinks in `~/.local/bin/` for user installs
 - Archive formats: .zip (Windows), .tar.gz, .tar.xz (Unix)
 - PATH modification differs by platform (handled by `wenget init`)
+- System-level installs use platform-specific system directories
 
 ## Common Gotchas
 
