@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*.*.*" # 當推送 v1.0.0 格式的 tag 時觸發
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., v0.3.0)'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -226,6 +232,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.inputs.version || github.ref }}
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -274,9 +281,14 @@ jobs:
       - name: Get tag message
         id: tag_message
         run: |
-          # 獲取當前 tag 名稱
-          TAG_NAME=${GITHUB_REF#refs/tags/}
+          # 獲取版本號（從 workflow_dispatch input 或 tag）
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            TAG_NAME="${{ github.event.inputs.version }}"
+          else
+            TAG_NAME=${GITHUB_REF#refs/tags/}
+          fi
           echo "Tag name: $TAG_NAME"
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
 
           # 獲取 tag 的註解消息（如果是 annotated tag）
           TAG_MESSAGE=$(git tag -l --format='%(contents)' "$TAG_NAME")
@@ -297,6 +309,7 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
+          tag_name: ${{ steps.tag_message.outputs.tag_name }}
           files: release_files/*
           draft: false
           prerelease: false
@@ -342,13 +355,20 @@ jobs:
           # Copy binary to bucket directory
           cp artifacts/wenget-linux-x86_64-musl/wenget bucket/wenget
           
+          # Get version for commit message
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${{ github.ref_name }}"
+          fi
+          
           # Commit and push
           git add -f bucket/wenget
           
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "chore: Update bucket binary to ${{ github.ref_name }}"
+            git commit -m "chore: Update bucket binary to $VERSION"
             git push origin main
           fi
 
