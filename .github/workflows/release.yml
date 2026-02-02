@@ -325,25 +325,24 @@ jobs:
       - name: Update bucket binary
         if: success()
         run: |
-          # Extract the musl binary
-          cd artifacts/wenget-linux-x86_64-musl
-          tar -xzf wenget-linux-x86_64-musl.tar.gz
-          
-          # Copy to bucket directory
-          cp wenget ../../bucket/wenget
-          
-          # Switch to main branch and update
-          cd ../..
+          # Configure git
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
-          # Fetch and checkout main branch
+          # Fetch and checkout main branch first
           git fetch origin main
           git checkout main
           git pull origin main
           
-          # Copy binary and commit
+          # Extract the musl binary
+          cd artifacts/wenget-linux-x86_64-musl
+          tar -xzf wenget-linux-x86_64-musl.tar.gz
+          cd ../..
+          
+          # Copy binary to bucket directory
           cp artifacts/wenget-linux-x86_64-musl/wenget bucket/wenget
+          
+          # Commit and push
           git add -f bucket/wenget
           
           if git diff --staged --quiet; then
