@@ -83,6 +83,17 @@ fn find_package_and_command(
         return Ok((name.to_string(), cmd_name, package.clone()));
     }
 
+    // Search by repo_name (to support matching variants by repo name)
+    for (key, package) in &installed.packages {
+        if package.repo_name == name {
+            if package.command_names.is_empty() {
+                anyhow::bail!("Package '{}' has no commands", name);
+            }
+            let cmd_name = package.command_names[0].clone();
+            return Ok((key.clone(), cmd_name, package.clone()));
+        }
+    }
+
     // Search by command name
     for (key, package) in &installed.packages {
         if package.command_names.contains(&name.to_string()) {
