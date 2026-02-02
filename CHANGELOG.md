@@ -7,13 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.3.1] - 2026-02-02
+## [3.0.0] - 2026-02-02
 
 ### Fixed
 
 - **Rename command variant matching**: Fixed `wenget rename` to properly match packages by repo_name, enabling renaming of variants using just the repo name (e.g., `wenget rn bun` now works for `bun::baseline-profile`)
-
-## [0.3.0] - 2026-02-02
 
 ### Changed
 
@@ -939,7 +937,6 @@ Wenget is now production-ready for managing GitHub binaries across platforms.
 [0.5.1]: https://github.com/superyngo/wenget/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/superyngo/wenget/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/superyngo/wenget/compare/v0.3.1...v0.4.0
-[0.3.1]: https://github.com/superyngo/wenget/compare/v0.3.0...v0.3.1
-[0.3.0]: https://github.com/superyngo/wenget/compare/v2.3.1...v0.3.0
+[3.0.0]: https://github.com/superyngo/wenget/compare/v2.3.1...v3.0.0
 [0.2.0]: https://github.com/superyngo/wenget/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/superyngo/wenget/releases/tag/v0.1.0
