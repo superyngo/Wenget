@@ -228,14 +228,25 @@ fn extract_tar_archive<R: std::io::Read>(
             fs::create_dir_all(parent)?;
         }
 
+        // Log entry type for debugging
+        let entry_type = entry.header().entry_type();
+        log::debug!(
+            "Extracting: {} (type: {:?}) to {}",
+            path_str,
+            entry_type,
+            dest_path.display()
+        );
+
         entry
             .unpack(&dest_path)
             .with_context(|| format!("Failed to extract: {}", path_str))?;
 
         // Set executable permission on Unix
+        // Skip for symlinks (they inherit permissions from their target)
         #[cfg(unix)]
         {
-            if is_executable(&mut entry)? {
+            use tar::EntryType;
+            if entry_type != EntryType::Symlink && is_executable(&mut entry)? {
                 use std::os::unix::fs::PermissionsExt;
                 let mut perms = fs::metadata(&dest_path)?.permissions();
                 perms.set_mode(0o755);
@@ -439,6 +450,13 @@ pub fn find_executable_candidates(
 ) -> Vec<ExecutableCandidate> {
     let mut candidates = Vec::new();
 
+    log::debug!(
+        "find_executable_candidates: package_name={}, extract_dir={:?}, files={}",
+        package_name,
+        extract_dir,
+        extracted_files.len()
+    );
+
     for file in extracted_files {
         let path = Path::new(file);
 
@@ -450,23 +468,28 @@ pub fn find_executable_candidates(
 
         // Skip excluded files (docs, licenses, configs, etc.)
         if is_excluded_file(filename, file) {
+            log::trace!("Skipping {} - excluded file", file);
             continue;
         }
 
         // Check if this could be an executable
         if !could_be_executable(filename, file) {
+            log::trace!("Skipping {} - not executable candidate (filename: {})", file, filename);
             continue;
         }
 
-        // Skip test/debug/benchmark executables
-        let lower_file = file.to_lowercase();
-        if lower_file.contains("test")
-            || lower_file.contains("debug")
-            || lower_file.contains("bench")
-            || lower_file.contains("example")
+        // Skip test/debug/benchmark executables (check filename only, not full path)
+        let lower_filename = filename.to_lowercase();
+        if lower_filename.contains("test")
+            || lower_filename.contains("debug")
+            || lower_filename.contains("bench")
+            || lower_filename.contains("example")
         {
+            log::trace!("Skipping {} - test/debug/bench/example in filename", file);
             continue;
         }
+
+        log::trace!("Evaluating candidate: {} (filename: {})", file, filename);
 
         let name_without_ext = filename.trim_end_matches(".exe");
         let mut score = 0u32;
@@ -510,9 +533,9 @@ pub fn find_executable_candidates(
             reasons.push("likely abbreviation");
         }
 
-        // Rule 4: Located in bin/ directory
+        // Rule 4: Located in bin/ directory - strong signal that file is an executable
         if file.contains("bin/") {
-            score += 30;
+            score += 40;
             reasons.push("in bin/ directory");
         }
 
