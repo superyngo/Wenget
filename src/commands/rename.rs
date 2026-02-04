@@ -197,15 +197,15 @@ fn rename_command(
     // Create new symlink/shim
     #[cfg(unix)]
     {
-        // Find the actual binary in the install path
-        let binary = find_binary_in_path(install_path, &package.files)?;
+        // Find the actual binary in the install path that matches the old command
+        let binary = find_binary_in_path(install_path, &package.files, old_cmd)?;
         installer::create_symlink(&binary, &paths.bin_dir().join(new_cmd))
             .context("Failed to create new symlink")?;
     }
 
     #[cfg(windows)]
     {
-        let binary = find_binary_in_path(install_path, &package.files)?;
+        let binary = find_binary_in_path(install_path, &package.files, old_cmd)?;
         installer::create_shim(
             &binary,
             &paths.bin_dir().join(format!("{}.cmd", new_cmd)),
@@ -227,28 +227,95 @@ fn rename_command(
     Ok(())
 }
 
-/// Find the primary binary file in the install path
+/// Find the primary binary file in the install path that matches the command name
 ///
-/// Looks for executable files in the package's files list
-fn find_binary_in_path(install_path: &Path, files: &[String]) -> Result<std::path::PathBuf> {
-    // Look for files that are likely to be executables
+/// Uses a scoring system similar to find_executable_candidates:
+/// - Prioritizes files in bin/ directory
+/// - Matches based on command name
+/// - Excludes shared libraries (.so) and other non-executable files
+fn find_binary_in_path(install_path: &Path, files: &[String], command_name: &str) -> Result<std::path::PathBuf> {
+    #[derive(Debug)]
+    struct Candidate {
+        path: std::path::PathBuf,
+        score: u32,
+    }
+
+    let mut candidates = Vec::new();
+
     for file in files {
         let file_path = install_path.join(file);
-        if file_path.exists() && is_likely_executable(&file_path) {
-            return Ok(file_path);
+
+        // Skip if file doesn't exist
+        if !file_path.exists() {
+            continue;
+        }
+
+        // Get filename
+        let filename = match Path::new(file).file_name().and_then(|s| s.to_str()) {
+            Some(name) => name,
+            None => continue,
+        };
+
+        // Skip non-executable files
+        if !is_likely_executable(&file_path) {
+            continue;
+        }
+
+        // Skip shared libraries and other non-binary files
+        if filename.ends_with(".so")
+            || filename.contains(".so.")
+            || filename.ends_with(".dylib")
+            || filename.ends_with(".dll")
+            || filename.ends_with(".a")
+            || filename.contains(".pc") // pkg-config files
+        {
+            continue;
+        }
+
+        let mut score = 0u32;
+        let name_without_ext = filename.trim_end_matches(".exe");
+
+        // Rule 1: Exact match with command name (highest priority)
+        if name_without_ext == command_name {
+            score += 100;
+        }
+        // Rule 2: Partial match
+        else if name_without_ext.contains(command_name) || command_name.contains(name_without_ext) {
+            score += 50;
+        }
+
+        // Rule 3: Located in bin/ directory - strong signal
+        if file.contains("bin/") {
+            score += 40;
+        }
+
+        // Rule 4: Has executable permission (already checked above)
+        score += 10;
+
+        if score > 0 {
+            candidates.push(Candidate {
+                path: file_path,
+                score,
+            });
         }
     }
 
-    // Fallback: take the first file
-    if let Some(first_file) = files.first() {
-        let file_path = install_path.join(first_file);
-        if file_path.exists() {
-            return Ok(file_path);
-        }
+    // Sort by score (highest first)
+    candidates.sort_by(|a, b| b.score.cmp(&a.score));
+
+    // Return the highest scoring candidate
+    if let Some(best) = candidates.first() {
+        log::debug!(
+            "Selected binary: {} (score: {})",
+            best.path.display(),
+            best.score
+        );
+        return Ok(best.path.clone());
     }
 
     anyhow::bail!(
-        "No executable binary found in install path: {}",
+        "No executable binary found matching command '{}' in install path: {}",
+        command_name,
         install_path.display()
     )
 }

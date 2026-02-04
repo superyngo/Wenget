@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Rename command symlink target**: Fixed `wenget rename` incorrectly selecting shared libraries (.so files) instead of actual binaries when creating symlinks/shims. The command now uses a scoring system to prioritize files in `bin/` directories and match based on command name, preventing issues with packages like FFmpeg that have executable-permission .so files.
+
+- **Tar archive symlink extraction**: Fixed extraction failure for archives containing symbolic links (e.g., FFmpeg shared builds). Previously, `fs::metadata()` would follow symlinks during permission setting, failing when the symlink target hadn't been extracted yet.
+
+- **Executable detection false positives**: Fixed executables being incorrectly skipped when the archive path contained "test", "debug", "bench", or "example" (e.g., files under `*-latest-*/bin/` were skipped because "latest" contains "test"). The check now only examines the filename, not the full path.
+
+### Changed
+
+- **Increased bin/ directory confidence score**: Files in `bin/` directories now receive +40 points (up from +30) in executable detection scoring, making them more likely to be selected as the primary executable.
+
 ## [3.0.0] - 2026-02-02
 
 ### Fixed
