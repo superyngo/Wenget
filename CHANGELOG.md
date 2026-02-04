@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.1] - 2026-02-04
+
 ### Fixed
 
 - **Rename command symlink preservation**: Fixed `wenget rename` to correctly preserve the original symlink/shim target by reading it before removal, instead of guessing which binary to link to. This ensures renamed commands continue pointing to the correct executable (e.g., `ffprobe` stays as `ffprobe`, not incorrectly changed to `ffmpeg`).
