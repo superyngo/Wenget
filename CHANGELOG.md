@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Rename command symlink target**: Fixed `wenget rename` incorrectly selecting shared libraries (.so files) instead of actual binaries when creating symlinks/shims. The command now uses a scoring system to prioritize files in `bin/` directories and match based on command name, preventing issues with packages like FFmpeg that have executable-permission .so files.
+- **Rename command symlink preservation**: Fixed `wenget rename` to correctly preserve the original symlink/shim target by reading it before removal, instead of guessing which binary to link to. This ensures renamed commands continue pointing to the correct executable (e.g., `ffprobe` stays as `ffprobe`, not incorrectly changed to `ffmpeg`).
 
 - **Tar archive symlink extraction**: Fixed extraction failure for archives containing symbolic links (e.g., FFmpeg shared builds). Previously, `fs::metadata()` would follow symlinks during permission setting, failing when the symlink target hadn't been extracted yet.
 

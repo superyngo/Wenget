@@ -186,28 +186,44 @@ fn rename_command(
         anyhow::bail!("Install path does not exist: {}", install_path.display());
     }
 
-    // Remove old symlink/shim
+    // Read the target of the old symlink/shim before removing it
     let old_shim = paths.bin_shim_path(old_cmd);
+
+    #[cfg(unix)]
+    let target_binary = if old_shim.exists() {
+        // Read symlink target
+        fs::read_link(&old_shim)
+            .with_context(|| format!("Failed to read symlink: {}", old_shim.display()))?
+    } else {
+        anyhow::bail!("Old symlink does not exist: {}", old_shim.display());
+    };
+
+    #[cfg(windows)]
+    let target_binary = if old_shim.exists() {
+        // Read shim target from .cmd file
+        read_shim_target(&old_shim)?
+    } else {
+        anyhow::bail!("Old shim does not exist: {}", old_shim.display());
+    };
+
+    // Remove old symlink/shim
     if old_shim.exists() {
         fs::remove_file(&old_shim)
             .with_context(|| format!("Failed to remove old shim: {}", old_shim.display()))?;
         log::info!("Removed old shim: {}", old_shim.display());
     }
 
-    // Create new symlink/shim
+    // Create new symlink/shim pointing to the same target
     #[cfg(unix)]
     {
-        // Find the actual binary in the install path that matches the old command
-        let binary = find_binary_in_path(install_path, &package.files, old_cmd)?;
-        installer::create_symlink(&binary, &paths.bin_dir().join(new_cmd))
+        installer::create_symlink(&target_binary, &paths.bin_dir().join(new_cmd))
             .context("Failed to create new symlink")?;
     }
 
     #[cfg(windows)]
     {
-        let binary = find_binary_in_path(install_path, &package.files, old_cmd)?;
         installer::create_shim(
-            &binary,
+            &target_binary,
             &paths.bin_dir().join(format!("{}.cmd", new_cmd)),
             new_cmd,
         )
@@ -227,126 +243,35 @@ fn rename_command(
     Ok(())
 }
 
-/// Find the primary binary file in the install path that matches the command name
-///
-/// Uses a scoring system similar to find_executable_candidates:
-/// - Prioritizes files in bin/ directory
-/// - Matches based on command name
-/// - Excludes shared libraries (.so) and other non-executable files
-fn find_binary_in_path(install_path: &Path, files: &[String], command_name: &str) -> Result<std::path::PathBuf> {
-    #[derive(Debug)]
-    struct Candidate {
-        path: std::path::PathBuf,
-        score: u32,
-    }
+/// Read the target binary path from a Windows shim (.cmd file)
+#[cfg(windows)]
+fn read_shim_target(shim_path: &Path) -> Result<std::path::PathBuf> {
+    let content = fs::read_to_string(shim_path)
+        .with_context(|| format!("Failed to read shim file: {}", shim_path.display()))?;
 
-    let mut candidates = Vec::new();
-
-    for file in files {
-        let file_path = install_path.join(file);
-
-        // Skip if file doesn't exist
-        if !file_path.exists() {
-            continue;
-        }
-
-        // Get filename
-        let filename = match Path::new(file).file_name().and_then(|s| s.to_str()) {
-            Some(name) => name,
-            None => continue,
-        };
-
-        // Skip non-executable files
-        if !is_likely_executable(&file_path) {
-            continue;
-        }
-
-        // Skip shared libraries and other non-binary files
-        if filename.ends_with(".so")
-            || filename.contains(".so.")
-            || filename.ends_with(".dylib")
-            || filename.ends_with(".dll")
-            || filename.ends_with(".a")
-            || filename.contains(".pc") // pkg-config files
-        {
-            continue;
-        }
-
-        let mut score = 0u32;
-        let name_without_ext = filename.trim_end_matches(".exe");
-
-        // Rule 1: Exact match with command name (highest priority)
-        if name_without_ext == command_name {
-            score += 100;
-        }
-        // Rule 2: Partial match
-        else if name_without_ext.contains(command_name) || command_name.contains(name_without_ext) {
-            score += 50;
-        }
-
-        // Rule 3: Located in bin/ directory - strong signal
-        if file.contains("bin/") {
-            score += 40;
-        }
-
-        // Rule 4: Has executable permission (already checked above)
-        score += 10;
-
-        if score > 0 {
-            candidates.push(Candidate {
-                path: file_path,
-                score,
-            });
+    // Parse the shim to extract the target binary path
+    // Shim format: @"%~dp0\..\path\to\binary" %*
+    for line in content.lines() {
+        if line.starts_with('@') && line.contains('"') {
+            // Extract path between quotes
+            if let Some(start) = line.find('"') {
+                if let Some(end) = line[start + 1..].find('"') {
+                    let path_str = &line[start + 1..start + 1 + end];
+                    // Resolve %~dp0 (directory of the shim)
+                    let resolved = if path_str.contains("%~dp0") {
+                        let shim_dir = shim_path.parent().context("Shim has no parent directory")?;
+                        let relative = path_str.replace("%~dp0", "");
+                        shim_dir.join(relative)
+                    } else {
+                        std::path::PathBuf::from(path_str)
+                    };
+                    return Ok(resolved);
+                }
+            }
         }
     }
 
-    // Sort by score (highest first)
-    candidates.sort_by(|a, b| b.score.cmp(&a.score));
-
-    // Return the highest scoring candidate
-    if let Some(best) = candidates.first() {
-        log::debug!(
-            "Selected binary: {} (score: {})",
-            best.path.display(),
-            best.score
-        );
-        return Ok(best.path.clone());
-    }
-
-    anyhow::bail!(
-        "No executable binary found matching command '{}' in install path: {}",
-        command_name,
-        install_path.display()
-    )
-}
-
-/// Check if a file is likely to be executable
-fn is_likely_executable(path: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        if let Ok(metadata) = fs::metadata(path) {
-            let permissions = metadata.permissions();
-            // Check if file has execute permission (any execute bit set)
-            return permissions.mode() & 0o111 != 0;
-        }
-        false
-    }
-
-    #[cfg(windows)]
-    {
-        // On Windows, check if it's an .exe file
-        path.extension()
-            .and_then(|ext| ext.to_str())
-            .map(|ext| ext.eq_ignore_ascii_case("exe"))
-            .unwrap_or(false)
-    }
-
-    #[cfg(not(any(unix, windows)))]
-    {
-        // Fallback for other platforms
-        true
-    }
+    anyhow::bail!("Failed to parse shim target from: {}", shim_path.display())
 }
 
 #[cfg(test)]
