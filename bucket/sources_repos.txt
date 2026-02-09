@@ -12,6 +12,7 @@ https://github.com/superyngo/wedi
 https://github.com/superyngo/weni
 https://github.com/superyngo/wemux
 https://github.com/superyngo/wenv
+https://github.com/superyngo/wappman
 
 # === Search & Find ===
 https://github.com/BurntSushi/ripgrep
