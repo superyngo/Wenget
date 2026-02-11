@@ -16,7 +16,7 @@ https://gist.github.com/superyngo/c77bbbf67759cc4213aac12ebe980225
 # wrtman
 https://gist.github.com/superyngo/7ff78b1ccc213ff6a6cb3b1b2dbd77d0
 # wappman
-https://gist.github.com/superyngo/a9543b560d59ceeb2d5fcb9eab87c560
+# https://gist.github.com/superyngo/a9543b560d59ceeb2d5fcb9eab87c560
 # rclonemm
 https://gist.github.com/superyngo/f74f4749882df654dfdf286b7f718a9e
 # ssh-copy-id for windows
