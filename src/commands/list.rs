@@ -3,6 +3,7 @@
 use crate::core::{Config, Platform};
 use anyhow::Result;
 use colored::Colorize;
+use console::Term;
 
 /// List installed packages or all available packages
 pub fn run(all: bool) -> Result<()> {
@@ -19,6 +20,24 @@ pub fn run(all: bool) -> Result<()> {
     Ok(())
 }
 
+/// Get terminal width with fallback
+fn term_width() -> usize {
+    Term::stdout().size().1 as usize
+}
+
+/// Truncate description to fit within max_width, appending "..." if needed
+fn truncate_desc(desc: &str, max_width: usize) -> String {
+    if max_width <= 3 {
+        return String::new();
+    }
+    let char_count = desc.chars().count();
+    if char_count <= max_width {
+        return desc.to_string();
+    }
+    let truncated: String = desc.chars().take(max_width - 3).collect();
+    format!("{}...", truncated)
+}
+
 /// List only installed packages
 fn list_installed_packages(config: &Config) -> Result<()> {
     // Load installed manifest
@@ -30,6 +49,11 @@ fn list_installed_packages(config: &Config) -> Result<()> {
         return Ok(());
     }
 
+    // Column widths: NAME(20) + sp + VERSION(10) + sp + SOURCE(12) + sp = 45
+    let width = term_width();
+    let fixed_cols = 20 + 1 + 10 + 1 + 12 + 1;
+    let desc_width = width.saturating_sub(fixed_cols);
+
     // Print header
     println!("{}", "Installed packages".bold());
     println!();
@@ -40,7 +64,7 @@ fn list_installed_packages(config: &Config) -> Result<()> {
         "SOURCE".bold(),
         "DESCRIPTION".bold()
     );
-    println!("{}", "─".repeat(100));
+    println!("{}", "─".repeat(width.min(120)));
 
     // Group packages by repo_name
     let grouped = manifest.group_by_repo();
@@ -78,12 +102,7 @@ fn list_installed_packages(config: &Config) -> Result<()> {
             }
         };
 
-        // Truncate description if too long
-        let description = if first_pkg.description.len() > 50 {
-            format!("{}...", &first_pkg.description[..47])
-        } else {
-            first_pkg.description.clone()
-        };
+        let description = truncate_desc(&first_pkg.description, desc_width);
 
         // Display main package
         let display_name = if sorted_variants.len() == 1 {
@@ -194,6 +213,11 @@ fn list_all_packages(config: &Config) -> Result<()> {
     // Sort alphabetically
     packages.sort_by(|a, b| a.name.cmp(&b.name));
 
+    // Column widths: NAME(30) + sp + TYPE(12) + sp = 44
+    let width = term_width();
+    let fixed_cols = 30 + 1 + 12 + 1;
+    let desc_width = width.saturating_sub(fixed_cols);
+
     // Print header
     println!("{}", "Available packages".bold());
     println!();
@@ -203,10 +227,12 @@ fn list_all_packages(config: &Config) -> Result<()> {
         "TYPE".bold(),
         "DESCRIPTION".bold()
     );
-    println!("{}", "─".repeat(80));
+    println!("{}", "─".repeat(width.min(120)));
 
     // Print packages
     for pkg in &packages {
+        let description = truncate_desc(&pkg.description, desc_width);
+
         if installed.is_installed(&pkg.name) {
             // For installed packages, calculate padding manually to account for "(installed)"
             let name_width = 30;
@@ -218,22 +244,10 @@ fn list_all_packages(config: &Config) -> Result<()> {
                 1
             };
 
-            let description = if pkg.description.len() > 36 {
-                format!("{}...", &pkg.description[..33])
-            } else {
-                pkg.description.clone()
-            };
-
             print!("{} {}", pkg.name, "(installed)".green());
             print!("{}", " ".repeat(padding));
             println!("{:<12} {}", "binary".cyan(), description);
         } else {
-            let description = if pkg.description.len() > 36 {
-                format!("{}...", &pkg.description[..33])
-            } else {
-                pkg.description.clone()
-            };
-
             println!("{:<30} {:<12} {}", pkg.name, "binary".cyan(), description);
         }
     }
@@ -246,6 +260,8 @@ fn list_all_packages(config: &Config) -> Result<()> {
             .map(|(st, _)| st.display_name().to_lowercase())
             .unwrap_or_else(|| script.platforms_display().to_lowercase());
 
+        let description = truncate_desc(&script.description, desc_width);
+
         if installed.is_installed(&script.name) {
             // For installed scripts, calculate padding manually to account for "(installed)"
             let name_width = 30;
@@ -257,22 +273,10 @@ fn list_all_packages(config: &Config) -> Result<()> {
                 1
             };
 
-            let description = if script.description.len() > 36 {
-                format!("{}...", &script.description[..33])
-            } else {
-                script.description.clone()
-            };
-
             print!("{} {}", script.name, "(installed)".green());
             print!("{}", " ".repeat(padding));
             println!("{:<12} {}", script_type_display.magenta(), description);
         } else {
-            let description = if script.description.len() > 36 {
-                format!("{}...", &script.description[..33])
-            } else {
-                script.description.clone()
-            };
-
             println!(
                 "{:<30} {:<12} {}",
                 script.name,

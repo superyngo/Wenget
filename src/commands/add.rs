@@ -33,6 +33,7 @@ pub fn run(
     platform: Option<String>,
     version: Option<String>,
     variant_filter: Option<String>,
+    no_suffix: bool,
 ) -> Result<()> {
     let config = Config::new()?;
     let paths = WenPaths::new()?;
@@ -123,6 +124,7 @@ pub fn run(
             platform.as_deref(),
             version.as_deref(),
             variant_filter.as_deref(),
+            no_suffix,
         )?;
     }
 
@@ -727,6 +729,7 @@ fn install_packages(
     custom_platform: Option<&str>,
     custom_version: Option<&str>,
     variant_filter: Option<&str>,
+    no_suffix: bool,
 ) -> Result<()> {
     // Get current platform
     let current_platform = if let Some(_custom_plat) = custom_platform {
@@ -1243,6 +1246,7 @@ fn install_packages(
                 parent_package.as_deref(),
                 custom_name,
                 yes,
+                no_suffix,
             ) {
                 Ok(inst_pkg) => {
                     installed.upsert_package(installed_key.clone(), inst_pkg);
@@ -1374,6 +1378,7 @@ fn install_package(
     _parent_package: Option<&str>, // Deprecated parameter, kept for compatibility
     custom_name: Option<&str>,
     yes: bool,
+    no_suffix: bool,
 ) -> Result<InstalledPackage> {
     // Log if using fallback
     if let Some(fallback_type) = &platform_match.fallback_type {
@@ -1483,7 +1488,11 @@ fn install_package(
     let (_, variant_opt) = if let Some(pos) = installed_key.find("::") {
         (
             installed_key[..pos].to_string(),
-            Some(installed_key[pos + 2..].to_string()),
+            if no_suffix {
+                None
+            } else {
+                Some(installed_key[pos + 2..].to_string())
+            },
         )
     } else {
         (installed_key.to_string(), None)

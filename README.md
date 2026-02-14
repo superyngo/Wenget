@@ -131,6 +131,8 @@ wenget delete ripgrep
 ### Package Management
 
 - `wenget add <name|url>...` - Install packages (from bucket or GitHub URL)
+  - `--variant <name>` - Install a specific variant (e.g., `--variant baseline`)
+  - `--no-suffix` - Don't append variant suffix to command name
 - `wenget info <name|url>` - Show package information
 - `wenget delete <name>...` - Uninstall packages
   - `wenget del self` - Uninstall Wenget itself

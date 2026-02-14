@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.2] - 2026-02-14
+
+### Fixed
+
+- **`.tbz`/`.tgz` archive extraction**: Fixed `.tbz` and `.tgz` archives being misidentified as standalone executables instead of being extracted. The `is_standalone_executable()` check now recognizes these shorthand extensions.
+
+### Added
+
+- **`--no-suffix` flag for `add` command**: New `--no-suffix` flag prevents appending variant suffix to command names when installing variant packages. Falls back to numeric suffix if the base name conflicts.
+
+- **Adaptive description truncation in `ls`**: Description column now adapts to terminal width instead of using fixed truncation limits. Also fixes potential panic on multi-byte UTF-8 characters by using char-based truncation.
+
 ## [3.0.1] - 2026-02-04
 
 ### Fixed

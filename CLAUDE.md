@@ -160,6 +160,7 @@ When a package has multiple release binaries (e.g., `bun`, `bun-baseline`, `bun-
   - `repo_name`: Canonical repository name (e.g., "bun")
   - `variant`: Optional variant identifier (e.g., "baseline")
 - **Command name conflict resolution**: If a command name is already taken, Wenget automatically appends the variant suffix or numeric suffix
+- **`--no-suffix` flag**: `wenget add --no-suffix` skips appending variant suffix to command name, using the base name directly (falls back to numeric suffix on conflict)
 - **Grouped display**: `wenget ls` groups variants under their repo name
 - **Bulk operations**: `wenget update bun` updates all variants; `wenget del bun` deletes all variants
 

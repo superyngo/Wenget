@@ -60,6 +60,10 @@ pub enum Commands {
         /// Specify variant to install (e.g., baseline, profile)
         #[arg(long = "variant")]
         variant: Option<String>,
+
+        /// Don't append variant suffix to command name
+        #[arg(long = "no-suffix")]
+        no_suffix: bool,
     },
 
     /// List installed packages

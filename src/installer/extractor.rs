@@ -60,7 +60,9 @@ fn is_standalone_executable(filename: &str) -> bool {
             return true;
         }
         // Check if it has no common archive extension
-        let archive_extensions = [".zip", ".tar", ".gz", ".xz", ".bz2", ".7z", ".rar"];
+        let archive_extensions = [
+            ".zip", ".tar", ".gz", ".xz", ".bz2", ".7z", ".rar", ".tbz", ".tgz",
+        ];
         if !archive_extensions.iter().any(|ext| filename.contains(ext)) {
             // Could be a standalone binary
             return true;
