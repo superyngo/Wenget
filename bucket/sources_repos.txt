@@ -55,6 +55,7 @@ https://github.com/sinelaw/fresh
 https://github.com/sharkdp/bat
 https://github.com/sharkdp/hexyl
 https://github.com/sxyazi/yazi
+https://github.com/jarun/nnn
 
 # === Media ===
 https://github.com/llychao/m3u8-downloader
