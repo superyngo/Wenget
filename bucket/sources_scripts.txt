@@ -25,6 +25,8 @@ https://gist.github.com/superyngo/25df9a72b7baef3fd7227238ec37ce1b
 https://gist.github.com/superyngo/4e972039cbf789a35eec99e29b16b903
 # GitHub Packages Generic Installation Script 
 https://gist.github.com/superyngo/a6b786af38b8b4c2ce15a70ae5387bd7
+# Sunc ssh config
+https://gist.github.com/superyngo/bed6b95a32cfef619949c409797c0237
 
 # better-remove https://github.com/doggy8088/better-rm
 https://raw.githubusercontent.com/doggy8088/better-rm/refs/heads/main/better-rm
