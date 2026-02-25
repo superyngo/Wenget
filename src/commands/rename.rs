@@ -259,7 +259,8 @@ fn read_shim_target(shim_path: &Path) -> Result<std::path::PathBuf> {
                     let path_str = &line[start + 1..start + 1 + end];
                     // Resolve %~dp0 (directory of the shim)
                     let resolved = if path_str.contains("%~dp0") {
-                        let shim_dir = shim_path.parent().context("Shim has no parent directory")?;
+                        let shim_dir =
+                            shim_path.parent().context("Shim has no parent directory")?;
                         let relative = path_str.replace("%~dp0", "");
                         shim_dir.join(relative)
                     } else {

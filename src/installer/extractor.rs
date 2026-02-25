@@ -476,7 +476,11 @@ pub fn find_executable_candidates(
 
         // Check if this could be an executable
         if !could_be_executable(filename, file) {
-            log::trace!("Skipping {} - not executable candidate (filename: {})", file, filename);
+            log::trace!(
+                "Skipping {} - not executable candidate (filename: {})",
+                file,
+                filename
+            );
             continue;
         }
 

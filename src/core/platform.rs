@@ -528,6 +528,21 @@ impl ParsedAsset {
             return (Some(Os::Windows), true);
         }
 
+        // .tar.gz / .tar.xz / .tar.bz2 without any OS keyword implies Linux
+        // (e.g. "nnn-static-5.2.x86_64.tar.gz" is Linux-only)
+        if matches!(
+            ext,
+            FileExtension::TarGz | FileExtension::TarXz | FileExtension::TarBz2
+        ) {
+            let arch_keywords = [
+                "x86_64", "x64", "amd64", "aarch64", "arm64", "armv7", "armhf", "i686", "i386",
+                "386",
+            ];
+            if arch_keywords.iter().any(|kw| filename.contains(kw)) {
+                return (Some(Os::Linux), true);
+            }
+        }
+
         (None, false)
     }
 
@@ -1634,6 +1649,39 @@ mod tests {
         assert!(
             platforms.contains_key("windows-x86_64"),
             "Should detect Windows platform from .exe"
+        );
+    }
+
+    #[test]
+    fn test_nnn_style_assets_no_os_keyword() {
+        // nnn releases don't include OS in their filenames; they should be inferred as Linux
+        let assets = vec![
+            BinaryAsset {
+                name: "nnn-static-5.2.x86_64.tar.gz".to_string(),
+                url: "https://example.com/nnn-static.tar.gz".to_string(),
+                size: 100000,
+            },
+            BinaryAsset {
+                name: "nnn-musl-static-5.2.x86_64.tar.gz".to_string(),
+                url: "https://example.com/nnn-musl-static.tar.gz".to_string(),
+                size: 100000,
+            },
+            BinaryAsset {
+                name: "nnn-5.2.tar.gz.sig".to_string(),
+                url: "https://example.com/sig".to_string(),
+                size: 100,
+            },
+        ];
+
+        let platforms = BinarySelector::extract_platforms(&assets);
+
+        assert!(
+            !platforms.is_empty(),
+            "Should find platforms for nnn-style assets (no OS keyword in filename)"
+        );
+        assert!(
+            platforms.contains_key("linux-x86_64") || platforms.contains_key("linux-x86_64-musl"),
+            "Should map nnn assets to linux-x86_64"
         );
     }
 }
