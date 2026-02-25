@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.3] - 2026-02-25
+
+### Fixed
+
+- **Platform detection for tar archives without OS keywords**: Fixed detection of Linux binaries from tar archives (`.tar.gz`, `.tar.xz`, `.tar.bz2`) that don't include OS keywords in their filenames (e.g., `nnn-static-5.2.x86_64.tar.gz`). These archives are now correctly identified as Linux when architecture keywords (x86_64, aarch64, etc.) are present.
+
+### Added
+
+- Added `nnn` repository to bucket sources
+- Added `agm` repository to bucket sources
+
 ## [3.0.2] - 2026-02-14
 
 ### Fixed
@@ -963,6 +974,8 @@ Wenget is now production-ready for managing GitHub binaries across platforms.
 [0.5.1]: https://github.com/superyngo/wenget/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/superyngo/wenget/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/superyngo/wenget/compare/v0.3.1...v0.4.0
+[3.0.3]: https://github.com/superyngo/wenget/compare/v3.0.2...v3.0.3
+[3.0.2]: https://github.com/superyngo/wenget/compare/v3.0.1...v3.0.2
 [3.0.0]: https://github.com/superyngo/wenget/compare/v2.3.1...v3.0.0
 [0.2.0]: https://github.com/superyngo/wenget/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/superyngo/wenget/releases/tag/v0.1.0
