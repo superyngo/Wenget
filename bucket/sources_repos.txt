@@ -47,20 +47,23 @@ https://github.com/fastfetch-cli/fastfetch
 
 
 # === File Management ===
+https://github.com/sinelaw/fresh
+https://github.com/sxyazi/yazi
+https://github.com/jarun/nnn
+
+# === Remote Control ===
 https://github.com/rn7s2/rsync-win
 https://github.com/rclone/rclone
 
 # === Viewers/Editors ===
-https://github.com/sinelaw/fresh
 https://github.com/sharkdp/bat
 https://github.com/sharkdp/hexyl
-https://github.com/sxyazi/yazi
-https://github.com/jarun/nnn
 
 # === Media ===
 https://github.com/llychao/m3u8-downloader
 https://github.com/BtbN/FFmpeg-Builds
 https://github.com/nilaoda/N_m3u8DL-RE
+https://github.com/Siriusmart/youtube-tui
 
 # === AI ===
 https://github.com/sipeed/picoclaw
