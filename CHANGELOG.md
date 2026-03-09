@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.4] - 2026-03-09
+
+### Added
+
+- **Enhanced Linux distribution detection**: Added detection for common Linux distribution names (ubuntu, debian, fedora, centos, alpine, opensuse, suse, gentoo, manjaro, archlinux) to better identify Linux binaries even without the "linux" keyword.
+
+- **Arch Linux naming convention support**: Added special handling for Arch Linux distribution naming patterns (e.g., `_arch-`, `-arch-` in filenames like `youtube-tui-default_arch-x86_64`).
+
+- **Bare binary detection**: Added detection for binaries without file extensions (e.g., `mytool-x86_64`) that use architecture keywords to indicate Linux platform.
+
 ## [3.0.3] - 2026-02-25
 
 ### Fixed
@@ -974,6 +984,7 @@ Wenget is now production-ready for managing GitHub binaries across platforms.
 [0.5.1]: https://github.com/superyngo/wenget/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/superyngo/wenget/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/superyngo/wenget/compare/v0.3.1...v0.4.0
+[3.0.4]: https://github.com/superyngo/wenget/compare/v3.0.3...v3.0.4
 [3.0.3]: https://github.com/superyngo/wenget/compare/v3.0.2...v3.0.3
 [3.0.2]: https://github.com/superyngo/wenget/compare/v3.0.1...v3.0.2
 [3.0.0]: https://github.com/superyngo/wenget/compare/v2.3.1...v3.0.0
