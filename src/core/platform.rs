@@ -523,16 +523,47 @@ impl ParsedAsset {
             }
         }
 
+        // Check Linux distribution names (e.g. "ubuntu", "arch" for Arch Linux)
+        // These strongly imply Linux even without the "linux" keyword
+        let linux_distros = [
+            "ubuntu",
+            "debian",
+            "fedora",
+            "centos",
+            "alpine",
+            "opensuse",
+            "suse",
+            "gentoo",
+            "manjaro",
+            "archlinux",
+        ];
+        if linux_distros.iter().any(|d| filename.contains(d)) {
+            return (Some(Os::Linux), true);
+        }
+
+        // Special case: "_arch-" or "-arch-" as distribution suffix (Arch Linux naming convention)
+        // e.g. "youtube-tui-default_arch-x86_64" where "_arch-" signals Arch Linux
+        if filename.contains("_arch-")
+            || filename.contains("-arch-")
+            || filename.ends_with("_arch")
+            || filename.ends_with("-arch")
+        {
+            return (Some(Os::Linux), true);
+        }
+
         // .exe implies Windows
         if ext == FileExtension::Exe {
             return (Some(Os::Windows), true);
         }
 
-        // .tar.gz / .tar.xz / .tar.bz2 without any OS keyword implies Linux
-        // (e.g. "nnn-static-5.2.x86_64.tar.gz" is Linux-only)
+        // .tar.gz / .tar.xz / .tar.bz2 / bare binaries without any OS keyword implies Linux
+        // (e.g. "nnn-static-5.2.x86_64.tar.gz" or "tool-x86_64" are Linux-only conventions)
         if matches!(
             ext,
-            FileExtension::TarGz | FileExtension::TarXz | FileExtension::TarBz2
+            FileExtension::TarGz
+                | FileExtension::TarXz
+                | FileExtension::TarBz2
+                | FileExtension::UncompressedBinary
         ) {
             let arch_keywords = [
                 "x86_64", "x64", "amd64", "aarch64", "arm64", "armv7", "armhf", "i686", "i386",
@@ -1682,6 +1713,80 @@ mod tests {
         assert!(
             platforms.contains_key("linux-x86_64") || platforms.contains_key("linux-x86_64-musl"),
             "Should map nnn assets to linux-x86_64"
+        );
+    }
+
+    #[test]
+    fn test_arch_linux_distro_naming() {
+        // Assets like "youtube-tui-default_arch-x86_64" use "_arch-" for Arch Linux distro
+        let assets = vec![
+            BinaryAsset {
+                name: "youtube-tui-default_arch-x86_64".to_string(),
+                url: "https://example.com/default.bin".to_string(),
+                size: 18000000,
+            },
+            BinaryAsset {
+                name: "youtube-tui-full_arch-x86_64".to_string(),
+                url: "https://example.com/full.bin".to_string(),
+                size: 18000000,
+            },
+            BinaryAsset {
+                name: "youtube-tui-minimal_arch-x86_64".to_string(),
+                url: "https://example.com/minimal.bin".to_string(),
+                size: 15000000,
+            },
+        ];
+
+        let platforms = BinarySelector::extract_platforms(&assets);
+
+        assert!(
+            !platforms.is_empty(),
+            "Should find platforms for _arch- style asset names (Arch Linux)"
+        );
+        assert!(
+            platforms.contains_key("linux-x86_64"),
+            "Should map _arch-x86_64 assets to linux-x86_64, got: {:?}",
+            platforms.keys().collect::<Vec<_>>()
+        );
+
+        let linux_x64 = Platform::new(Os::Linux, Arch::X86_64);
+        let selected = BinarySelector::select_for_platform(&assets, linux_x64);
+        assert!(
+            selected.is_some(),
+            "Should select a binary for Linux x86_64 from _arch- style assets"
+        );
+    }
+
+    #[test]
+    fn test_ubuntu_distro_implies_linux() {
+        let assets = vec![BinaryAsset {
+            name: "tool-ubuntu-x86_64.tar.gz".to_string(),
+            url: "https://example.com/ubuntu.tar.gz".to_string(),
+            size: 5000000,
+        }];
+
+        let linux_x64 = Platform::new(Os::Linux, Arch::X86_64);
+        let selected = BinarySelector::select_for_platform(&assets, linux_x64);
+        assert!(
+            selected.is_some(),
+            "ubuntu distro name should match Linux platform"
+        );
+    }
+
+    #[test]
+    fn test_bare_binary_arch_keyword_implies_linux() {
+        // Bare binary (no extension) with arch keyword should be treated as Linux
+        let assets = vec![BinaryAsset {
+            name: "mytool-x86_64".to_string(),
+            url: "https://example.com/mytool-x86_64".to_string(),
+            size: 5000000,
+        }];
+
+        let linux_x64 = Platform::new(Os::Linux, Arch::X86_64);
+        let selected = BinarySelector::select_for_platform(&assets, linux_x64);
+        assert!(
+            selected.is_some(),
+            "bare binary with x86_64 should match Linux x86_64"
         );
     }
 }
