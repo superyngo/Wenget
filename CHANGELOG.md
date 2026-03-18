@@ -5,6 +5,20 @@ All notable changes to Wenget will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0] - 2026-03-18
+
+### Added
+
+- **Automatic version checking**: Wenget now automatically checks for updates on startup and notifies when a new version is available
+- **Script update detection**: Added detection for script file updates, enabling automatic reinstallation when script sources change
+- **Download URL tracking**: Added `download_url` field to `InstalledPackage` for tracking script source URLs
+
+### Changed
+
+- **Removed `update self` command**: Self-update is now automatically detected and prompted instead of requiring manual command
+- **Upgrade success messages**: Updated to use `latest_version` for clearer messaging
+- **Added design documentation**: New design docs included for architectural reference
+
 ## [Unreleased]
 
 ## [3.0.4] - 2026-03-09
@@ -990,3 +1004,4 @@ Wenget is now production-ready for managing GitHub binaries across platforms.
 [3.0.0]: https://github.com/superyngo/wenget/compare/v2.3.1...v3.0.0
 [0.2.0]: https://github.com/superyngo/wenget/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/superyngo/wenget/releases/tag/v0.1.0
+[3.1.0]: https://github.com/superyngo/wenget/compare/v3.0.4...v3.1.0
