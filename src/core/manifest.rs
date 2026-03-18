@@ -439,6 +439,11 @@ pub struct InstalledPackage {
     /// Kept for backward compatibility during migration
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_package: Option<String>,
+
+    /// Download URL used to install the package/script
+    /// Used for scripts from buckets to detect updates via URL change
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub download_url: Option<String>,
 }
 
 /// Installed manifest (installed.json)
@@ -834,6 +839,7 @@ mod tests {
             command_name: None,
             asset_name: "test-windows-x64.zip".to_string(),
             parent_package: None,
+            download_url: None,
         };
 
         manifest.upsert_package("test".to_string(), package);

@@ -434,6 +434,7 @@ fn install_single_script(
         command_name: None,
         asset_name: format!("{}.{}", name, script_type.extension()),
         parent_package: None,
+        download_url: None,
     };
 
     Ok(inst_pkg)
@@ -1593,6 +1594,7 @@ fn install_package(
         command_name: None,
         asset_name: binary.asset_name.clone(),
         parent_package: None, // Deprecated field
+        download_url: None,
     };
 
     Ok(inst_pkg)
@@ -1673,9 +1675,8 @@ fn install_script_from_bucket(
         command_name: None,
         asset_name: format!("{}.{}", name, script_type.extension()),
         parent_package: None,
+        download_url: Some(url.to_string()),
     };
-
-    // Update installed manifest
     installed.upsert_package(name.to_string(), inst_pkg);
     config.save_installed(installed)?;
 

@@ -298,6 +298,7 @@ mod tests {
             command_name: None,
             asset_name: "pkg1.tar.gz".to_string(),
             parent_package: None,
+            download_url: None,
         };
         manifest.packages.insert("pkg1".to_string(), package);
 
@@ -324,6 +325,7 @@ mod tests {
             command_name: None,
             asset_name: "pkg1.tar.gz".to_string(),
             parent_package: None,
+            download_url: None,
         };
         manifest.packages.insert("pkg1".to_string(), package1);
 
@@ -343,6 +345,7 @@ mod tests {
             command_name: None,
             asset_name: "pkg2.tar.gz".to_string(),
             parent_package: None,
+            download_url: None,
         };
         manifest.packages.insert("pkg2".to_string(), package2);
 
