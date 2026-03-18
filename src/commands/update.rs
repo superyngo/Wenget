@@ -10,9 +10,10 @@ use colored::Colorize;
 
 /// Upgrade installed packages
 pub fn run(names: Vec<String>, yes: bool) -> Result<()> {
-    // Handle "wenget update self"
-    if names.len() == 1 && names[0] == "self" {
-        return upgrade_self();
+    // Check for wenget updates first
+    if check_and_upgrade_self(yes)? {
+        // On Windows, exit after self-update to avoid shell instability
+        return Ok(());
     }
 
     let config = Config::new()?;
@@ -63,8 +64,13 @@ pub fn run(names: Vec<String>, yes: bool) -> Result<()> {
 
         // Find all variants of this repo and add them to be upgraded
         let variants = installed.find_by_repo(name);
-        for (key, _pkg) in variants {
-            expanded.push(key.clone());
+        if variants.is_empty() {
+            // Could be a script or standalone package - pass through as-is
+            expanded.push(name.clone());
+        } else {
+            for (key, _pkg) in variants {
+                expanded.push(key.clone());
+            }
         }
     }
 
@@ -113,12 +119,46 @@ fn find_upgradeable(
                 // Use the stored repo URL directly
                 url.clone()
             }
-            PackageSource::Script { .. } => {
-                // Scripts don't support updates
-                log::debug!(
-                    "Skipping script '{}' - scripts don't support updates",
-                    repo_name
-                );
+            PackageSource::Script { origin, .. } => {
+                // Check if this is a bucket-sourced script
+                if !origin.starts_with("bucket:") {
+                    log::debug!(
+                        "Skipping non-bucket script '{}' - no update source",
+                        repo_name
+                    );
+                    continue;
+                }
+
+                // Look up the script in the refreshed cache
+                let cached_script = cache.find_script(&repo_name);
+                if cached_script.is_none() {
+                    log::debug!("Script '{}' not found in cache, skipping update", repo_name);
+                    continue;
+                }
+
+                let cached_script = cached_script.unwrap();
+
+                // Get the installable script URL for current platform
+                if let Some((_script_type, platform_info)) =
+                    cached_script.script.get_installable_script()
+                {
+                    let cache_url = &platform_info.url;
+
+                    // Compare with installed download_url
+                    let needs_update = match &inst_pkg.download_url {
+                        Some(installed_url) => installed_url != cache_url,
+                        None => true, // No stored URL = always update (legacy installs)
+                    };
+
+                    if needs_update {
+                        upgradeable.push((
+                            repo_name.clone(),
+                            inst_pkg.download_url.clone().unwrap_or_default(),
+                            cache_url.clone(),
+                        ));
+                    }
+                }
+
                 continue;
             }
         };
@@ -179,8 +219,78 @@ fn find_upgradeable(
     Ok(upgradeable)
 }
 
+/// Check for wenget updates and prompt user
+/// Returns true if wenget was updated on Windows (caller should exit)
+fn check_and_upgrade_self(yes: bool) -> Result<bool> {
+    let current_version = env!("CARGO_PKG_VERSION");
+
+    println!("{}", "Checking for wenget updates...".dimmed());
+
+    // Try to check latest version - don't fail the whole update if this fails
+    let provider = match GitHubProvider::new() {
+        Ok(p) => p,
+        Err(e) => {
+            log::debug!("Failed to create GitHub provider for self-check: {}", e);
+            return Ok(false);
+        }
+    };
+
+    let latest_version = match provider.fetch_latest_version("https://github.com/superyngo/wenget")
+    {
+        Ok(v) => v,
+        Err(e) => {
+            log::debug!("Failed to check wenget updates: {}", e);
+            return Ok(false);
+        }
+    };
+
+    if current_version == latest_version {
+        return Ok(false);
+    }
+
+    println!(
+        "{} {} -> {}",
+        "New wenget version available:".yellow().bold(),
+        current_version.yellow(),
+        latest_version.green()
+    );
+
+    let should_update = if yes {
+        true
+    } else {
+        crate::utils::confirm("Update wenget first?")?
+    };
+
+    if !should_update {
+        println!();
+        return Ok(false);
+    }
+
+    // Perform self-update, passing provider and known version to avoid redundant API calls
+    upgrade_self_with_provider(provider, &latest_version)?;
+
+    // On Windows, recommend restarting shell
+    #[cfg(windows)]
+    {
+        println!();
+        println!(
+            "{}",
+            "⚠  Please restart your shell, then run 'wenget update' again to update packages."
+                .yellow()
+                .bold()
+        );
+        return Ok(true); // Signal caller to exit
+    }
+
+    #[cfg(not(windows))]
+    {
+        println!();
+        Ok(false) // Continue with package updates on Unix
+    }
+}
+
 /// Upgrade wenget itself
-fn upgrade_self() -> Result<()> {
+fn upgrade_self_with_provider(provider: GitHubProvider, _latest_version: &str) -> Result<()> {
     use crate::core::{Platform, WenPaths};
     use crate::downloader::download_file;
     use crate::installer::{extract_archive, find_executable};
@@ -189,31 +299,6 @@ fn upgrade_self() -> Result<()> {
     use std::fs;
 
     println!("{}", "Upgrading wenget...".cyan());
-
-    // Get current version
-    let current_version = env!("CARGO_PKG_VERSION");
-    println!("Current version: {}", current_version);
-
-    // Fetch latest package info from GitHub
-    let provider = GitHubProvider::new()?;
-    let latest_version = provider.fetch_latest_version("https://github.com/superyngo/wenget")?;
-
-    println!("Latest version: {}", latest_version);
-
-    if current_version == latest_version {
-        println!("{}", "✓ Already up to date".green());
-        return Ok(());
-    }
-
-    println!(
-        "{}",
-        format!(
-            "New version available: {} -> {}",
-            current_version, latest_version
-        )
-        .yellow()
-    );
-    println!();
 
     // Get package information including binaries
     let package = provider.fetch_package("https://github.com/superyngo/wenget")?;
