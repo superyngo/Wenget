@@ -290,7 +290,7 @@ fn check_and_upgrade_self(yes: bool) -> Result<bool> {
 }
 
 /// Upgrade wenget itself
-fn upgrade_self_with_provider(provider: GitHubProvider, _latest_version: &str) -> Result<()> {
+fn upgrade_self_with_provider(provider: GitHubProvider, latest_version: &str) -> Result<()> {
     use crate::core::{Platform, WenPaths};
     use crate::downloader::download_file;
     use crate::installer::{extract_archive, find_executable};
@@ -402,7 +402,7 @@ fn upgrade_self_with_provider(provider: GitHubProvider, _latest_version: &str) -
     println!();
     println!(
         "{}",
-        "✓ Successfully upgraded to the latest version!".green()
+        format!("✓ Successfully upgraded to v{}!", latest_version).green()
     );
     println!("Please restart your terminal or run 'wenget --version' to verify.");
 
