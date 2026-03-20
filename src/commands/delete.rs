@@ -98,7 +98,6 @@ pub fn run(
         if is_specific_variant_request {
             // User explicitly requested this variant - show it individually
             packages_to_delete.push((name.clone(), vec![name.clone()]));
-            final_to_delete.push(name.clone());
             processed.insert(name.clone());
             continue;
         }
@@ -698,4 +697,47 @@ rm -f "$0"
     );
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_specific_variant_not_duplicated_in_final_to_delete() {
+        // Simulate the variant resolution logic
+        let names = vec!["opencode::desktop.app".to_string()];
+        let matching_packages = vec!["opencode::desktop.app".to_string()];
+
+        let mut packages_to_delete: Vec<(String, Vec<String>)> = Vec::new();
+        let mut processed: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut final_to_delete: Vec<String> = Vec::new();
+
+        for name in &matching_packages {
+            if processed.contains(name) {
+                continue;
+            }
+
+            let is_specific_variant_request = names.iter().any(|user_input| {
+                user_input.contains("::") && user_input == name
+            });
+
+            if is_specific_variant_request {
+                packages_to_delete.push((name.clone(), vec![name.clone()]));
+                // BUG WAS HERE: final_to_delete.push(name.clone());
+                processed.insert(name.clone());
+                continue;
+            }
+        }
+
+        // Simulate the -y flag path
+        for (_repo_name, variants) in &packages_to_delete {
+            final_to_delete.extend(variants.clone());
+        }
+
+        // Should only appear ONCE
+        assert_eq!(
+            final_to_delete.iter().filter(|x| *x == "opencode::desktop.app").count(),
+            1,
+            "Specific variant should only appear once in final_to_delete"
+        );
+    }
 }
