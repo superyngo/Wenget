@@ -1513,6 +1513,11 @@ fn install_package(
     // Load installed manifest for command name resolution
     let installed_manifest = config.get_or_create_installed()?;
 
+    // If this package is already installed, grab old executables for command name reuse
+    let old_executables = installed_manifest
+        .get_package(installed_key)
+        .map(|p| p.executables.clone());
+
     for exe_relative in selected_executables {
         let exe_path = app_dir.join(&exe_relative);
 
@@ -1520,38 +1525,73 @@ fn install_package(
             anyhow::bail!("Executable not found: {}", exe_path.display());
         }
 
-        // Extract the actual command name from the executable path
-        let (base_name, is_custom) = if let Some(custom) = custom_name {
-            // Use custom name if provided (only for first executable)
-            if executables.is_empty() {
-                (custom.to_string(), true)
+        // When updating with -y, try to reuse old command names
+        let reused_name = if yes {
+            if let Some(ref old_exes) = old_executables {
+                let filename = exe_path
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("");
+
+                // Try path match first, then filename match
+                old_exes
+                    .get(&exe_relative)
+                    .cloned()
+                    .or_else(|| {
+                        old_exes
+                            .iter()
+                            .find(|(old_path, _)| {
+                                std::path::Path::new(old_path.as_str())
+                                    .file_name()
+                                    .and_then(|s| s.to_str())
+                                    == Some(filename)
+                            })
+                            .map(|(_, name)| name.clone())
+                    })
             } else {
-                // For additional executables, use auto-detected name
+                None
+            }
+        } else {
+            None
+        };
+
+        let resolved_name = if let Some(reused) = reused_name {
+            println!("  Reusing command name: {}", reused);
+            reused
+        } else {
+            // Extract the actual command name from the executable path
+            let (base_name, is_custom) = if let Some(custom) = custom_name {
+                // Use custom name if provided (only for first executable)
+                if executables.is_empty() {
+                    (custom.to_string(), true)
+                } else {
+                    // For additional executables, use auto-detected name
+                    let raw_name = exe_path
+                        .file_name()
+                        .and_then(|s| s.to_str())
+                        .context("Failed to extract command name")?;
+                    (normalize_command_name(raw_name), false)
+                }
+            } else {
+                // Auto-detect and normalize command name
                 let raw_name = exe_path
                     .file_name()
                     .and_then(|s| s.to_str())
                     .context("Failed to extract command name")?;
+
+                // Apply smart normalization to remove platform suffixes
                 (normalize_command_name(raw_name), false)
-            }
-        } else {
-            // Auto-detect and normalize command name
-            let raw_name = exe_path
-                .file_name()
-                .and_then(|s| s.to_str())
-                .context("Failed to extract command name")?;
+            };
 
-            // Apply smart normalization to remove platform suffixes
-            (normalize_command_name(raw_name), false)
+            // Resolve command name with variant to avoid conflicts
+            resolve_command_name(
+                &base_name,
+                variant_opt.as_deref(),
+                &installed_manifest,
+                Some(installed_key),
+                is_custom,
+            )
         };
-
-        // Resolve command name with variant to avoid conflicts
-        let resolved_name = resolve_command_name(
-            &base_name,
-            variant_opt.as_deref(),
-            &installed_manifest,
-            Some(installed_key),
-            is_custom,
-        );
 
         println!("  Command will be available as: {}", resolved_name);
 
@@ -1571,6 +1611,19 @@ fn install_package(
         }
 
         executables.insert(exe_relative.clone(), resolved_name);
+    }
+
+    // Clean up symlinks/shims for old executables that no longer exist in the new version
+    if let Some(ref old_exes) = old_executables {
+        for (_, old_cmd) in old_exes {
+            if !executables.values().any(|n| n == old_cmd) {
+                let old_bin = paths.bin_shim_path(old_cmd);
+                if old_bin.exists() {
+                    fs::remove_file(&old_bin).ok();
+                    println!("  Removed obsolete command: {}", old_cmd);
+                }
+            }
+        }
     }
 
     // Clean up download
