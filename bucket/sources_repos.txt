@@ -22,15 +22,14 @@ https://github.com/sharkdp/fd
 https://github.com/junegunn/fzf
 
 # === Development Tools ===
-https://github.com/github/copilot-cli
 https://github.com/cli/cli
 https://github.com/astral-sh/uv
 https://github.com/denoland/deno
 https://github.com/oven-sh/bun
 https://github.com/containers/podman
-https://github.com/anomalyco/opencode
 https://github.com/unhappychoice/gitlogue
 https://github.com/Schniz/fnm
+
 
 # === Remote ===
 https://github.com/Genymobile/scrcpy
@@ -46,7 +45,7 @@ https://github.com/aristocratos/btop
 https://github.com/pranshuparmar/witr
 https://github.com/fastfetch-cli/fastfetch
 https://github.com/smartmontools/smartmontools
-
+https://github.com/pythops/impala
 
 # === File Management ===
 https://github.com/sinelaw/fresh
@@ -60,6 +59,7 @@ https://github.com/rclone/rclone
 # === Viewers/Editors ===
 https://github.com/sharkdp/bat
 https://github.com/sharkdp/hexyl
+https://github.com/neovim/neovim
 
 # === Media ===
 https://github.com/llychao/m3u8-downloader
@@ -68,6 +68,8 @@ https://github.com/nilaoda/N_m3u8DL-RE
 https://github.com/Siriusmart/youtube-tui
 
 # === AI ===
+https://github.com/anomalyco/opencode
+https://github.com/github/copilot-cli
 https://github.com/sipeed/picoclaw
 
 # === Archived ===
@@ -79,12 +81,10 @@ https://github.com/sipeed/picoclaw
 # https://github.com/Termix-SSH/Termix
 # https://github.com/Heavrnl/nexus-terminal
 # discordo: https://github.com/ayn2op/discordo
-# btop: https://github.com/aristocratos/btop
 # bluetui: https://github.com/pythops/bluetui
 # impala: https://github.com/pythops/impala
 # wiremix: https://github.com/tsowell/wiremix
 # lazygit: https://github.com/jesseduffield/lazygit
-# neovim: https://github.com/neovim/neovim
-
 # lynx: https://lynx.invisible-island.net/
 # ncdu: https://dev.yorhel.nl/ncdu
+# https://github.com/abenz1267/walker
