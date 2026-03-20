@@ -16,6 +16,7 @@ use crate::providers::{GitHubProvider, SourceProvider};
 use anyhow::{Context, Result};
 use chrono::Utc;
 use colored::Colorize;
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
@@ -408,7 +409,7 @@ fn install_single_script(
     origin: &str,
 ) -> Result<InstalledPackage> {
     // Install script to app directory
-    let files = install_script(paths, name, content, script_type)?;
+    let _files = install_script(paths, name, content, script_type)?;
 
     println!("  Command will be available as: {}", name);
 
@@ -424,7 +425,7 @@ fn install_single_script(
         platform: format!("{}-script", script_type.display_name().to_lowercase()),
         installed_at: Utc::now(),
         install_path: paths.app_dir(name).to_string_lossy().to_string(),
-        files,
+        executables: HashMap::new(),
         source: PackageSource::Script {
             origin: origin.to_string(),
             script_type: script_type.clone(),
@@ -1587,7 +1588,7 @@ fn install_package(
         platform: platform_match.platform_id.clone(),
         installed_at: Utc::now(),
         install_path: app_dir.to_string_lossy().to_string(),
-        files: extracted_files,
+        executables: HashMap::new(),
         source: source.clone(),
         description: pkg.description.clone(),
         command_names: resolved_command_names,
@@ -1649,7 +1650,7 @@ fn install_script_from_bucket(
     println!("  Installing script as '{}'...", command_name);
 
     // Install script to app directory
-    let files = install_script(paths, command_name, &content, &script_type)?;
+    let _files = install_script(paths, command_name, &content, &script_type)?;
 
     println!("  Command will be available as: {}", command_name);
 
@@ -1665,7 +1666,7 @@ fn install_script_from_bucket(
         platform: std::env::consts::OS.to_string(),
         installed_at: Utc::now(),
         install_path: paths.app_dir(command_name).display().to_string(),
-        files,
+        executables: HashMap::new(),
         source: PackageSource::Script {
             origin: origin.to_string(),
             script_type: script_type.clone(),

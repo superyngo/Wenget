@@ -278,6 +278,7 @@ fn read_shim_target(shim_path: &Path) -> Result<std::path::PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     #[test]
     fn test_validate_new_name_success() {
@@ -289,7 +290,7 @@ mod tests {
             platform: "linux-x86_64".to_string(),
             installed_at: chrono::Utc::now(),
             install_path: "/path/to/pkg1".to_string(),
-            files: vec![],
+            executables: HashMap::new(),
             source: crate::core::manifest::PackageSource::Bucket {
                 name: "test".to_string(),
             },
@@ -316,7 +317,7 @@ mod tests {
             platform: "linux-x86_64".to_string(),
             installed_at: chrono::Utc::now(),
             install_path: "/path/to/pkg1".to_string(),
-            files: vec![],
+            executables: HashMap::new(),
             source: crate::core::manifest::PackageSource::Bucket {
                 name: "test".to_string(),
             },
@@ -336,7 +337,7 @@ mod tests {
             platform: "linux-x86_64".to_string(),
             installed_at: chrono::Utc::now(),
             install_path: "/path/to/pkg2".to_string(),
-            files: vec![],
+            executables: HashMap::new(),
             source: crate::core::manifest::PackageSource::Bucket {
                 name: "test".to_string(),
             },

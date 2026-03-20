@@ -415,8 +415,10 @@ pub struct InstalledPackage {
     /// Installation path
     pub install_path: String,
 
-    /// List of installed files (relative to install_path)
-    pub files: Vec<String>,
+    /// Map of executable relative path (from install_path) to command name
+    /// Example: {"bin/rg": "rg", "bin/rg-completions": "rg-completions"}
+    #[serde(default)]
+    pub executables: HashMap<String, String>,
 
     /// Package source (where it was installed from)
     pub source: PackageSource,
@@ -424,8 +426,9 @@ pub struct InstalledPackage {
     /// Package description
     pub description: String,
 
-    /// Command names (the names used to invoke the tools)
-    #[serde(default)]
+    /// DEPRECATED: Legacy flat command names list.
+    /// Kept for backward compatibility during migration from older versions.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub command_names: Vec<String>,
 
     /// Legacy single command name (for backward compatibility)
@@ -444,6 +447,26 @@ pub struct InstalledPackage {
     /// Used for scripts from buckets to detect updates via URL change
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub download_url: Option<String>,
+}
+
+impl InstalledPackage {
+    /// Get all command names from the executables map.
+    /// Falls back to legacy command_names if executables is empty (pre-migration).
+    pub fn get_command_names(&self) -> Vec<&str> {
+        if !self.executables.is_empty() {
+            self.executables.values().map(|s| s.as_str()).collect()
+        } else {
+            self.command_names.iter().map(|s| s.as_str()).collect()
+        }
+    }
+
+    /// Get the executable path for a given command name
+    pub fn get_exe_path_for_command(&self, command_name: &str) -> Option<&str> {
+        self.executables
+            .iter()
+            .find(|(_, name)| name.as_str() == command_name)
+            .map(|(path, _)| path.as_str())
+    }
 }
 
 /// Installed manifest (installed.json)
@@ -542,7 +565,9 @@ impl InstalledManifest {
                     continue;
                 }
             }
-            if package.command_names.contains(&command_name.to_string()) {
+            if package.executables.values().any(|n| n == command_name)
+                || package.command_names.contains(&command_name.to_string())
+            {
                 return true;
             }
         }
@@ -823,6 +848,9 @@ mod tests {
     fn test_installed_manifest() {
         let mut manifest = InstalledManifest::new();
 
+        let mut executables = HashMap::new();
+        executables.insert("bin/test.exe".to_string(), "test".to_string());
+
         let package = InstalledPackage {
             repo_name: "test".to_string(),
             variant: None,
@@ -830,12 +858,12 @@ mod tests {
             platform: "windows-x86_64".to_string(),
             installed_at: Utc::now(),
             install_path: "C:\\Users\\test\\.wenget\\apps\\test".to_string(),
-            files: vec!["bin/test.exe".to_string()],
+            executables,
             source: PackageSource::Bucket {
                 name: "test-bucket".to_string(),
             },
             description: "Test package".to_string(),
-            command_names: vec!["test".to_string()],
+            command_names: vec![],
             command_name: None,
             asset_name: "test-windows-x64.zip".to_string(),
             parent_package: None,
@@ -848,5 +876,125 @@ mod tests {
 
         manifest.remove_package("test");
         assert!(!manifest.is_installed("test"));
+    }
+
+    #[test]
+    fn test_installed_package_executables_helpers() {
+        let mut executables = HashMap::new();
+        executables.insert("bin/rg".to_string(), "rg".to_string());
+        executables.insert("bin/rg-doc".to_string(), "rg-doc".to_string());
+
+        let pkg = InstalledPackage {
+            repo_name: "ripgrep".to_string(),
+            variant: None,
+            version: "14.0.0".to_string(),
+            platform: "linux-x86_64".to_string(),
+            installed_at: Utc::now(),
+            install_path: "/home/test/.wenget/apps/ripgrep".to_string(),
+            executables,
+            source: PackageSource::Bucket {
+                name: "main".to_string(),
+            },
+            description: "Search tool".to_string(),
+            command_names: vec![],
+            command_name: None,
+            asset_name: "ripgrep-linux-x64.tar.gz".to_string(),
+            parent_package: None,
+            download_url: None,
+        };
+
+        let names = pkg.get_command_names();
+        assert_eq!(names.len(), 2);
+        assert!(names.contains(&"rg"));
+        assert!(names.contains(&"rg-doc"));
+
+        assert_eq!(pkg.get_exe_path_for_command("rg"), Some("bin/rg"));
+        assert_eq!(pkg.get_exe_path_for_command("rg-doc"), Some("bin/rg-doc"));
+        assert_eq!(pkg.get_exe_path_for_command("nonexistent"), None);
+    }
+
+    #[test]
+    fn test_is_command_taken_with_executables() {
+        let mut manifest = InstalledManifest::new();
+
+        let mut executables = HashMap::new();
+        executables.insert("bin/rg".to_string(), "rg".to_string());
+
+        let pkg = InstalledPackage {
+            repo_name: "ripgrep".to_string(),
+            variant: None,
+            version: "14.0.0".to_string(),
+            platform: "linux-x86_64".to_string(),
+            installed_at: Utc::now(),
+            install_path: "/path".to_string(),
+            executables,
+            source: PackageSource::Bucket { name: "main".to_string() },
+            description: String::new(),
+            command_names: vec![],
+            command_name: None,
+            asset_name: "rg.tar.gz".to_string(),
+            parent_package: None,
+            download_url: None,
+        };
+
+        manifest.upsert_package("ripgrep".to_string(), pkg);
+
+        assert!(manifest.is_command_taken("rg", None));
+        assert!(!manifest.is_command_taken("rg", Some("ripgrep")));
+        assert!(!manifest.is_command_taken("nonexistent", None));
+    }
+
+    #[test]
+    fn test_deserialize_old_format_without_executables() {
+        let json = r#"{
+            "packages": {
+                "test": {
+                    "repo_name": "test",
+                    "version": "1.0.0",
+                    "platform": "linux-x86_64",
+                    "installed_at": "2025-01-01T00:00:00Z",
+                    "install_path": "/path/to/test",
+                    "files": ["bin/test", "README.md"],
+                    "source": { "type": "bucket", "name": "main" },
+                    "description": "Test",
+                    "command_names": ["test"],
+                    "asset_name": "test.tar.gz"
+                }
+            }
+        }"#;
+
+        let manifest: InstalledManifest = serde_json::from_str(json).unwrap();
+        let pkg = manifest.get_package("test").unwrap();
+
+        assert!(pkg.executables.is_empty());
+        assert_eq!(pkg.command_names, vec!["test".to_string()]);
+    }
+
+    #[test]
+    fn test_serialize_new_format_no_files_field() {
+        let mut executables = HashMap::new();
+        executables.insert("bin/test".to_string(), "test".to_string());
+
+        let pkg = InstalledPackage {
+            repo_name: "test".to_string(),
+            variant: None,
+            version: "1.0.0".to_string(),
+            platform: "linux-x86_64".to_string(),
+            installed_at: Utc::now(),
+            install_path: "/path".to_string(),
+            executables,
+            source: PackageSource::Bucket { name: "main".to_string() },
+            description: "Test".to_string(),
+            command_names: vec![],
+            command_name: None,
+            asset_name: "test.tar.gz".to_string(),
+            parent_package: None,
+            download_url: None,
+        };
+
+        let json = serde_json::to_string(&pkg).unwrap();
+        assert!(!json.contains("\"files\""));
+        assert!(json.contains("\"executables\""));
+        assert!(!json.contains("\"command_names\""));
     }
 }

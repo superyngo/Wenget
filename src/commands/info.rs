@@ -439,26 +439,24 @@ fn display_installed_only_info(name: &str, inst_pkg: &InstalledPackage) -> Resul
     println!("{:<16} {}", "Platform:".bold(), inst_pkg.platform);
     println!("{:<16} {}", "Install path:".bold(), inst_pkg.install_path);
 
-    // Show installed files
-    if !inst_pkg.files.is_empty() {
+    // Show executables 
+    if !inst_pkg.executables.is_empty() {
         println!();
         println!(
-            "{} {} file(s)",
-            "Installed files:".bold(),
-            inst_pkg.files.len()
+            "{} {} executable(s)",
+            "Executables:".bold(),
+            inst_pkg.executables.len()
         );
-        let max_files = 10;
-        for (i, file) in inst_pkg.files.iter().enumerate() {
-            if i >= max_files {
-                println!(
-                    "  {} ... and {} more",
-                    "•".dimmed(),
-                    inst_pkg.files.len() - max_files
-                );
-                break;
-            }
-            println!("  {} {}", "•".cyan(), file.dimmed());
+        for (exe_path, cmd_name) in &inst_pkg.executables {
+            println!("  {} {} → {}", "•".cyan(), exe_path.dimmed(), cmd_name);
         }
+    } else if !inst_pkg.command_names.is_empty() {
+        println!();
+        println!(
+            "{} {}",
+            "Command names:".bold(),
+            inst_pkg.command_names.join(", ").cyan()
+        );
     }
 
     Ok(())
