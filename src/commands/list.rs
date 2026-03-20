@@ -127,12 +127,12 @@ fn list_installed_packages(config: &Config) -> Result<()> {
 
         // Display command for first variant
         if sorted_variants.len() == 1 {
-            let cmd_display = format!("  [Command: {}]", first_pkg.command_names.join(", "));
+            let cmd_display = format!("  [Command: {}]", first_pkg.get_command_names().join(", "));
             println!("{}", cmd_display.yellow().dimmed());
         } else {
             // Show first variant with tree structure
             let variant_label = first_pkg.variant.as_deref().unwrap_or("(default)");
-            let cmd_display = format!("[Command: {}]", first_pkg.command_names.join(", "));
+            let cmd_display = format!("[Command: {}]", first_pkg.get_command_names().join(", "));
             println!(
                 "  ├─ {:<30} {}",
                 variant_label.dimmed(),
@@ -145,7 +145,7 @@ fn list_installed_packages(config: &Config) -> Result<()> {
                 let prefix = if is_last { "└─" } else { "├─" };
 
                 let variant_label = var_pkg.variant.as_deref().unwrap_or("(default)");
-                let cmd_display = format!("[Command: {}]", var_pkg.command_names.join(", "));
+                let cmd_display = format!("[Command: {}]", var_pkg.get_command_names().join(", "));
 
                 println!(
                     "  {} {:<30} {}",
