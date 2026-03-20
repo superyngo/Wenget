@@ -435,14 +435,19 @@ fn display_installed_only_info(name: &str, inst_pkg: &InstalledPackage) -> Resul
         "Command name:".bold(),
         {
             let names = inst_pkg.get_command_names();
-            if names.is_empty() { "-".to_string() } else { names.join(", ") }
-        }.yellow()
+            if names.is_empty() {
+                "-".to_string()
+            } else {
+                names.join(", ")
+            }
+        }
+        .yellow()
     );
     println!("{:<16} {}", "Installed at:".bold(), inst_pkg.installed_at);
     println!("{:<16} {}", "Platform:".bold(), inst_pkg.platform);
     println!("{:<16} {}", "Install path:".bold(), inst_pkg.install_path);
 
-    // Show executables 
+    // Show executables
     if !inst_pkg.executables.is_empty() {
         println!();
         println!(

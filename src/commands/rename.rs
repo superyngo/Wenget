@@ -111,7 +111,11 @@ fn find_package_and_command(
 fn select_command_interactive(package: &InstalledPackage) -> Result<String> {
     println!("{} Package has multiple commands:", "ℹ".cyan());
 
-    let cmd_names: Vec<String> = package.get_command_names().iter().map(|s| s.to_string()).collect();
+    let cmd_names: Vec<String> = package
+        .get_command_names()
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
     let selection = Select::new()
         .with_prompt("Select command to rename")
         .items(&cmd_names)
@@ -180,7 +184,9 @@ fn rename_command(
         .map(|s| s.to_string())
         .or_else(|| {
             // Fallback: check legacy command_names
-            package.command_names.iter()
+            package
+                .command_names
+                .iter()
                 .position(|c| c == old_cmd)
                 .map(|_| old_cmd.to_string())
         })
@@ -245,7 +251,11 @@ fn rename_command(
         .context("Package disappeared during rename")?;
 
     // Update executables map if the command is there
-    if let Some(value) = package_mut.executables.values_mut().find(|v| v.as_str() == old_cmd) {
+    if let Some(value) = package_mut
+        .executables
+        .values_mut()
+        .find(|v| v.as_str() == old_cmd)
+    {
         *value = new_cmd.to_string();
     }
     // Also update legacy command_names if present

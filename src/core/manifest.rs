@@ -689,9 +689,10 @@ impl InstalledManifest {
                                 .trim_end_matches(".py");
 
                             // Try to match against remaining command names
-                            if let Some(pos) = remaining_names.iter().position(|n| {
-                                n == filename || n == name_no_ext
-                            }) {
+                            if let Some(pos) = remaining_names
+                                .iter()
+                                .position(|n| n == filename || n == name_no_ext)
+                            {
                                 let cmd_name = remaining_names.remove(pos);
                                 package.executables.insert(rel_path, cmd_name);
                             }
@@ -1007,7 +1008,9 @@ mod tests {
             installed_at: Utc::now(),
             install_path: "/path".to_string(),
             executables,
-            source: PackageSource::Bucket { name: "main".to_string() },
+            source: PackageSource::Bucket {
+                name: "main".to_string(),
+            },
             description: String::new(),
             command_names: vec![],
             command_name: None,
@@ -1062,7 +1065,9 @@ mod tests {
             installed_at: Utc::now(),
             install_path: "/path".to_string(),
             executables,
-            source: PackageSource::Bucket { name: "main".to_string() },
+            source: PackageSource::Bucket {
+                name: "main".to_string(),
+            },
             description: "Test".to_string(),
             command_names: vec![],
             command_name: None,
@@ -1079,10 +1084,10 @@ mod tests {
 
     #[test]
     fn test_migrate_command_names_to_executables() {
-        use tempfile::TempDir;
         use std::fs;
         #[cfg(unix)]
         use std::os::unix::fs::PermissionsExt;
+        use tempfile::TempDir;
 
         let tmp = TempDir::new().unwrap();
         let app_dir = tmp.path().join("apps").join("myapp");
@@ -1094,9 +1099,11 @@ mod tests {
         fs::set_permissions(
             app_dir.join("bin").join("myapp"),
             fs::Permissions::from_mode(0o755),
-        ).unwrap();
+        )
+        .unwrap();
 
-        let json = format!(r#"{{
+        let json = format!(
+            r#"{{
             "packages": {{
                 "myapp": {{
                     "repo_name": "myapp",
@@ -1111,7 +1118,9 @@ mod tests {
                     "asset_name": "myapp.tar.gz"
                 }}
             }}
-        }}"#, app_dir.display());
+        }}"#,
+            app_dir.display()
+        );
 
         let mut manifest: InstalledManifest = serde_json::from_str(&json).unwrap();
         manifest.migrate();
@@ -1148,7 +1157,10 @@ mod tests {
 
         let pkg = manifest.get_package("gone").unwrap();
         // Fallback: command_name used as both key and value
-        assert_eq!(pkg.executables.get("gone-cmd"), Some(&"gone-cmd".to_string()));
+        assert_eq!(
+            pkg.executables.get("gone-cmd"),
+            Some(&"gone-cmd".to_string())
+        );
         assert!(pkg.command_names.is_empty());
     }
 }

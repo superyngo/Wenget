@@ -724,9 +724,9 @@ mod tests {
                 continue;
             }
 
-            let is_specific_variant_request = names.iter().any(|user_input| {
-                user_input.contains("::") && user_input == name
-            });
+            let is_specific_variant_request = names
+                .iter()
+                .any(|user_input| user_input.contains("::") && user_input == name);
 
             if is_specific_variant_request {
                 packages_to_delete.push((name.clone(), vec![name.clone()]));
@@ -743,7 +743,10 @@ mod tests {
 
         // Should only appear ONCE
         assert_eq!(
-            final_to_delete.iter().filter(|x| *x == "opencode::desktop.app").count(),
+            final_to_delete
+                .iter()
+                .filter(|x| *x == "opencode::desktop.app")
+                .count(),
             1,
             "Specific variant should only appear once in final_to_delete"
         );

@@ -422,7 +422,10 @@ fn install_single_script(
     if let Some(script_file) = files.first() {
         executables.insert(script_file.clone(), name.to_string());
     } else {
-        executables.insert(format!("{}.{}", name, script_type.extension()), name.to_string());
+        executables.insert(
+            format!("{}.{}", name, script_type.extension()),
+            name.to_string(),
+        );
     }
 
     // Create installed package info
@@ -1528,26 +1531,20 @@ fn install_package(
         // When updating with -y, try to reuse old command names
         let reused_name = if yes {
             if let Some(ref old_exes) = old_executables {
-                let filename = exe_path
-                    .file_name()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("");
+                let filename = exe_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
 
                 // Try path match first, then filename match
-                old_exes
-                    .get(&exe_relative)
-                    .cloned()
-                    .or_else(|| {
-                        old_exes
-                            .iter()
-                            .find(|(old_path, _)| {
-                                std::path::Path::new(old_path.as_str())
-                                    .file_name()
-                                    .and_then(|s| s.to_str())
-                                    == Some(filename)
-                            })
-                            .map(|(_, name)| name.clone())
-                    })
+                old_exes.get(&exe_relative).cloned().or_else(|| {
+                    old_exes
+                        .iter()
+                        .find(|(old_path, _)| {
+                            std::path::Path::new(old_path.as_str())
+                                .file_name()
+                                .and_then(|s| s.to_str())
+                                == Some(filename)
+                        })
+                        .map(|(_, name)| name.clone())
+                })
             } else {
                 None
             }
@@ -1615,7 +1612,7 @@ fn install_package(
 
     // Clean up symlinks/shims for old executables that no longer exist in the new version
     if let Some(ref old_exes) = old_executables {
-        for (_, old_cmd) in old_exes {
+        for old_cmd in old_exes.values() {
             if !executables.values().any(|n| n == old_cmd) {
                 let old_bin = paths.bin_shim_path(old_cmd);
                 if old_bin.exists() {
