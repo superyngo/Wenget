@@ -409,13 +409,21 @@ fn install_single_script(
     origin: &str,
 ) -> Result<InstalledPackage> {
     // Install script to app directory
-    let _files = install_script(paths, name, content, script_type)?;
+    let files = install_script(paths, name, content, script_type)?;
 
     println!("  Command will be available as: {}", name);
 
     // Create shim
     println!("  Creating launcher...");
     create_script_shim(paths, name, script_type)?;
+
+    // Create executables map
+    let mut executables = HashMap::new();
+    if let Some(script_file) = files.first() {
+        executables.insert(script_file.clone(), name.to_string());
+    } else {
+        executables.insert(format!("{}.{}", name, script_type.extension()), name.to_string());
+    }
 
     // Create installed package info
     let inst_pkg = InstalledPackage {
@@ -425,13 +433,13 @@ fn install_single_script(
         platform: format!("{}-script", script_type.display_name().to_lowercase()),
         installed_at: Utc::now(),
         install_path: paths.app_dir(name).to_string_lossy().to_string(),
-        executables: HashMap::new(),
+        executables,
         source: PackageSource::Script {
             origin: origin.to_string(),
             script_type: script_type.clone(),
         },
         description: format!("{} script from {}", script_type.display_name(), origin),
-        command_names: vec![name.to_string()],
+        command_names: vec![],
         command_name: None,
         asset_name: format!("{}.{}", name, script_type.extension()),
         parent_package: None,
@@ -475,8 +483,9 @@ fn install_local_files(
         match install_local_file(paths, path, custom_name, None) {
             Ok(inst_pkg) => {
                 // Use first command name as package name
-                let name = match inst_pkg.command_names.first() {
-                    Some(n) => n.clone(),
+                let command_names = inst_pkg.get_command_names();
+                let name = match command_names.first() {
+                    Some(n) => n.to_string(),
                     None => {
                         println!(
                             "  {} No command names found in installed package",
@@ -487,7 +496,7 @@ fn install_local_files(
                         continue;
                     }
                 };
-                let display_names = inst_pkg.command_names.join(", ");
+                let display_names = inst_pkg.get_command_names().join(", ");
                 installed.upsert_package(name.clone(), inst_pkg);
                 if let Err(e) = config.save_installed(installed) {
                     println!("  {} Failed to save installed manifest: {}", "✗".red(), e);
@@ -590,8 +599,9 @@ fn install_from_urls(
                 {
                     Ok(inst_pkg) => {
                         // Use first command name as package name
-                        let name = match inst_pkg.command_names.first() {
-                            Some(n) => n.clone(),
+                        let command_names = inst_pkg.get_command_names();
+                        let name = match command_names.first() {
+                            Some(n) => n.to_string(),
                             None => {
                                 println!(
                                     "  {} No command names found in installed package",
@@ -602,7 +612,7 @@ fn install_from_urls(
                                 continue;
                             }
                         };
-                        let display_names = inst_pkg.command_names.join(", ");
+                        let display_names = inst_pkg.get_command_names().join(", ");
                         installed.upsert_package(name.clone(), inst_pkg);
                         if let Err(e) = config.save_installed(installed) {
                             println!("  {} Failed to save installed manifest: {}", "✗".red(), e);
@@ -1483,7 +1493,7 @@ fn install_package(
     };
 
     // Install all selected executables
-    let mut command_names = Vec::new();
+    let mut executables = HashMap::new();
 
     // Extract repo_name and variant from installed_key for resolve_command_name
     // installed_key format: "repo_name" or "repo_name::variant"
@@ -1513,7 +1523,7 @@ fn install_package(
         // Extract the actual command name from the executable path
         let (base_name, is_custom) = if let Some(custom) = custom_name {
             // Use custom name if provided (only for first executable)
-            if command_names.is_empty() {
+            if executables.is_empty() {
                 (custom.to_string(), true)
             } else {
                 // For additional executables, use auto-detected name
@@ -1560,7 +1570,7 @@ fn install_package(
             create_shim(&exe_path, &bin_path, &resolved_name)?;
         }
 
-        command_names.push(resolved_name);
+        executables.insert(exe_relative.clone(), resolved_name);
     }
 
     // Clean up download
@@ -1577,9 +1587,6 @@ fn install_package(
         (installed_key.to_string(), None)
     };
 
-    // Command names were already resolved during symlink creation
-    let resolved_command_names = command_names;
-
     // Create installed package info
     let inst_pkg = InstalledPackage {
         repo_name,
@@ -1588,10 +1595,10 @@ fn install_package(
         platform: platform_match.platform_id.clone(),
         installed_at: Utc::now(),
         install_path: app_dir.to_string_lossy().to_string(),
-        executables: HashMap::new(),
+        executables,
         source: source.clone(),
         description: pkg.description.clone(),
-        command_names: resolved_command_names,
+        command_names: vec![],
         command_name: None,
         asset_name: binary.asset_name.clone(),
         parent_package: None, // Deprecated field
@@ -1650,13 +1657,24 @@ fn install_script_from_bucket(
     println!("  Installing script as '{}'...", command_name);
 
     // Install script to app directory
-    let _files = install_script(paths, command_name, &content, &script_type)?;
+    let files = install_script(paths, command_name, &content, &script_type)?;
 
     println!("  Command will be available as: {}", command_name);
 
     // Create shim
     println!("  Creating launcher...");
     create_script_shim(paths, command_name, &script_type)?;
+
+    // Create executables map
+    let mut executables = HashMap::new();
+    if let Some(script_file) = files.first() {
+        executables.insert(script_file.clone(), command_name.to_string());
+    } else {
+        executables.insert(
+            format!("{}.{}", command_name, script_type.extension()),
+            command_name.to_string(),
+        );
+    }
 
     // Create installed package info
     let inst_pkg = InstalledPackage {
@@ -1666,13 +1684,13 @@ fn install_script_from_bucket(
         platform: std::env::consts::OS.to_string(),
         installed_at: Utc::now(),
         install_path: paths.app_dir(command_name).display().to_string(),
-        executables: HashMap::new(),
+        executables,
         source: PackageSource::Script {
             origin: origin.to_string(),
             script_type: script_type.clone(),
         },
         description: format!("{} script from bucket", script_type.display_name()),
-        command_names: vec![command_name.to_string()],
+        command_names: vec![],
         command_name: None,
         asset_name: format!("{}.{}", name, script_type.extension()),
         parent_package: None,
