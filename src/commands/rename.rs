@@ -22,7 +22,7 @@ pub fn run(old_name: String, new_name: Option<String>, config: &Config) -> Resul
     let (pkg_key, old_cmd_name, package) = find_package_and_command(&installed, &old_name)?;
 
     // If multiple commands exist and no new_name provided, enter interactive mode
-    let final_old_cmd = if package.command_names.len() > 1 && new_name.is_none() {
+    let final_old_cmd = if package.get_command_names().len() > 1 && new_name.is_none() {
         select_command_interactive(&package)?
     } else {
         old_cmd_name
@@ -76,27 +76,27 @@ fn find_package_and_command(
 ) -> Result<(String, String, InstalledPackage)> {
     // First, try direct package key lookup
     if let Some(package) = installed.packages.get(name) {
-        if package.command_names.is_empty() {
+        if package.get_command_names().is_empty() {
             anyhow::bail!("Package '{}' has no commands", name);
         }
-        let cmd_name = package.command_names[0].clone();
+        let cmd_name = package.get_command_names()[0].to_string();
         return Ok((name.to_string(), cmd_name, package.clone()));
     }
 
     // Search by repo_name (to support matching variants by repo name)
     for (key, package) in &installed.packages {
         if package.repo_name == name {
-            if package.command_names.is_empty() {
+            if package.get_command_names().is_empty() {
                 anyhow::bail!("Package '{}' has no commands", name);
             }
-            let cmd_name = package.command_names[0].clone();
+            let cmd_name = package.get_command_names()[0].to_string();
             return Ok((key.clone(), cmd_name, package.clone()));
         }
     }
 
     // Search by command name
     for (key, package) in &installed.packages {
-        if package.command_names.contains(&name.to_string()) {
+        if package.get_command_names().contains(&name) {
             return Ok((key.clone(), name.to_string(), package.clone()));
         }
     }
@@ -111,14 +111,15 @@ fn find_package_and_command(
 fn select_command_interactive(package: &InstalledPackage) -> Result<String> {
     println!("{} Package has multiple commands:", "ℹ".cyan());
 
+    let cmd_names: Vec<String> = package.get_command_names().iter().map(|s| s.to_string()).collect();
     let selection = Select::new()
         .with_prompt("Select command to rename")
-        .items(&package.command_names)
+        .items(&cmd_names)
         .default(0)
         .interact()
         .context("Failed to get user selection")?;
 
-    Ok(package.command_names[selection].clone())
+    Ok(cmd_names[selection].clone())
 }
 
 /// Prompt user for new command name
@@ -146,7 +147,7 @@ fn validate_new_name(
             continue; // Skip the package we're renaming
         }
 
-        if package.command_names.contains(&new_name.to_string()) {
+        if package.get_command_names().contains(&new_name) {
             anyhow::bail!(
                 "Command name '{}' is already used by package '{}'",
                 new_name,
@@ -160,7 +161,7 @@ fn validate_new_name(
 
 /// Perform the actual rename operation
 ///
-/// Updates symlink/shim and modifies InstalledPackage.command_names
+/// Updates symlink/shim and modifies InstalledPackage.executables
 fn rename_command(
     paths: &crate::core::WenPaths,
     installed: &mut InstalledManifest,
@@ -173,11 +174,16 @@ fn rename_command(
         .get(pkg_key)
         .context("Package not found in manifest")?;
 
-    // Find the index of the old command name
-    let cmd_index = package
-        .command_names
-        .iter()
-        .position(|c| c == old_cmd)
+    // Find the executable path for the old command name
+    let _exe_path_key = package
+        .get_exe_path_for_command(old_cmd)
+        .map(|s| s.to_string())
+        .or_else(|| {
+            // Fallback: check legacy command_names
+            package.command_names.iter()
+                .position(|c| c == old_cmd)
+                .map(|_| old_cmd.to_string())
+        })
         .context("Command not found in package")?;
 
     // Get install path
@@ -232,13 +238,20 @@ fn rename_command(
 
     log::info!("Created new shim/symlink: {}", new_cmd);
 
-    // Update command_names in the package
+    // Update executables map in the package
     let package_mut = installed
         .packages
         .get_mut(pkg_key)
         .context("Package disappeared during rename")?;
 
-    package_mut.command_names[cmd_index] = new_cmd.to_string();
+    // Update executables map if the command is there
+    if let Some(value) = package_mut.executables.values_mut().find(|v| v.as_str() == old_cmd) {
+        *value = new_cmd.to_string();
+    }
+    // Also update legacy command_names if present
+    if let Some(pos) = package_mut.command_names.iter().position(|c| c == old_cmd) {
+        package_mut.command_names[pos] = new_cmd.to_string();
+    }
 
     Ok(())
 }
@@ -283,6 +296,9 @@ mod tests {
     #[test]
     fn test_validate_new_name_success() {
         let mut manifest = InstalledManifest::new();
+        let mut exe1 = HashMap::new();
+        exe1.insert("bin/oldcmd".to_string(), "oldcmd".to_string());
+
         let package = InstalledPackage {
             repo_name: "pkg1".to_string(),
             variant: None,
@@ -290,12 +306,12 @@ mod tests {
             platform: "linux-x86_64".to_string(),
             installed_at: chrono::Utc::now(),
             install_path: "/path/to/pkg1".to_string(),
-            executables: HashMap::new(),
+            executables: exe1,
             source: crate::core::manifest::PackageSource::Bucket {
                 name: "test".to_string(),
             },
             description: String::new(),
-            command_names: vec!["oldcmd".to_string()],
+            command_names: vec![],
             command_name: None,
             asset_name: "pkg1.tar.gz".to_string(),
             parent_package: None,
@@ -310,6 +326,10 @@ mod tests {
     fn test_validate_new_name_conflict() {
         let mut manifest = InstalledManifest::new();
 
+        // First package
+        let mut exe1 = HashMap::new();
+        exe1.insert("bin/cmd1".to_string(), "cmd1".to_string());
+
         let package1 = InstalledPackage {
             repo_name: "pkg1".to_string(),
             variant: None,
@@ -317,18 +337,22 @@ mod tests {
             platform: "linux-x86_64".to_string(),
             installed_at: chrono::Utc::now(),
             install_path: "/path/to/pkg1".to_string(),
-            executables: HashMap::new(),
+            executables: exe1,
             source: crate::core::manifest::PackageSource::Bucket {
                 name: "test".to_string(),
             },
             description: String::new(),
-            command_names: vec!["cmd1".to_string()],
+            command_names: vec![],
             command_name: None,
             asset_name: "pkg1.tar.gz".to_string(),
             parent_package: None,
             download_url: None,
         };
         manifest.packages.insert("pkg1".to_string(), package1);
+
+        // Second package
+        let mut exe2 = HashMap::new();
+        exe2.insert("bin/cmd2".to_string(), "cmd2".to_string());
 
         let package2 = InstalledPackage {
             repo_name: "pkg2".to_string(),
@@ -337,12 +361,12 @@ mod tests {
             platform: "linux-x86_64".to_string(),
             installed_at: chrono::Utc::now(),
             install_path: "/path/to/pkg2".to_string(),
-            executables: HashMap::new(),
+            executables: exe2,
             source: crate::core::manifest::PackageSource::Bucket {
                 name: "test".to_string(),
             },
             description: String::new(),
-            command_names: vec!["cmd2".to_string()],
+            command_names: vec![],
             command_name: None,
             asset_name: "pkg2.tar.gz".to_string(),
             parent_package: None,
