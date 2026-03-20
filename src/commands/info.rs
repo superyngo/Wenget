@@ -157,7 +157,7 @@ fn display_package_info(
         // Collect all command names from all variants
         let all_commands: Vec<String> = all_variants
             .iter()
-            .flat_map(|(_, p)| p.command_names.clone())
+            .flat_map(|(_, p)| p.get_command_names().into_iter().map(String::from))
             .collect();
 
         println!(
@@ -179,7 +179,7 @@ fn display_package_info(
                 "└─".dimmed(),
                 variant_label.green(),
                 inst_pkg.version,
-                inst_pkg.command_names.join(", ").yellow()
+                inst_pkg.get_command_names().join(", ").yellow()
             );
         }
 
@@ -216,7 +216,7 @@ fn display_package_info(
             let install_status = if let Some(inst_pkg) = installed.get_package(&installed_key) {
                 // Only show [Installed] if the platform matches
                 if inst_pkg.platform == *platform {
-                    format!(" [Installed: {}]", inst_pkg.command_names.join(", "))
+                    format!(" [Installed: {}]", inst_pkg.get_command_names().join(", "))
                         .green()
                         .to_string()
                 } else {
@@ -251,7 +251,7 @@ fn display_package_info(
                 let install_status = if let Some(inst_pkg) = installed.get_package(&installed_key) {
                     // Only show [Installed] if the platform matches
                     if inst_pkg.platform == *platform {
-                        format!(" [Installed: {}]", inst_pkg.command_names.join(", "))
+                        format!(" [Installed: {}]", inst_pkg.get_command_names().join(", "))
                             .green()
                             .to_string()
                     } else {
@@ -328,7 +328,7 @@ fn display_script_info(
         println!(
             "{:<16} {}",
             "Command name:".bold(),
-            inst_pkg.command_names.join(", ").yellow()
+            inst_pkg.get_command_names().join(", ").yellow()
         );
         println!("{:<16} {}", "Installed at:".bold(), inst_pkg.installed_at);
         println!("{:<16} {}", "Install path:".bold(), inst_pkg.install_path);
@@ -433,7 +433,10 @@ fn display_installed_only_info(name: &str, inst_pkg: &InstalledPackage) -> Resul
     println!(
         "{:<16} {}",
         "Command name:".bold(),
-        inst_pkg.command_name.as_deref().unwrap_or("-").yellow()
+        {
+            let names = inst_pkg.get_command_names();
+            if names.is_empty() { "-".to_string() } else { names.join(", ") }
+        }.yellow()
     );
     println!("{:<16} {}", "Installed at:".bold(), inst_pkg.installed_at);
     println!("{:<16} {}", "Platform:".bold(), inst_pkg.platform);
@@ -450,12 +453,12 @@ fn display_installed_only_info(name: &str, inst_pkg: &InstalledPackage) -> Resul
         for (exe_path, cmd_name) in &inst_pkg.executables {
             println!("  {} {} → {}", "•".cyan(), exe_path.dimmed(), cmd_name);
         }
-    } else if !inst_pkg.command_names.is_empty() {
+    } else if !inst_pkg.get_command_names().is_empty() {
         println!();
         println!(
             "{} {}",
             "Command names:".bold(),
-            inst_pkg.command_names.join(", ").cyan()
+            inst_pkg.get_command_names().join(", ").cyan()
         );
     }
 

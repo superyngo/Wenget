@@ -268,11 +268,19 @@ fn delete_package(
     ))?;
 
     // Remove symlinks/shims for all command names
-    for command_name in &pkg.command_names {
+    for command_name in pkg.executables.values() {
         let bin_path = paths.bin_shim_path(command_name);
         if bin_path.exists() {
             fs::remove_file(&bin_path)
                 .with_context(|| format!("Failed to remove shim/symlink for '{}'", command_name))?;
+        }
+    }
+
+    // Also remove symlinks for legacy command_names (pre-migration packages)
+    for command_name in &pkg.command_names {
+        let bin_path = paths.bin_shim_path(command_name);
+        if bin_path.exists() {
+            fs::remove_file(&bin_path).ok();
         }
     }
 

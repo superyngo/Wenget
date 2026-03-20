@@ -139,10 +139,14 @@ pub fn install_local_file(
         platform: "local".to_string(),
         installed_at: Utc::now(),
         install_path: app_dir.to_string_lossy().to_string(),
-        executables: HashMap::new(),
+        executables: {
+            let mut m = HashMap::new();
+            m.insert(exe_relative.to_string(), command_name);
+            m
+        },
         source,
         description: format!("Local installation of {}", filename),
-        command_names: vec![command_name],
+        command_names: vec![],
         command_name: None,
         asset_name: filename.to_string(),
         parent_package: None,
