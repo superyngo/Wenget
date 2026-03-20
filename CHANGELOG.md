@@ -19,6 +19,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Upgrade success messages**: Updated to use `latest_version` for clearer messaging
 - **Added design documentation**: New design docs included for architectural reference
 
+## [3.2.0] - 2026-03-20
+
+### Added
+
+- **Command name preservation during update**: Update command with `-y` flag now preserves custom command names instead of reverting to defaults
+- **Migration to executables HashMap**: Added automatic migration from `command_names` to `executables` HashMap in `installed.json`
+
+### Changed
+
+- **Executables HashMap migration**: Complete refactoring of command name storage system
+  - Renamed command to use `executables` HashMap in all files
+  - Update list command to use `get_command_names()` helper
+  - Update add command to use `executables` map
+  - Replace `files/command_names` with `executables` HashMap structure
+
+### Fixed
+
+- **Double deletion prevention**: Fixed bug where packages could be deleted twice when specifying variant explicitly
+- **Clippy warning**: Fixed clippy warning in update cleanup loop
+
+### Docs
+
+- **Delete fix design documentation**: Added implementation plan and design spec for delete command fix and `installed.json` redesign
+
 ## [Unreleased]
 
 ## [3.0.4] - 2026-03-09
@@ -1005,3 +1029,4 @@ Wenget is now production-ready for managing GitHub binaries across platforms.
 [0.2.0]: https://github.com/superyngo/wenget/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/superyngo/wenget/releases/tag/v0.1.0
 [3.1.0]: https://github.com/superyngo/wenget/compare/v3.0.4...v3.1.0
+[3.2.0]: https://github.com/superyngo/wenget/compare/v3.1.0...v3.2.0
