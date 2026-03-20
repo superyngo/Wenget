@@ -9,6 +9,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::OnceLock;
 
 /// Cached interpreter availability results
@@ -651,7 +652,85 @@ impl InstalledManifest {
                 // Update install_path in metadata
                 package.install_path = package.install_path.replace("::", "-");
             }
+
+            // Migrate command_names to executables map
+            if package.executables.is_empty() && !package.command_names.is_empty() {
+                let install_path = Path::new(&package.install_path);
+
+                if install_path.exists() {
+                    // Scan filesystem to match command_names to actual executable files
+                    let mut remaining_names: Vec<String> = package.command_names.clone();
+
+                    // Walk directory to find executables
+                    if let Ok(entries) = Self::walk_dir_recursive(install_path) {
+                        for entry_path in &entries {
+                            if remaining_names.is_empty() {
+                                break;
+                            }
+
+                            let rel_path = entry_path
+                                .strip_prefix(install_path)
+                                .unwrap_or(entry_path)
+                                .to_string_lossy()
+                                .to_string();
+
+                            let filename = entry_path
+                                .file_name()
+                                .and_then(|s| s.to_str())
+                                .unwrap_or("");
+
+                            // Strip known extensions for matching
+                            let name_no_ext = filename
+                                .trim_end_matches(".exe")
+                                .trim_end_matches(".sh")
+                                .trim_end_matches(".ps1")
+                                .trim_end_matches(".bat")
+                                .trim_end_matches(".cmd")
+                                .trim_end_matches(".py");
+
+                            // Try to match against remaining command names
+                            if let Some(pos) = remaining_names.iter().position(|n| {
+                                n == filename || n == name_no_ext
+                            }) {
+                                let cmd_name = remaining_names.remove(pos);
+                                package.executables.insert(rel_path, cmd_name);
+                            }
+                        }
+                    }
+
+                    // Fallback for unmatched names
+                    for name in remaining_names {
+                        package.executables.insert(name.clone(), name);
+                    }
+                } else {
+                    // Install path doesn't exist — use command_name as both key and value
+                    for name in &package.command_names {
+                        package.executables.insert(name.clone(), name.clone());
+                    }
+                }
+
+                // Clear legacy fields
+                package.command_names.clear();
+                package.command_name = None;
+            }
         }
+    }
+
+    /// Recursively walk a directory and return all file paths
+    fn walk_dir_recursive(dir: &Path) -> Result<Vec<std::path::PathBuf>, std::io::Error> {
+        let mut files = Vec::new();
+        if dir.is_dir() {
+            for entry in std::fs::read_dir(dir)? {
+                let entry = entry?;
+                let path = entry.path();
+                if path.is_dir() {
+                    files.extend(Self::walk_dir_recursive(&path)?);
+                } else {
+                    files.push(path);
+                }
+            }
+        }
+        Ok(files)
     }
 }
 
@@ -996,5 +1075,80 @@ mod tests {
         assert!(!json.contains("\"files\""));
         assert!(json.contains("\"executables\""));
         assert!(!json.contains("\"command_names\""));
+    }
+
+    #[test]
+    fn test_migrate_command_names_to_executables() {
+        use tempfile::TempDir;
+        use std::fs;
+        #[cfg(unix)]
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = TempDir::new().unwrap();
+        let app_dir = tmp.path().join("apps").join("myapp");
+        fs::create_dir_all(app_dir.join("bin")).unwrap();
+
+        // Create a fake executable
+        fs::write(app_dir.join("bin").join("myapp"), "#!/bin/sh\necho hi").unwrap();
+        #[cfg(unix)]
+        fs::set_permissions(
+            app_dir.join("bin").join("myapp"),
+            fs::Permissions::from_mode(0o755),
+        ).unwrap();
+
+        let json = format!(r#"{{
+            "packages": {{
+                "myapp": {{
+                    "repo_name": "myapp",
+                    "version": "1.0.0",
+                    "platform": "linux-x86_64",
+                    "installed_at": "2025-01-01T00:00:00Z",
+                    "install_path": "{}",
+                    "files": ["bin/myapp", "README.md"],
+                    "source": {{ "type": "bucket", "name": "main" }},
+                    "description": "Test",
+                    "command_names": ["myapp"],
+                    "asset_name": "myapp.tar.gz"
+                }}
+            }}
+        }}"#, app_dir.display());
+
+        let mut manifest: InstalledManifest = serde_json::from_str(&json).unwrap();
+        manifest.migrate();
+
+        let pkg = manifest.get_package("myapp").unwrap();
+        // executables should now have the mapping
+        assert!(!pkg.executables.is_empty());
+        assert_eq!(pkg.executables.get("bin/myapp"), Some(&"myapp".to_string()));
+        // command_names should be cleared after migration
+        assert!(pkg.command_names.is_empty());
+    }
+
+    #[test]
+    fn test_migrate_fallback_when_install_path_missing() {
+        let json = r#"{
+            "packages": {
+                "gone": {
+                    "repo_name": "gone",
+                    "version": "1.0.0",
+                    "platform": "linux-x86_64",
+                    "installed_at": "2025-01-01T00:00:00Z",
+                    "install_path": "/nonexistent/path/that/does/not/exist",
+                    "files": [],
+                    "source": { "type": "bucket", "name": "main" },
+                    "description": "Test",
+                    "command_names": ["gone-cmd"],
+                    "asset_name": "gone.tar.gz"
+                }
+            }
+        }"#;
+
+        let mut manifest: InstalledManifest = serde_json::from_str(json).unwrap();
+        manifest.migrate();
+
+        let pkg = manifest.get_package("gone").unwrap();
+        // Fallback: command_name used as both key and value
+        assert_eq!(pkg.executables.get("gone-cmd"), Some(&"gone-cmd".to_string()));
+        assert!(pkg.command_names.is_empty());
     }
 }
