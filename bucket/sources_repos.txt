@@ -30,7 +30,9 @@ https://github.com/oven-sh/bun
 https://github.com/containers/podman
 https://github.com/unhappychoice/gitlogue
 https://github.com/Schniz/fnm
-
+https://github.com/jdx/mise
+https://github.com/twpayne/chezmoi
+https://github.com/loft-sh/devpod
 
 # === Remote ===
 https://github.com/Genymobile/scrcpy
@@ -72,6 +74,7 @@ https://github.com/Siriusmart/youtube-tui
 https://github.com/anomalyco/opencode
 https://github.com/github/copilot-cli
 https://github.com/sipeed/picoclaw
+https://github.com/badlogic/pi-mono/
 
 # === Archived ===
 # https://github.com/ClementTsang/bottom
