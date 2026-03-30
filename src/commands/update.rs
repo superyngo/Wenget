@@ -8,6 +8,30 @@ use crate::providers::GitHubProvider;
 use anyhow::Result;
 use colored::Colorize;
 
+/// Compare two dot-separated version strings.
+/// Returns true if `new` is strictly newer than `old`.
+fn is_newer_version(old: &str, new: &str) -> bool {
+    let parse_parts = |v: &str| {
+        v.trim_start_matches('v')
+            .split('.')
+            .filter_map(|s| s.parse::<u64>().ok())
+            .collect::<Vec<_>>()
+    };
+    let old_parts = parse_parts(old);
+    let new_parts = parse_parts(new);
+    for i in 0..old_parts.len().max(new_parts.len()) {
+        let a = old_parts.get(i).unwrap_or(&0);
+        let b = new_parts.get(i).unwrap_or(&0);
+        if b > a {
+            return true;
+        }
+        if b < a {
+            return false;
+        }
+    }
+    false
+}
+
 /// Upgrade installed packages
 pub fn run(names: Vec<String>, yes: bool) -> Result<()> {
     // Check for wenget updates first
@@ -185,7 +209,23 @@ fn find_upgradeable(
                     .find(|p| p.package.name == repo_name)
                 {
                     if let Some(cache_version) = &cached_pkg.package.version {
-                        if inst_pkg.version != *cache_version {
+                        let should_upgrade = if inst_pkg.version == "local" {
+                            // Locally installed — ask user, default to overwrite
+                            eprintln!(
+                                "{} {} is locally installed, cache has version {} available",
+                                "Info:".cyan(),
+                                repo_name,
+                                cache_version
+                            );
+                            crate::utils::prompt::confirm(&format!(
+                                "  Overwrite local {} with cached version {}?",
+                                repo_name, cache_version
+                            ))?
+                        } else {
+                            is_newer_version(&inst_pkg.version, cache_version)
+                        };
+
+                        if should_upgrade {
                             eprintln!(
                                 "{} Using cached version for {}: {} (API unavailable)",
                                 "Info:".cyan(),
@@ -528,4 +568,32 @@ fn replace_exe_unix(current_exe: &std::path::PathBuf, new_exe: &std::path::PathB
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_newer_version() {
+        assert!(is_newer_version("1.0.0", "2.0.0"));
+        assert!(is_newer_version("1.73.2", "1.73.3"));
+        assert!(is_newer_version("0.10.12", "0.11.2"));
+        assert!(is_newer_version("0.9.0", "0.14.1"));
+        assert!(is_newer_version("1.0", "1.0.1"));
+        assert!(is_newer_version("1.3.0", "1.3.6"));
+
+        // Not newer — same version
+        assert!(!is_newer_version("1.0.0", "1.0.0"));
+
+        // Not newer — cache is older (the bug case)
+        assert!(!is_newer_version("1.73.3", "1.73.2"));
+        assert!(!is_newer_version("2.61.0", "2.60.0"));
+        assert!(!is_newer_version("0.14.1", "0.9.0"));
+        assert!(!is_newer_version("2.89.0", "2.88.1"));
+
+        // Handles v prefix
+        assert!(is_newer_version("1.0.0", "v2.0.0"));
+        assert!(!is_newer_version("v2.0.0", "1.0.0"));
+    }
 }
