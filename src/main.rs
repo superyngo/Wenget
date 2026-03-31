@@ -83,6 +83,7 @@ fn main() {
             pkg_version,
             variant,
             no_suffix,
+            false,
         ),
 
         Commands::List { all } => commands::run_list(all),

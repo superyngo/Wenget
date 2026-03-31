@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Changed
+
+- **`update -y` now respects previous installation choices**: When updating with `--yes`, binary variant selection and executable candidate selection are automatically matched against `installed.json` instead of selecting all. Command names continue to reuse old names as before.
+- **`update -y` auto-overwrites local packages**: The local package overwrite prompt is now skipped with `--yes`, automatically upgrading locally installed packages when a cached version is available.
+
 ## [3.3.0] - 2026-03-30
 
 ### Fixed

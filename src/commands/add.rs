@@ -27,6 +27,7 @@ use crate::installer::create_shim;
 use crate::installer::create_symlink;
 
 /// Install packages (smart detection: package names from cache or GitHub URLs)
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     names: Vec<String>,
     yes: bool,
@@ -35,6 +36,7 @@ pub fn run(
     version: Option<String>,
     variant_filter: Option<String>,
     no_suffix: bool,
+    update_mode: bool,
 ) -> Result<()> {
     let config = Config::new()?;
     let paths = WenPaths::new()?;
@@ -126,6 +128,7 @@ pub fn run(
             version.as_deref(),
             variant_filter.as_deref(),
             no_suffix,
+            update_mode,
         )?;
     }
 
@@ -745,6 +748,7 @@ fn install_packages(
     custom_version: Option<&str>,
     variant_filter: Option<&str>,
     no_suffix: bool,
+    update_mode: bool,
 ) -> Result<()> {
     // Get current platform
     let current_platform = if let Some(_custom_plat) = custom_platform {
@@ -901,15 +905,17 @@ fn install_packages(
         String,
         ResolvedPackage,
         crate::core::platform::PlatformMatch,
+        Option<String>,
     )> = Vec::new();
     let mut to_update: Vec<(
         String,
         ResolvedPackage,
         crate::core::platform::PlatformMatch,
+        Option<String>,
     )> = Vec::new();
 
     for (original_name, resolved, platform_match) in packages_to_install {
-        let pkg_name = &resolved.package.name;
+        let pkg_name = resolved.package.name.clone();
         let repo = &resolved.package.repo;
 
         // Fetch version (either custom, or latest from API, falling back to cache)
@@ -939,15 +945,12 @@ fn install_packages(
         // Determine which key to check based on input type and variant filter
         let variant_key; // Storage for temporary String if needed
         let check_name: &str = if original_name.contains("::") {
-            // Input like "bun::baseline" - check that specific variant
             original_name.as_str()
         } else if let Some(filter) = variant_filter {
-            // Base name with --variant flag - generate the variant key
-            variant_key = crate::core::manifest::generate_installed_key(pkg_name, Some(filter));
+            variant_key = crate::core::manifest::generate_installed_key(&pkg_name, Some(filter));
             &variant_key
         } else {
-            // Base name without variant - check the base package
-            pkg_name
+            &pkg_name
         };
 
         if installed.is_installed(check_name) {
@@ -964,7 +967,7 @@ fn install_packages(
                 );
                 if !yes && crate::utils::prompt::confirm_no_default("  Reinstall?")? {
                     // User wants to reinstall
-                    to_install.push((original_name.clone(), resolved, platform_match));
+                    to_install.push((original_name.clone(), resolved, platform_match, None));
                 }
                 // If user says no or --yes flag is used, skip reinstallation
             } else {
@@ -983,7 +986,12 @@ fn install_packages(
                         println!("    {} {}", "↳".dimmed(), binary.url.dimmed());
                     }
                 }
-                to_update.push((original_name.clone(), resolved, platform_match));
+                to_update.push((
+                    original_name.clone(),
+                    resolved,
+                    platform_match,
+                    Some(check_name.to_string()),
+                ));
             }
         } else {
             // New installation
@@ -1000,7 +1008,7 @@ fn install_packages(
                     println!("    {} {}", "↳".dimmed(), binary.url.dimmed());
                 }
             }
-            to_install.push((original_name.clone(), resolved, platform_match));
+            to_install.push((original_name.clone(), resolved, platform_match, None));
         }
     }
 
@@ -1063,7 +1071,7 @@ fn install_packages(
     // Collect packages to update in cache (packages fetched from GitHub API)
     let mut packages_to_cache: Vec<(crate::core::Package, PackageSource)> = Vec::new();
 
-    for (original_input_name, resolved, platform_match) in all_packages {
+    for (original_input_name, resolved, platform_match, installed_check_name) in all_packages {
         let pkg_name = &resolved.package.name;
         let repo_url = &resolved.package.repo;
 
@@ -1078,8 +1086,28 @@ fn install_packages(
             None
         };
 
-        // Determine effective variant filter: input-specific variant takes precedence
-        let effective_variant_filter = input_variant.as_deref().or(variant_filter);
+        // Determine effective variant filter: input-specific variant takes precedence,
+        // then global --variant flag, then (in update mode with --yes) the previously installed variant
+        let mut effective_variant_filter = input_variant
+            .as_deref()
+            .or(variant_filter)
+            .map(|s| s.to_string());
+
+        if update_mode && yes && effective_variant_filter.is_none() {
+            if let Some(ref check_name) = installed_check_name {
+                if let Some(inst_pkg) = installed.get_package(check_name) {
+                    if let Some(ref variant) = inst_pkg.variant {
+                        effective_variant_filter = Some(variant.clone());
+                        log::debug!(
+                            "Update mode: auto-selecting variant '{}' for {}",
+                            variant,
+                            check_name
+                        );
+                    }
+                }
+            }
+        }
+        let effective_variant_filter = effective_variant_filter.as_deref();
 
         // Try to fetch package info from GitHub API (includes download links)
         // If API rate limit is hit, fallback to cached package info
@@ -1262,6 +1290,7 @@ fn install_packages(
                 custom_name,
                 yes,
                 no_suffix,
+                update_mode,
             ) {
                 Ok(inst_pkg) => {
                     installed.upsert_package(installed_key.clone(), inst_pkg);
@@ -1390,10 +1419,11 @@ fn install_package(
     version: &str,
     source: &PackageSource,
     installed_key: &str,
-    _parent_package: Option<&str>, // Deprecated parameter, kept for compatibility
+    _parent_package: Option<&str>,
     custom_name: Option<&str>,
     yes: bool,
     no_suffix: bool,
+    update_mode: bool,
 ) -> Result<InstalledPackage> {
     // Log if using fallback
     if let Some(fallback_type) = &platform_match.fallback_type {
@@ -1452,6 +1482,47 @@ fn install_package(
             selected.path, selected.reason
         );
         vec![candidates[0].path.clone()]
+    } else if update_mode && yes {
+        // Update mode with --yes: only select previously installed executables
+        let old_exes = config
+            .get_or_create_installed()
+            .ok()
+            .and_then(|m| m.get_package(installed_key).map(|p| p.executables.clone()));
+
+        if let Some(ref old) = old_exes {
+            let old_paths: std::collections::HashSet<_> = old.keys().cloned().collect();
+            let matched: Vec<_> = candidates
+                .iter()
+                .filter(|c| old_paths.contains(&c.path) || c.score > 0)
+                .collect();
+
+            if matched.is_empty() {
+                println!(
+                    "  {} No matching executables found for update, skipping {}",
+                    "⚠".yellow(),
+                    installed_key
+                );
+                anyhow::bail!(
+                    "No matching executables found for update of {}",
+                    installed_key
+                );
+            }
+
+            let selected: Vec<String> = matched.iter().map(|c| c.path.clone()).collect();
+            println!("  Found {} executables (update mode):", selected.len());
+            for c in &matched {
+                println!("    {} ({})", c.path, c.reason);
+            }
+            selected
+        } else {
+            // No old executables — fall through to normal auto-select
+            let auto_select: Vec<_> = candidates.iter().filter(|c| c.score > 0).collect();
+            println!("  Found {} executables:", auto_select.len());
+            for c in &auto_select {
+                println!("    {} ({})", c.path, c.reason);
+            }
+            auto_select.into_iter().map(|c| c.path.clone()).collect()
+        }
     } else {
         // Multiple candidates - select all with valid scores (exec permission or name match)
         // On Unix, exec permission gives +35 score, name match gives +50

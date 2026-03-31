@@ -58,7 +58,7 @@ pub fn run(names: Vec<String>, yes: bool) -> Result<()> {
     // Determine which packages to upgrade
     let to_upgrade: Vec<String> = if names.is_empty() || (names.len() == 1 && names[0] == "all") {
         // List upgradeable packages
-        let upgradeable = find_upgradeable(&installed, &github, &cache)?;
+        let upgradeable = find_upgradeable(&installed, &github, &cache, yes)?;
 
         if upgradeable.is_empty() {
             println!("{}", "All packages are up to date".green());
@@ -99,7 +99,7 @@ pub fn run(names: Vec<String>, yes: bool) -> Result<()> {
     }
 
     // Use add command to upgrade (reinstall)
-    add::run(expanded, yes, None, None, None, None, false)
+    add::run(expanded, yes, None, None, None, None, false, true)
 }
 
 /// Find upgradeable packages by checking their sources
@@ -107,6 +107,7 @@ fn find_upgradeable(
     installed: &crate::core::InstalledManifest,
     github: &GitHubProvider,
     cache: &crate::cache::ManifestCache,
+    yes: bool,
 ) -> Result<Vec<(String, String, String)>> {
     let mut upgradeable = Vec::new();
 
@@ -210,17 +211,20 @@ fn find_upgradeable(
                 {
                     if let Some(cache_version) = &cached_pkg.package.version {
                         let should_upgrade = if inst_pkg.version == "local" {
-                            // Locally installed — ask user, default to overwrite
-                            eprintln!(
-                                "{} {} is locally installed, cache has version {} available",
-                                "Info:".cyan(),
-                                repo_name,
-                                cache_version
-                            );
-                            crate::utils::prompt::confirm(&format!(
-                                "  Overwrite local {} with cached version {}?",
-                                repo_name, cache_version
-                            ))?
+                            if yes {
+                                true
+                            } else {
+                                eprintln!(
+                                    "{} {} is locally installed, cache has version {} available",
+                                    "Info:".cyan(),
+                                    repo_name,
+                                    cache_version
+                                );
+                                crate::utils::prompt::confirm(&format!(
+                                    "  Overwrite local {} with cached version {}?",
+                                    repo_name, cache_version
+                                ))?
+                            }
                         } else {
                             is_newer_version(&inst_pkg.version, cache_version)
                         };
