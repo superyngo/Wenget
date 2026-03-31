@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [3.3.1] - 2026-03-31
+
 ### Changed
 
 - **`update -y` now respects previous installation choices**: When updating with `--yes`, binary variant selection and executable candidate selection are automatically matched against `installed.json` instead of selecting all. Command names continue to reuse old names as before.
@@ -1043,3 +1045,5 @@ Wenget is now production-ready for managing GitHub binaries across platforms.
 [0.1.0]: https://github.com/superyngo/wenget/releases/tag/v0.1.0
 [3.1.0]: https://github.com/superyngo/wenget/compare/v3.0.4...v3.1.0
 [3.2.0]: https://github.com/superyngo/wenget/compare/v3.1.0...v3.2.0
+[3.3.0]: https://github.com/superyngo/wenget/compare/v3.2.0...v3.3.0
+[3.3.1]: https://github.com/superyngo/wenget/compare/v3.3.0...v3.3.1
