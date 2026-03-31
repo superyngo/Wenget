@@ -76,7 +76,8 @@ https://github.com/github/copilot-cli
 https://github.com/charmbracelet/crush
 https://github.com/badlogic/pi-mono
 https://github.com/sipeed/picoclaw
-https://github.com/badlogic/pi-mono/
+https://github.com/badlogic/pi-mono
+https://github.com/openai/codex
 
 
 # === Archived ===
