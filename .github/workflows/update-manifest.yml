@@ -8,13 +8,6 @@ on:
   # Allow manual trigger
   workflow_dispatch:
 
-  # Trigger when source files or binary change
-  push:
-    paths:
-      - 'bucket/sources_repos.txt'
-      - 'bucket/sources_scripts.txt'
-      # - 'bucket/wenget'
-
 jobs:
   update-manifest:
     runs-on: ubuntu-latest
