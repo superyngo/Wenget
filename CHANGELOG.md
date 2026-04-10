@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [3.3.2] - 2026-04-10
+
+### Fixed
+
+- **`update` command now follows `installed.json`**: Variant selection and executable candidate selection are automatically matched against installed records instead of selecting all candidates
+
+### Docs
+
+- Added design spec for update command behavior redesign
+
 ## [3.3.1] - 2026-03-31
 
 ### Changed
@@ -1046,4 +1056,5 @@ Wenget is now production-ready for managing GitHub binaries across platforms.
 [3.1.0]: https://github.com/superyngo/wenget/compare/v3.0.4...v3.1.0
 [3.2.0]: https://github.com/superyngo/wenget/compare/v3.1.0...v3.2.0
 [3.3.0]: https://github.com/superyngo/wenget/compare/v3.2.0...v3.3.0
+[3.3.2]: https://github.com/superyngo/wenget/compare/v3.3.1...v3.3.2
 [3.3.1]: https://github.com/superyngo/wenget/compare/v3.3.0...v3.3.1
