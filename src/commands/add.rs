@@ -682,11 +682,6 @@ fn install_from_urls(
     Ok(())
 }
 
-/// Select packages from a platform that has multiple binaries
-///
-/// If only one binary: auto-select
-/// If multiple binaries and --yes: select all
-/// Otherwise: show MultiSelect dialog
 /// Print available variant names for a package's binaries
 fn print_available_variants(binaries: &[crate::core::manifest::PlatformBinary], pkg_name: &str) {
     for binary in binaries {
@@ -737,10 +732,17 @@ fn normalize_asset_for_matching(asset_name: &str) -> String {
         .to_lowercase()
 }
 
+/// Select packages from a platform that has multiple binaries.
+///
+/// If only one binary: auto-select.
+/// In update mode with multiple binaries (asset-name matching failed): pick first with warning.
+/// In add mode with --yes: select all.
+/// Otherwise: show MultiSelect dialog.
 fn select_packages_for_platform(
     pkg_name: &str,
     binaries: &[crate::core::manifest::PlatformBinary],
     yes: bool,
+    update_mode: bool,
 ) -> Result<Vec<usize>> {
     if binaries.len() == 1 {
         // Single package: auto-select
@@ -748,7 +750,19 @@ fn select_packages_for_platform(
     }
 
     if yes {
-        // --yes flag: select all
+        if update_mode {
+            // Asset-name matching already ran before this call. If we're here with multiple
+            // binaries it means the match failed (package restructured its releases).
+            // Best-effort: select the first binary rather than installing all variants.
+            println!(
+                "  {} Could not determine exact binary for {}, selecting: {}",
+                "⚠".yellow(),
+                pkg_name,
+                binaries[0].asset_name
+            );
+            return Ok(vec![0]);
+        }
+        // Add mode with --yes: select all
         println!(
             "  {} Found {} packages for {}, selecting all (--yes)",
             "ℹ".cyan(),
@@ -1242,58 +1256,92 @@ fn install_packages(
             }
         };
 
-        // Apply variant filter if specified
-        let (filtered_binaries, _original_indices): (Vec<_>, Vec<_>) =
-            if let Some(filter) = effective_variant_filter {
-                // Named variant: filter by variant name
-                binaries
+        // Apply variant filter / asset-name matching to narrow the binary candidates.
+        //
+        // In update mode: try asset-name template matching FIRST (most reliable).
+        //   - This handles stale variant strings stored by old code (e.g. "(default)")
+        //   - And cases where extract_variant_from_asset returns false positives (e.g. "64")
+        //   - If asset-name matching succeeds, use it regardless of effective_variant_filter.
+        //   - If it fails, fall back to named variant filter.
+        // In add mode: use named variant filter, or return all binaries.
+        let (filtered_binaries, _original_indices): (Vec<_>, Vec<_>) = if update_mode {
+            // Compute asset-name template from the previously installed package.
+            let stored_template = installed_check_name
+                .as_ref()
+                .and_then(|k| installed.get_package(k))
+                .map(|p| normalize_asset_for_matching(&p.asset_name));
+
+            if let Some(template) = stored_template {
+                let matched: Vec<_> = binaries
                     .iter()
                     .enumerate()
                     .filter(|(_, binary)| {
-                        let variant = crate::core::manifest::extract_variant_from_asset(
-                            &binary.asset_name,
-                            pkg_name,
-                        );
-                        variant.as_deref() == Some(filter)
+                        normalize_asset_for_matching(&binary.asset_name) == template
                     })
                     .map(|(idx, binary)| (binary.clone(), idx))
-                    .unzip()
-            } else if update_mode {
-                // Update mode with no named variant: match by asset_name template.
-                // This avoids relying on extract_variant_from_asset to detect "no variant".
-                let stored_template = installed_check_name
-                    .as_ref()
-                    .and_then(|k| installed.get_package(k))
-                    .map(|p| normalize_asset_for_matching(&p.asset_name));
+                    .collect();
 
-                if let Some(template) = stored_template {
-                    let matched: Vec<_> = binaries
+                if !matched.is_empty() {
+                    // Exact asset-name match found — use it directly.
+                    matched.into_iter().unzip()
+                } else if let Some(filter) = effective_variant_filter {
+                    // Asset-name match failed (package renamed its assets?): fall back to
+                    // named variant filter as a secondary attempt.
+                    binaries
                         .iter()
                         .enumerate()
                         .filter(|(_, binary)| {
-                            normalize_asset_for_matching(&binary.asset_name) == template
+                            let variant = crate::core::manifest::extract_variant_from_asset(
+                                &binary.asset_name,
+                                pkg_name,
+                            );
+                            variant.as_deref() == Some(filter)
                         })
                         .map(|(idx, binary)| (binary.clone(), idx))
-                        .collect();
-
-                    if !matched.is_empty() {
-                        matched.into_iter().unzip()
-                    } else {
-                        // Template didn't match (package renamed assets?): pick first binary
-                        log::warn!(
-                        "Asset template '{}' not matched in new release for {}, using first binary",
-                        template,
-                        pkg_name
-                    );
-                        vec![(binaries[0].clone(), 0usize)].into_iter().unzip()
-                    }
+                        .unzip()
                 } else {
-                    // No stored asset_name: pick first binary
-                    vec![(binaries[0].clone(), 0usize)].into_iter().unzip()
+                    // Neither match succeeded: return all binaries and let
+                    // select_packages_for_platform pick the best one with a warning.
+                    (binaries.clone(), (0..binaries.len()).collect())
                 }
             } else {
-                (binaries.clone(), (0..binaries.len()).collect())
-            };
+                // No stored asset_name (package not in installed.json): fall back to
+                // named variant filter or return all binaries.
+                if let Some(filter) = effective_variant_filter {
+                    binaries
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, binary)| {
+                            let variant = crate::core::manifest::extract_variant_from_asset(
+                                &binary.asset_name,
+                                pkg_name,
+                            );
+                            variant.as_deref() == Some(filter)
+                        })
+                        .map(|(idx, binary)| (binary.clone(), idx))
+                        .unzip()
+                } else {
+                    (binaries.clone(), (0..binaries.len()).collect())
+                }
+            }
+        } else if let Some(filter) = effective_variant_filter {
+            // Normal add mode with named variant filter.
+            binaries
+                .iter()
+                .enumerate()
+                .filter(|(_, binary)| {
+                    let variant = crate::core::manifest::extract_variant_from_asset(
+                        &binary.asset_name,
+                        pkg_name,
+                    );
+                    variant.as_deref() == Some(filter)
+                })
+                .map(|(idx, binary)| (binary.clone(), idx))
+                .unzip()
+        } else {
+            // Normal add mode, no filter: return all binaries.
+            (binaries.clone(), (0..binaries.len()).collect())
+        };
 
         // Check if any binaries remain after filtering
         if filtered_binaries.is_empty() {
@@ -1334,7 +1382,8 @@ fn install_packages(
         }
 
         // Select which packages to install (single, all, or user selection)
-        let selected_indices = match select_packages_for_platform(pkg_name, &filtered_binaries, yes)
+        let selected_indices =
+            match select_packages_for_platform(pkg_name, &filtered_binaries, yes, update_mode)
         {
             Ok(indices) => indices,
             Err(e) => {
