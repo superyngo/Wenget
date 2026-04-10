@@ -26,6 +26,9 @@ use crate::installer::create_shim;
 #[cfg(unix)]
 use crate::installer::create_symlink;
 
+/// Sentinel variant filter value representing the base (no-variant) binary.
+const DEFAULT_VARIANT_SENTINEL: &str = "__default__";
+
 /// Install packages (smart detection: package names from cache or GitHub URLs)
 #[allow(clippy::too_many_arguments)]
 pub fn run(
@@ -687,6 +690,19 @@ fn install_from_urls(
 /// If only one binary: auto-select
 /// If multiple binaries and --yes: select all
 /// Otherwise: show MultiSelect dialog
+/// Print available variant names for a package's binaries
+fn print_available_variants(binaries: &[crate::core::manifest::PlatformBinary], pkg_name: &str) {
+    for binary in binaries {
+        let variant =
+            crate::core::manifest::extract_variant_from_asset(&binary.asset_name, pkg_name);
+        if let Some(v) = variant {
+            println!("    - {}", v);
+        } else {
+            println!("    - (default)");
+        }
+    }
+}
+
 fn select_packages_for_platform(
     pkg_name: &str,
     binaries: &[crate::core::manifest::PlatformBinary],
@@ -995,6 +1011,15 @@ fn install_packages(
             }
         } else {
             // New installation
+            if update_mode {
+                // Update mode: don't install new packages
+                println!(
+                    "  {} {} is not installed, skipping (use 'wenget add' to install new packages)",
+                    "⚠".yellow(),
+                    pkg_name
+                );
+                continue;
+            }
             println!(
                 "  {} {} v{} {}",
                 "•".green(),
@@ -1087,13 +1112,13 @@ fn install_packages(
         };
 
         // Determine effective variant filter: input-specific variant takes precedence,
-        // then global --variant flag, then (in update mode with --yes) the previously installed variant
+        // then global --variant flag, then (in update mode) the previously installed variant
         let mut effective_variant_filter = input_variant
             .as_deref()
             .or(variant_filter)
             .map(|s| s.to_string());
 
-        if update_mode && yes && effective_variant_filter.is_none() {
+        if update_mode && effective_variant_filter.is_none() {
             if let Some(ref check_name) = installed_check_name {
                 if let Some(inst_pkg) = installed.get_package(check_name) {
                     if let Some(ref variant) = inst_pkg.variant {
@@ -1101,6 +1126,13 @@ fn install_packages(
                         log::debug!(
                             "Update mode: auto-selecting variant '{}' for {}",
                             variant,
+                            check_name
+                        );
+                    } else {
+                        // Base variant (no variant suffix): filter to default binary only
+                        effective_variant_filter = Some(DEFAULT_VARIANT_SENTINEL.to_string());
+                        log::debug!(
+                            "Update mode: auto-selecting default (base) variant for {}",
                             check_name
                         );
                     }
@@ -1185,18 +1217,34 @@ fn install_packages(
         // Apply variant filter if specified
         let (filtered_binaries, _original_indices): (Vec<_>, Vec<_>) =
             if let Some(filter) = effective_variant_filter {
-                binaries
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, binary)| {
-                        let variant = crate::core::manifest::extract_variant_from_asset(
-                            &binary.asset_name,
-                            pkg_name,
-                        );
-                        variant.as_deref() == Some(filter)
-                    })
-                    .map(|(idx, binary)| (binary.clone(), idx))
-                    .unzip()
+                if filter == DEFAULT_VARIANT_SENTINEL {
+                    // Select only binaries with NO variant (the default/base binary)
+                    binaries
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, binary)| {
+                            let variant = crate::core::manifest::extract_variant_from_asset(
+                                &binary.asset_name,
+                                pkg_name,
+                            );
+                            variant.is_none()
+                        })
+                        .map(|(idx, binary)| (binary.clone(), idx))
+                        .unzip()
+                } else {
+                    binaries
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, binary)| {
+                            let variant = crate::core::manifest::extract_variant_from_asset(
+                                &binary.asset_name,
+                                pkg_name,
+                            );
+                            variant.as_deref() == Some(filter)
+                        })
+                        .map(|(idx, binary)| (binary.clone(), idx))
+                        .unzip()
+                }
             } else {
                 (binaries.clone(), (0..binaries.len()).collect())
             };
@@ -1204,21 +1252,43 @@ fn install_packages(
         // Check if any binaries remain after filtering
         if filtered_binaries.is_empty() {
             if let Some(filter) = effective_variant_filter {
-                println!(
-                    "  {} No binaries found for variant '{}'. Available variants:",
-                    "✗".red(),
+                let display_filter = if filter == DEFAULT_VARIANT_SENTINEL {
+                    "(default)"
+                } else {
                     filter
-                );
-                for binary in binaries {
-                    let variant = crate::core::manifest::extract_variant_from_asset(
-                        &binary.asset_name,
-                        pkg_name,
-                    );
-                    if let Some(v) = variant {
-                        println!("    - {}", v);
+                };
+
+                if update_mode {
+                    // In update mode, variant unavailable is an edge case
+                    if yes {
+                        // Auto-skip when -y
+                        println!(
+                            "  {} Variant '{}' no longer available for {}, skipping",
+                            "⚠".yellow(),
+                            display_filter,
+                            pkg_name
+                        );
                     } else {
-                        println!("    - (default)");
+                        // Prompt user
+                        println!(
+                            "  {} Variant '{}' no longer available for {}. Available variants:",
+                            "⚠".yellow(),
+                            display_filter,
+                            pkg_name
+                        );
+                        print_available_variants(binaries, pkg_name);
+                        println!(
+                            "  Skipping this variant. Use 'wenget add {}::VARIANT' to switch.",
+                            pkg_name
+                        );
                     }
+                } else {
+                    println!(
+                        "  {} No binaries found for variant '{}'. Available variants:",
+                        "✗".red(),
+                        display_filter
+                    );
+                    print_available_variants(binaries, pkg_name);
                 }
             }
             fail_count += 1;
@@ -1482,8 +1552,8 @@ fn install_package(
             selected.path, selected.reason
         );
         vec![candidates[0].path.clone()]
-    } else if update_mode && yes {
-        // Update mode with --yes: only select previously installed executables
+    } else if update_mode {
+        // Update mode: prefer previously installed executables, prompt for new ones
         let old_exes = config
             .get_or_create_installed()
             .ok()
@@ -1491,12 +1561,21 @@ fn install_package(
 
         if let Some(ref old) = old_exes {
             let old_paths: std::collections::HashSet<_> = old.keys().cloned().collect();
-            let matched: Vec<_> = candidates
-                .iter()
-                .filter(|c| old_paths.contains(&c.path) || c.score > 0)
-                .collect();
 
-            if matched.is_empty() {
+            // Separate: previously installed vs new candidates
+            let mut kept: Vec<&crate::installer::extractor::ExecutableCandidate> = Vec::new();
+            let mut new_candidates: Vec<&crate::installer::extractor::ExecutableCandidate> =
+                Vec::new();
+
+            for c in &candidates {
+                if old_paths.contains(&c.path) {
+                    kept.push(c);
+                } else if c.score > 0 {
+                    new_candidates.push(c);
+                }
+            }
+
+            if kept.is_empty() && new_candidates.is_empty() {
                 println!(
                     "  {} No matching executables found for update, skipping {}",
                     "⚠".yellow(),
@@ -1508,10 +1587,39 @@ fn install_package(
                 );
             }
 
-            let selected: Vec<String> = matched.iter().map(|c| c.path.clone()).collect();
+            let mut selected: Vec<String> = kept.iter().map(|c| c.path.clone()).collect();
+
+            // Handle new executables not in old install
+            if !new_candidates.is_empty() {
+                if yes {
+                    // Auto-include new executables
+                    for c in &new_candidates {
+                        selected.push(c.path.clone());
+                    }
+                } else {
+                    // Prompt for each new executable
+                    for c in &new_candidates {
+                        println!(
+                            "  {} New executable '{}' found ({})",
+                            "ℹ".cyan(),
+                            c.path,
+                            c.reason
+                        );
+                        if crate::utils::prompt::confirm("    Install this executable?")? {
+                            selected.push(c.path.clone());
+                        }
+                    }
+                }
+            }
+
             println!("  Found {} executables (update mode):", selected.len());
-            for c in &matched {
-                println!("    {} ({})", c.path, c.reason);
+            for s in &selected {
+                let reason = candidates
+                    .iter()
+                    .find(|c| c.path == *s)
+                    .map(|c| c.reason.as_str())
+                    .unwrap_or("matched");
+                println!("    {} ({})", s, reason);
             }
             selected
         } else {
@@ -1567,7 +1675,7 @@ fn install_package(
     };
 
     // Install all selected executables
-    let mut executables = HashMap::new();
+    let mut executables: HashMap<String, String> = HashMap::new();
 
     // Extract repo_name and variant from installed_key for resolve_command_name
     // installed_key format: "repo_name" or "repo_name::variant"
@@ -1599,8 +1707,8 @@ fn install_package(
             anyhow::bail!("Executable not found: {}", exe_path.display());
         }
 
-        // When updating with -y, try to reuse old command names
-        let reused_name = if yes {
+        // When updating, try to reuse old command names
+        let reused_name = if update_mode {
             if let Some(ref old_exes) = old_executables {
                 let filename = exe_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
 

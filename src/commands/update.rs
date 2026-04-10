@@ -76,26 +76,47 @@ pub fn run(names: Vec<String>, yes: bool) -> Result<()> {
         names
     };
 
-    // Expand: include all variants when upgrading a repo
+    // Expand: include all installed variants when upgrading a repo
     let mut expanded = Vec::new();
     for name in &to_upgrade {
         // Check if this is a repo name or a specific variant
         if name.contains("::") {
-            // This is a specific variant like "bun::baseline"
-            expanded.push(name.clone());
-            continue; // Don't expand, only update this variant
+            // Specific variant like "bun::baseline" — validate it exists
+            if installed.is_installed(name) {
+                expanded.push(name.clone());
+            } else {
+                eprintln!(
+                    "{} '{}' is not installed, skipping (use 'wenget add' to install new packages)",
+                    "Warning:".yellow(),
+                    name
+                );
+            }
+            continue;
         }
 
-        // Find all variants of this repo and add them to be upgraded
+        // Find all installed variants of this repo
         let variants = installed.find_by_repo(name);
         if variants.is_empty() {
-            // Could be a script or standalone package - pass through as-is
-            expanded.push(name.clone());
+            if installed.is_installed(name) {
+                // Standalone package or script
+                expanded.push(name.clone());
+            } else {
+                eprintln!(
+                    "{} '{}' is not installed, skipping (use 'wenget add' to install new packages)",
+                    "Warning:".yellow(),
+                    name
+                );
+            }
         } else {
             for (key, _pkg) in variants {
                 expanded.push(key.clone());
             }
         }
+    }
+
+    if expanded.is_empty() {
+        println!("{}", "No installed packages to update".yellow());
+        return Ok(());
     }
 
     // Use add command to upgrade (reinstall)
