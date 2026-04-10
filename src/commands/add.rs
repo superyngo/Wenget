@@ -703,6 +703,39 @@ fn print_available_variants(binaries: &[crate::core::manifest::PlatformBinary], 
     }
 }
 
+/// Normalize an asset filename for template-based matching across versions.
+///
+/// Strips file extensions and version-like segments so that the same binary
+/// across different releases produces the same template string.
+///
+/// # Examples
+/// - `uv-x86_64-unknown-linux-gnu.tar.gz` → `uv-x86-64-unknown-linux-gnu`
+/// - `gh_copilot_1.0.22_linux_amd64.tar.gz` → `gh-copilot-linux-amd64`
+/// - `ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz` → `ripgrep-x86-64-unknown-linux-musl`
+fn normalize_asset_for_matching(asset_name: &str) -> String {
+    let name = asset_name
+        .trim_end_matches(".tar.gz")
+        .trim_end_matches(".zip")
+        .trim_end_matches(".tar.xz")
+        .trim_end_matches(".tgz")
+        .trim_end_matches(".exe")
+        .trim_end_matches(".7z");
+
+    // Split on both - and _, filter out version segments, rejoin
+    name.split(|c| c == '-' || c == '_')
+        .filter(|seg| {
+            if seg.is_empty() {
+                return false;
+            }
+            let s = seg.trim_start_matches('v');
+            // A version segment starts with a digit AND contains a dot (e.g. 1.0.22, v0.11.6)
+            !(s.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) && s.contains('.'))
+        })
+        .collect::<Vec<_>>()
+        .join("-")
+        .to_lowercase()
+}
+
 fn select_packages_for_platform(
     pkg_name: &str,
     binaries: &[crate::core::manifest::PlatformBinary],
@@ -1929,4 +1962,46 @@ fn install_script_from_bucket(
     config.save_installed(installed)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_asset_for_matching() {
+        // Same binary across versions should produce identical templates
+        assert_eq!(
+            normalize_asset_for_matching("uv-x86_64-unknown-linux-gnu.tar.gz"),
+            "uv-x86-64-unknown-linux-gnu"
+        );
+        assert_eq!(
+            normalize_asset_for_matching("gh_copilot_1.0.21_linux_amd64.tar.gz"),
+            normalize_asset_for_matching("gh_copilot_1.0.22_linux_amd64.tar.gz")
+        );
+        assert_eq!(
+            normalize_asset_for_matching("ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz"),
+            normalize_asset_for_matching("ripgrep-14.1.2-x86_64-unknown-linux-musl.tar.gz")
+        );
+        // Same asset produces same template
+        assert_eq!(
+            normalize_asset_for_matching("uv-x86_64-unknown-linux-gnu.tar.gz"),
+            normalize_asset_for_matching("uv-x86_64-unknown-linux-gnu.tar.gz")
+        );
+        // Different arch should NOT match
+        assert_ne!(
+            normalize_asset_for_matching("uv-x86_64-unknown-linux-gnu.tar.gz"),
+            normalize_asset_for_matching("uv-aarch64-unknown-linux-gnu.tar.gz")
+        );
+        // zip extension
+        assert_eq!(
+            normalize_asset_for_matching("bun-linux-x64.zip"),
+            "bun-linux-x64"
+        );
+        // apple stays — template matching uses full normalized name for comparison
+        assert_eq!(
+            normalize_asset_for_matching("uv-aarch64-apple-darwin.tar.gz"),
+            normalize_asset_for_matching("uv-aarch64-apple-darwin.tar.gz")
+        );
+    }
 }
