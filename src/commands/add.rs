@@ -1383,16 +1383,15 @@ fn install_packages(
 
         // Select which packages to install (single, all, or user selection)
         let selected_indices =
-            match select_packages_for_platform(pkg_name, &filtered_binaries, yes, update_mode)
-        {
-            Ok(indices) => indices,
-            Err(e) => {
-                println!("  {} {}", "✗".red(), e);
-                fail_count += 1;
-                failed_packages.push(pkg_name.to_string());
-                continue;
-            }
-        };
+            match select_packages_for_platform(pkg_name, &filtered_binaries, yes, update_mode) {
+                Ok(indices) => indices,
+                Err(e) => {
+                    println!("  {} {}", "✗".red(), e);
+                    fail_count += 1;
+                    failed_packages.push(pkg_name.to_string());
+                    continue;
+                }
+            };
 
         // Install each selected binary
         let mut parent_key: Option<String> = None;
