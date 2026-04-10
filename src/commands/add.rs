@@ -26,9 +26,6 @@ use crate::installer::create_shim;
 #[cfg(unix)]
 use crate::installer::create_symlink;
 
-/// Sentinel variant filter value representing the base (no-variant) binary.
-const DEFAULT_VARIANT_SENTINEL: &str = "__default__";
-
 /// Install packages (smart detection: package names from cache or GitHub URLs)
 #[allow(clippy::too_many_arguments)]
 pub fn run(
@@ -722,14 +719,18 @@ fn normalize_asset_for_matching(asset_name: &str) -> String {
         .trim_end_matches(".7z");
 
     // Split on both - and _, filter out version segments, rejoin
-    name.split(|c| c == '-' || c == '_')
+    name.split(['-', '_'])
         .filter(|seg| {
             if seg.is_empty() {
                 return false;
             }
             let s = seg.trim_start_matches('v');
             // A version segment starts with a digit AND contains a dot (e.g. 1.0.22, v0.11.6)
-            !(s.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) && s.contains('.'))
+            !(s.chars()
+                .next()
+                .map(|c| c.is_ascii_digit())
+                .unwrap_or(false)
+                && s.contains('.'))
         })
         .collect::<Vec<_>>()
         .join("-")
@@ -1161,14 +1162,8 @@ fn install_packages(
                             variant,
                             check_name
                         );
-                    } else {
-                        // Base variant (no variant suffix): filter to default binary only
-                        effective_variant_filter = Some(DEFAULT_VARIANT_SENTINEL.to_string());
-                        log::debug!(
-                            "Update mode: auto-selecting default (base) variant for {}",
-                            check_name
-                        );
                     }
+                    // If variant is None: template matching handles selection in the filter step
                 }
             }
         }
@@ -1250,33 +1245,51 @@ fn install_packages(
         // Apply variant filter if specified
         let (filtered_binaries, _original_indices): (Vec<_>, Vec<_>) =
             if let Some(filter) = effective_variant_filter {
-                if filter == DEFAULT_VARIANT_SENTINEL {
-                    // Select only binaries with NO variant (the default/base binary)
-                    binaries
+                // Named variant: filter by variant name
+                binaries
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, binary)| {
+                        let variant = crate::core::manifest::extract_variant_from_asset(
+                            &binary.asset_name,
+                            pkg_name,
+                        );
+                        variant.as_deref() == Some(filter)
+                    })
+                    .map(|(idx, binary)| (binary.clone(), idx))
+                    .unzip()
+            } else if update_mode {
+                // Update mode with no named variant: match by asset_name template.
+                // This avoids relying on extract_variant_from_asset to detect "no variant".
+                let stored_template = installed_check_name
+                    .as_ref()
+                    .and_then(|k| installed.get_package(k))
+                    .map(|p| normalize_asset_for_matching(&p.asset_name));
+
+                if let Some(template) = stored_template {
+                    let matched: Vec<_> = binaries
                         .iter()
                         .enumerate()
                         .filter(|(_, binary)| {
-                            let variant = crate::core::manifest::extract_variant_from_asset(
-                                &binary.asset_name,
-                                pkg_name,
-                            );
-                            variant.is_none()
+                            normalize_asset_for_matching(&binary.asset_name) == template
                         })
                         .map(|(idx, binary)| (binary.clone(), idx))
-                        .unzip()
+                        .collect();
+
+                    if !matched.is_empty() {
+                        matched.into_iter().unzip()
+                    } else {
+                        // Template didn't match (package renamed assets?): pick first binary
+                        log::warn!(
+                        "Asset template '{}' not matched in new release for {}, using first binary",
+                        template,
+                        pkg_name
+                    );
+                        vec![(binaries[0].clone(), 0usize)].into_iter().unzip()
+                    }
                 } else {
-                    binaries
-                        .iter()
-                        .enumerate()
-                        .filter(|(_, binary)| {
-                            let variant = crate::core::manifest::extract_variant_from_asset(
-                                &binary.asset_name,
-                                pkg_name,
-                            );
-                            variant.as_deref() == Some(filter)
-                        })
-                        .map(|(idx, binary)| (binary.clone(), idx))
-                        .unzip()
+                    // No stored asset_name: pick first binary
+                    vec![(binaries[0].clone(), 0usize)].into_iter().unzip()
                 }
             } else {
                 (binaries.clone(), (0..binaries.len()).collect())
@@ -1285,28 +1298,19 @@ fn install_packages(
         // Check if any binaries remain after filtering
         if filtered_binaries.is_empty() {
             if let Some(filter) = effective_variant_filter {
-                let display_filter = if filter == DEFAULT_VARIANT_SENTINEL {
-                    "(default)"
-                } else {
-                    filter
-                };
-
                 if update_mode {
-                    // In update mode, variant unavailable is an edge case
                     if yes {
-                        // Auto-skip when -y
                         println!(
                             "  {} Variant '{}' no longer available for {}, skipping",
                             "⚠".yellow(),
-                            display_filter,
+                            filter,
                             pkg_name
                         );
                     } else {
-                        // Prompt user
                         println!(
                             "  {} Variant '{}' no longer available for {}. Available variants:",
                             "⚠".yellow(),
-                            display_filter,
+                            filter,
                             pkg_name
                         );
                         print_available_variants(binaries, pkg_name);
@@ -1319,7 +1323,7 @@ fn install_packages(
                     println!(
                         "  {} No binaries found for variant '{}'. Available variants:",
                         "✗".red(),
-                        display_filter
+                        filter
                     );
                     print_available_variants(binaries, pkg_name);
                 }
