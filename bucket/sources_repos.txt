@@ -41,6 +41,7 @@ https://github.com/rustdesk/rustdesk
 https://github.com/cloudflare/cloudflared
 https://github.com/wavetermdev/waveterm
 https://github.com/microsoft/terminal
+https://github.com/cmderdev/cmder
 
 # === System Monitoring ===
 https://github.com/itefixnet/wincdu
