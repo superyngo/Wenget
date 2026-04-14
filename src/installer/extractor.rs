@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use bzip2::read::BzDecoder;
 use flate2::read::GzDecoder;
 use std::fs::{self, File};
+use std::io::Read;
 use std::path::Path;
 use tar::Archive;
 use xz2::read::XzDecoder;
@@ -443,6 +444,74 @@ fn has_executable_permission(_file_path: &Path) -> bool {
     true
 }
 
+/// Detect if a file is a native executable by reading its magic bytes.
+/// Returns the executable type label if detected, or None.
+fn detect_executable_type(file_path: &Path) -> Option<&'static str> {
+    let mut buf = [0u8; 4];
+    let mut file = File::open(file_path).ok()?;
+    let bytes_read = file.read(&mut buf).ok()?;
+    if bytes_read < 2 {
+        return None;
+    }
+
+    // ELF (Linux): \x7fELF
+    if bytes_read >= 4 && buf[0] == 0x7f && buf[1] == b'E' && buf[2] == b'L' && buf[3] == b'F' {
+        return Some("ELF");
+    }
+
+    // PE (Windows): MZ
+    if buf[0] == b'M' && buf[1] == b'Z' {
+        return Some("PE");
+    }
+
+    // Mach-O (macOS)
+    if bytes_read >= 4 {
+        let magic = u32::from_be_bytes(buf);
+        match magic {
+            0xFEED_FACE | 0xFEED_FACF => return Some("Mach-O"),
+            0xCEFA_EDFE | 0xCFFA_EDFE => return Some("Mach-O"),
+            0xCAFE_BABE => return Some("Mach-O fat"),
+            _ => {}
+        }
+    }
+
+    None
+}
+
+/// Detect if a file is a script by checking for a shebang line.
+/// Returns the interpreter label if detected, or None.
+fn detect_script_type(file_path: &Path) -> Option<&'static str> {
+    let mut buf = [0u8; 128];
+    let mut file = File::open(file_path).ok()?;
+    let bytes_read = file.read(&mut buf).ok()?;
+    if bytes_read < 2 {
+        return None;
+    }
+
+    // Check shebang #!
+    if buf[0] == b'#' && buf[1] == b'!' {
+        let line = std::str::from_utf8(&buf[..bytes_read])
+            .ok()?
+            .lines()
+            .next()?;
+        let lower = line.to_lowercase();
+        if lower.contains("python") {
+            return Some("Python script");
+        } else if lower.contains("bash") || lower.contains("/sh") {
+            return Some("Shell script");
+        } else if lower.contains("node") {
+            return Some("Node.js script");
+        } else if lower.contains("ruby") {
+            return Some("Ruby script");
+        } else if lower.contains("perl") {
+            return Some("Perl script");
+        }
+        return Some("script with shebang");
+    }
+
+    None
+}
+
 /// Find all possible executables and rank them by priority
 /// `extract_dir` is the directory where files were extracted to (used for permission checks)
 pub fn find_executable_candidates(
@@ -521,6 +590,30 @@ pub fn find_executable_candidates(
         // Suppress unused warning on non-Unix
         #[cfg(not(unix))]
         let _ = extract_dir;
+
+        // Rule 0b: Content-based detection via magic bytes (strongest signal)
+        if let Some(dir) = extract_dir {
+            let full_path = dir.join(file);
+            if let Some(exe_type) = detect_executable_type(&full_path) {
+                score += 60;
+                reasons.push(match exe_type {
+                    "ELF" => "ELF binary",
+                    "PE" => "PE binary",
+                    "Mach-O" | "Mach-O fat" => "Mach-O binary",
+                    _ => "native binary",
+                });
+            } else if let Some(script_type) = detect_script_type(&full_path) {
+                score += 30;
+                reasons.push(match script_type {
+                    "Shell script" => "shell script (shebang)",
+                    "Python script" => "python script (shebang)",
+                    "Node.js script" => "node.js script (shebang)",
+                    "Ruby script" => "ruby script (shebang)",
+                    "Perl script" => "perl script (shebang)",
+                    _ => "script (shebang)",
+                });
+            }
+        }
 
         // Rule 1: Exact match with package name (highest priority)
         if name_without_ext == package_name {
@@ -803,5 +896,76 @@ mod tests {
         // Edge cases
         assert_eq!(normalize_command_name("tool.exe"), "tool");
         assert_eq!(normalize_command_name("tool"), "tool");
+    }
+
+    #[test]
+    fn test_detect_executable_type_elf() {
+        use tempfile::TempDir;
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("test_elf");
+        // ELF magic: \x7fELF followed by some bytes
+        fs::write(&path, b"\x7fELF\x02\x01\x01\x00").unwrap();
+        assert_eq!(detect_executable_type(&path), Some("ELF"));
+    }
+
+    #[test]
+    fn test_detect_executable_type_pe() {
+        use tempfile::TempDir;
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("test_pe.exe");
+        // PE magic: MZ header
+        fs::write(&path, b"MZ\x90\x00\x03\x00\x00\x00").unwrap();
+        assert_eq!(detect_executable_type(&path), Some("PE"));
+    }
+
+    #[test]
+    fn test_detect_executable_type_macho() {
+        use tempfile::TempDir;
+        let dir = TempDir::new().unwrap();
+
+        // Mach-O 64-bit
+        let path = dir.path().join("test_macho64");
+        fs::write(&path, b"\xfe\xed\xfa\xcf\x00\x00\x00\x00").unwrap();
+        assert_eq!(detect_executable_type(&path), Some("Mach-O"));
+
+        // Mach-O fat binary
+        let path2 = dir.path().join("test_macho_fat");
+        fs::write(&path2, b"\xca\xfe\xba\xbe\x00\x00\x00\x02").unwrap();
+        assert_eq!(detect_executable_type(&path2), Some("Mach-O fat"));
+    }
+
+    #[test]
+    fn test_detect_executable_type_none() {
+        use tempfile::TempDir;
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("test_text");
+        fs::write(&path, b"Hello, world!\n").unwrap();
+        assert_eq!(detect_executable_type(&path), None);
+    }
+
+    #[test]
+    fn test_detect_script_type() {
+        use tempfile::TempDir;
+        let dir = TempDir::new().unwrap();
+
+        // Shell script
+        let sh = dir.path().join("test.sh");
+        fs::write(&sh, b"#!/bin/bash\necho hello").unwrap();
+        assert_eq!(detect_script_type(&sh), Some("Shell script"));
+
+        // Python script
+        let py = dir.path().join("test_py");
+        fs::write(&py, b"#!/usr/bin/env python3\nprint('hi')").unwrap();
+        assert_eq!(detect_script_type(&py), Some("Python script"));
+
+        // Node script
+        let node = dir.path().join("test_node");
+        fs::write(&node, b"#!/usr/bin/env node\nconsole.log('hi')").unwrap();
+        assert_eq!(detect_script_type(&node), Some("Node.js script"));
+
+        // Not a script
+        let txt = dir.path().join("test.txt");
+        fs::write(&txt, b"Just some text").unwrap();
+        assert_eq!(detect_script_type(&txt), None);
     }
 }

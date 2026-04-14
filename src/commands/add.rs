@@ -1638,7 +1638,8 @@ fn install_package(
         );
         vec![candidates[0].path.clone()]
     } else if update_mode {
-        // Update mode: prefer previously installed executables, prompt for new ones
+        // Update mode: keep previously installed executables, ignore new ones,
+        // prompt for replacement when old executables disappear
         let old_exes = config
             .get_or_create_installed()
             .ok()
@@ -1674,28 +1675,85 @@ fn install_package(
 
             let mut selected: Vec<String> = kept.iter().map(|c| c.path.clone()).collect();
 
-            // Handle new executables not in old install
-            if !new_candidates.is_empty() {
-                if yes {
-                    // Auto-include new executables
-                    for c in &new_candidates {
-                        selected.push(c.path.clone());
-                    }
-                } else {
-                    // Prompt for each new executable
-                    for c in &new_candidates {
-                        println!(
-                            "  {} New executable '{}' found ({})",
-                            "ℹ".cyan(),
-                            c.path,
-                            c.reason
-                        );
-                        if crate::utils::prompt::confirm("    Install this executable?")? {
-                            selected.push(c.path.clone());
+            // Detect disappeared executables: old paths not found in any candidate
+            let disappeared: Vec<(&String, &String)> = old
+                .iter()
+                .filter(|(path, _)| !kept.iter().any(|c| &c.path == *path))
+                .collect();
+
+            if !disappeared.is_empty() {
+                for (old_path, old_cmd) in &disappeared {
+                    let old_filename = Path::new(old_path).file_name().and_then(|s| s.to_str());
+
+                    // Try auto-match by filename in new candidates
+                    let auto_match = old_filename.and_then(|old_fname| {
+                        new_candidates.iter().find(|c| {
+                            Path::new(&c.path)
+                                .file_name()
+                                .and_then(|s| s.to_str())
+                                .map(|f| f == old_fname)
+                                .unwrap_or(false)
+                        })
+                    });
+
+                    if let Some(matched) = auto_match {
+                        // Auto-matched by filename — select silently
+                        if !selected.contains(&matched.path) {
+                            println!(
+                                "  {} Executable '{}' relocated to '{}' (auto-matched)",
+                                "ℹ".cyan(),
+                                old_path,
+                                matched.path
+                            );
+                            selected.push(matched.path.clone());
                         }
+                    } else if !new_candidates.is_empty() && !yes {
+                        // No auto-match — prompt user to pick a replacement
+                        println!(
+                            "  {} Executable '{}' (command: {}) is no longer available in this release",
+                            "⚠".yellow(),
+                            old_path,
+                            old_cmd
+                        );
+
+                        use dialoguer::Select;
+                        let mut items: Vec<String> = new_candidates
+                            .iter()
+                            .filter(|c| !selected.contains(&c.path))
+                            .map(|c| format!("{} ({})", c.path, c.reason))
+                            .collect();
+                        items.push("Skip (remove this command)".to_string());
+
+                        let selection = Select::new()
+                            .with_prompt(format!("    Select replacement for '{}'", old_cmd))
+                            .items(&items)
+                            .default(items.len() - 1)
+                            .interact()?;
+
+                        if selection < items.len() - 1 {
+                            // User picked a replacement from new candidates
+                            let available: Vec<_> = new_candidates
+                                .iter()
+                                .filter(|c| !selected.contains(&c.path))
+                                .collect();
+                            if selection < available.len() {
+                                selected.push(available[selection].path.clone());
+                            }
+                        }
+                        // else: user chose "Skip" — old command will be cleaned up
+                    } else {
+                        // --yes mode or no new candidates: warn and auto-cleanup
+                        println!(
+                            "  {} Executable '{}' (command: {}) no longer available, will be removed",
+                            "⚠".yellow(),
+                            old_path,
+                            old_cmd
+                        );
                     }
                 }
             }
+
+            // New executables not in old install are silently ignored during updates
 
             println!("  Found {} executables (update mode):", selected.len());
             for s in &selected {

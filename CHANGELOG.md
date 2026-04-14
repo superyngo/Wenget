@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [3.4.0] - 2026-04-14
+
+### Added
+
+- **Magic bytes detection for executables**: `find_executable_candidates` now reads file headers (ELF, PE, Mach-O) and shebang lines to score candidates more accurately, reducing false positives from non-executable files
+- **Disappeared executable handling during update**: When updating a package, Wenget now detects executables that were removed from the new release, auto-matches relocated files by filename, and prompts the user to pick a replacement when no auto-match is found
+
+### Changed
+
+- **Update mode no longer prompts for brand-new executables**: During updates, only previously installed executables are preserved; new executables are silently ignored to avoid unexpected additions
+
 ## [3.3.3] - 2026-04-10
 
 ### Added
