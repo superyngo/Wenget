@@ -73,6 +73,7 @@ https://github.com/Siriusmart/youtube-tui
 
 # === AI ===
 https://github.com/anomalyco/opencode
+https://github.com/guysoft/opencode-termux
 https://github.com/github/copilot-cli
 https://github.com/charmbracelet/crush
 https://github.com/badlogic/pi-mono
