@@ -50,6 +50,8 @@ https://github.com/pranshuparmar/witr
 https://github.com/fastfetch-cli/fastfetch
 https://github.com/smartmontools/smartmontools
 https://github.com/pythops/impala
+https://github.com/LibreHardwareMonitor/LibreHardwareMonitor
+
 
 # === File Management ===
 https://github.com/sinelaw/fresh
