@@ -15,6 +15,7 @@ https://github.com/superyngo/wenv
 https://github.com/superyngo/wappman
 https://github.com/superyngo/agm
 https://github.com/superyngo/ssync
+https://github.com/superyngo/dispatch-agent
 
 # === Search & Find ===
 https://github.com/BurntSushi/ripgrep
@@ -33,6 +34,9 @@ https://github.com/Schniz/fnm
 https://github.com/jdx/mise
 https://github.com/twpayne/chezmoi
 https://github.com/loft-sh/devpod
+https://github.com/hadolint/hadolint
+https://github.com/stackrox/kube-linter
+https://github.com/regclient/regclient
 
 # === Remote ===
 https://github.com/Genymobile/scrcpy
