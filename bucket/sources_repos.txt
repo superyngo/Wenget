@@ -15,7 +15,7 @@ https://github.com/superyngo/wenv
 https://github.com/superyngo/wappman
 https://github.com/superyngo/agm
 https://github.com/superyngo/ssync
-https://github.com/superyngo/dispatch-agent
+https://github.com/superyngo/agd
 
 # === Search & Find ===
 https://github.com/BurntSushi/ripgrep
