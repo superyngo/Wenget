@@ -6,6 +6,9 @@
 #
 # Format: https://github.com/OWNER/REPO
 
+# === Shell ===
+https://github.com/tmux/tmux-builds
+
 # === wen's tools ===
 https://github.com/superyngo/cate
 https://github.com/superyngo/wedi
@@ -61,8 +64,6 @@ https://github.com/LibreHardwareMonitor/LibreHardwareMonitor
 https://github.com/sinelaw/fresh
 https://github.com/sxyazi/yazi
 https://github.com/jarun/nnn
-
-# === Remote Control ===
 https://github.com/rn7s2/rsync-win
 https://github.com/rclone/rclone
 
