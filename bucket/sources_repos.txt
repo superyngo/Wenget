@@ -87,7 +87,7 @@ https://github.com/badlogic/pi-mono
 https://github.com/sipeed/picoclaw
 https://github.com/badlogic/pi-mono
 https://github.com/openai/codex
-
+https://github.com/dynatrace-oss/ai-config-manager
 
 # === Archived ===
 # https://github.com/ClementTsang/bottom
