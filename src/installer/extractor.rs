@@ -215,11 +215,21 @@ fn extract_tar_archive<R: std::io::Read>(
     {
         let mut entry = entry_result.context("Failed to read entry")?;
 
-        let path = entry.path().context("Failed to get entry path")?;
+        let raw_path = entry.path().context("Failed to get entry path")?;
+        // Normalize the entry path by dropping leading "./" (CurDir) components.
+        // Tar archives commonly store entries as "./agd", which would otherwise
+        // leak into the recorded relative path and the resulting symlink target
+        // (e.g. /opt/wenget/apps/agd/./agd).
+        let path: std::path::PathBuf = raw_path
+            .components()
+            .filter(|c| !matches!(c, std::path::Component::CurDir))
+            .collect();
         let path_str = path.to_string_lossy().to_string();
 
-        // Skip directories
-        if path_str.ends_with('/') {
+        // Skip directories (path normalization above strips trailing slashes,
+        // so detect directories via the tar entry type instead).
+        let entry_type = entry.header().entry_type();
+        if entry_type.is_dir() || path.as_os_str().is_empty() {
             continue;
         }
 
@@ -232,7 +242,6 @@ fn extract_tar_archive<R: std::io::Read>(
         }
 
         // Log entry type for debugging
-        let entry_type = entry.header().entry_type();
         log::debug!(
             "Extracting: {} (type: {:?}) to {}",
             path_str,
@@ -752,6 +761,58 @@ pub fn normalize_command_name(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_extract_tar_gz_strips_curdir_prefix() {
+        use std::io::Write;
+        use tempfile::TempDir;
+
+        // Build a .tar.gz whose entries are prefixed with "./" (as produced by
+        // `tar -czf` from inside a directory), matching the real agd archive.
+        let dir = TempDir::new().unwrap();
+        let archive_path = dir.path().join("pkg.tar.gz");
+        {
+            let file = File::create(&archive_path).unwrap();
+            let enc = flate2::write::GzEncoder::new(file, flate2::Compression::default());
+            let mut builder = tar::Builder::new(enc);
+
+            let data = b"binary";
+            let mut header = tar::Header::new_gnu();
+            header.set_size(data.len() as u64);
+            header.set_mode(0o755);
+            header.set_cksum();
+            builder
+                .append_data(&mut header, "./agd", &data[..])
+                .unwrap();
+
+            let mut sub = tar::Header::new_gnu();
+            sub.set_size(data.len() as u64);
+            sub.set_mode(0o644);
+            sub.set_cksum();
+            builder
+                .append_data(&mut sub, "./Resources/cli-templates.toml", &data[..])
+                .unwrap();
+
+            builder.into_inner().unwrap().finish().unwrap().flush().ok();
+        }
+
+        let dest = dir.path().join("out");
+        let files = extract_archive(&archive_path, &dest).unwrap();
+
+        // Recorded relative paths must not contain a "./" component.
+        assert!(
+            files.iter().any(|f| f == "agd"),
+            "expected 'agd', got {files:?}"
+        );
+        assert!(
+            files
+                .iter()
+                .all(|f| !f.starts_with("./") && !f.contains("/./")),
+            "paths leaked a curdir component: {files:?}"
+        );
+        assert!(dest.join("agd").is_file());
+        assert!(dest.join("Resources/cli-templates.toml").is_file());
+    }
 
     #[test]
     fn test_find_executable() {

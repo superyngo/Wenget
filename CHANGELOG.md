@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [3.4.1] - 2026-06-03
+
+### Fixed
+
+- **Stray `./` in symlink/shim targets from tar archives**: Tar archives that store entries with a leading `./` (e.g. `./agd`) no longer leak that prefix into recorded paths and launcher targets. Extraction now strips `CurDir` components, so links point to `apps/agd/agd` instead of `apps/agd/./agd`
+
 ## [3.4.0] - 2026-04-14
 
 ### Added
