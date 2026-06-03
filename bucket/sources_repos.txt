@@ -6,8 +6,9 @@
 #
 # Format: https://github.com/OWNER/REPO
 
-# === Shell ===
+# === Utils ===
 https://github.com/tmux/tmux-builds
+https://github.com/uutils/coreutils
 
 # === wen's tools ===
 https://github.com/superyngo/cate
