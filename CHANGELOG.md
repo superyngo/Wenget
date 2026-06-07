@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Fixed
+
+- **Update installing stale cached version when the GitHub API flakes mid-run**: `wenget update` previously made three independent GitHub API rounds per package (detection, install preview, install). If the API succeeded during detection but failed during installation, the install step silently fell back to the older bucket-cache version and reinstalled it. Now the version + download links detected via the API are synced into the cache up front, and in update mode the install step reads that freshly-synced cache instead of making redundant API calls — reducing API usage from 3 calls per bucket package to 1 and guaranteeing the detected version is the one installed. Direct-repo packages are unaffected (they always resolve live from the API).
+
 ## [3.4.1] - 2026-06-03
 
 ### Fixed

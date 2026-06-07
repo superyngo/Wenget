@@ -988,6 +988,15 @@ fn install_packages(
         let version = if let Some(custom_ver) = custom_version {
             // User specified a version
             custom_ver.to_string()
+        } else if update_mode && matches!(resolved.source, PackageSource::Bucket { .. }) {
+            // In update mode the cache was just refreshed with the latest version by the
+            // update command. Trust it instead of making a redundant API call that may
+            // flake and fall back to stale data.
+            resolved
+                .package
+                .version
+                .clone()
+                .unwrap_or_else(|| "unknown".to_string())
         } else if let Some(ref gh) = github {
             // Fetch latest version from API for accurate comparison
             gh.fetch_latest_version(repo).unwrap_or_else(|_| {
@@ -1185,7 +1194,19 @@ fn install_packages(
 
         // Try to fetch package info from GitHub API (includes download links)
         // If API rate limit is hit, fallback to cached package info
-        let (pkg_to_install, version, using_fallback) = if let Some(ref gh) = github {
+        let (pkg_to_install, version, using_fallback) = if update_mode
+            && custom_version.is_none()
+            && matches!(resolved.source, PackageSource::Bucket { .. })
+        {
+            // Update mode: the cache holds the latest package info synced by the update
+            // command, so use it directly and skip the redundant install-time API round.
+            let version = resolved
+                .package
+                .version
+                .clone()
+                .unwrap_or_else(|| "unknown".to_string());
+            (resolved.package.clone(), version, false)
+        } else if let Some(ref gh) = github {
             if let Some(custom_ver) = custom_version {
                 // User specified a version - fetch that specific version
                 match gh.fetch_package_by_version(repo_url, custom_ver) {

@@ -50,15 +50,16 @@ pub fn run(names: Vec<String>, yes: bool) -> Result<()> {
 
     // Force refresh bucket cache to ensure we have latest versions
     println!("{}", "Refreshing bucket cache...".cyan());
-    let cache = config.rebuild_cache()?;
+    let mut cache = config.rebuild_cache()?;
 
     // Create GitHub provider to fetch latest versions
     let github = GitHubProvider::new()?;
 
     // Determine which packages to upgrade
-    let to_upgrade: Vec<String> = if names.is_empty() || (names.len() == 1 && names[0] == "all") {
-        // List upgradeable packages
-        let upgradeable = find_upgradeable(&installed, &github, &cache, yes)?;
+    let update_all = names.is_empty() || (names.len() == 1 && names[0] == "all");
+    let to_upgrade: Vec<String> = if update_all {
+        // List upgradeable packages (also syncs latest package info into the cache)
+        let upgradeable = find_upgradeable(&installed, &github, &mut cache, yes)?;
 
         if upgradeable.is_empty() {
             println!("{}", "All packages are up to date".green());
@@ -119,6 +120,19 @@ pub fn run(names: Vec<String>, yes: bool) -> Result<()> {
         return Ok(());
     }
 
+    // For named updates, find_upgradeable was skipped, so sync the latest package info
+    // for the targeted packages into the cache here.
+    if !update_all {
+        sync_bucket_packages_to_cache(&installed, &expanded, &github, &mut cache);
+    }
+
+    // Persist the API-synced package info so the add step (running in update_mode) reads
+    // the latest version and download links from the cache, even if the GitHub API
+    // becomes unavailable during installation.
+    if let Err(e) = config.save_cache(&cache) {
+        log::warn!("Failed to save synced cache: {}", e);
+    }
+
     // Use add command to upgrade (reinstall)
     add::run(expanded, yes, None, None, None, None, false, true)
 }
@@ -127,7 +141,7 @@ pub fn run(names: Vec<String>, yes: bool) -> Result<()> {
 fn find_upgradeable(
     installed: &crate::core::InstalledManifest,
     github: &GitHubProvider,
-    cache: &crate::cache::ManifestCache,
+    cache: &mut crate::cache::ManifestCache,
     yes: bool,
 ) -> Result<Vec<(String, String, String)>> {
     let mut upgradeable = Vec::new();
@@ -209,9 +223,21 @@ fn find_upgradeable(
             }
         };
 
-        // Fetch latest version from GitHub
-        match github.fetch_latest_version(&repo_url) {
-            Ok(latest_version) => {
+        // Fetch latest package info from GitHub (includes version + download links)
+        match github.fetch_package(&repo_url) {
+            Ok(latest_pkg) => {
+                let latest_version = latest_pkg
+                    .version
+                    .clone()
+                    .unwrap_or_else(|| inst_pkg.version.clone());
+
+                // Persist the fresh package info (version + download links) into the cache so
+                // the install step reads the latest data even if the API later becomes
+                // unavailable. Only bucket packages are stored in the cache.
+                if matches!(inst_pkg.source, PackageSource::Bucket { .. }) {
+                    cache.add_package(latest_pkg, inst_pkg.source.clone());
+                }
+
                 if inst_pkg.version != latest_version {
                     upgradeable.push((repo_name.clone(), inst_pkg.version.clone(), latest_version));
                 }
@@ -282,6 +308,55 @@ fn find_upgradeable(
     }
 
     Ok(upgradeable)
+}
+
+/// Sync the latest package info for the given installed keys into the cache.
+///
+/// Used for named updates (where `find_upgradeable` is skipped). Only bucket-sourced
+/// packages are synced — direct-repo packages are not stored in the cache and are always
+/// resolved live from the GitHub API.
+fn sync_bucket_packages_to_cache(
+    installed: &crate::core::InstalledManifest,
+    keys: &[String],
+    github: &GitHubProvider,
+    cache: &mut crate::cache::ManifestCache,
+) {
+    let mut synced = std::collections::HashSet::new();
+
+    for key in keys {
+        let inst_pkg = match installed.get_package(key) {
+            Some(p) => p,
+            None => continue,
+        };
+
+        if !matches!(inst_pkg.source, PackageSource::Bucket { .. }) {
+            continue;
+        }
+
+        // Refresh each repo only once even if multiple variants are listed.
+        if !synced.insert(inst_pkg.repo_name.clone()) {
+            continue;
+        }
+
+        // Look up the repo URL from the cached bucket entry.
+        let repo_url = match cache
+            .packages
+            .values()
+            .find(|cached| cached.package.name == inst_pkg.repo_name)
+        {
+            Some(cached) => cached.package.repo.clone(),
+            None => continue,
+        };
+
+        match github.fetch_package(&repo_url) {
+            Ok(pkg) => cache.add_package(pkg, inst_pkg.source.clone()),
+            Err(e) => log::debug!(
+                "Failed to refresh cache for {} during update: {}",
+                inst_pkg.repo_name,
+                e
+            ),
+        }
+    }
 }
 
 /// Check for wenget updates and prompt user
