@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+
+- **Derived download URL fallback for `--version` when the GitHub API is unavailable**: When installing a specific version of a bucket package with `-V/--version`, if the GitHub API call to fetch that release fails (e.g. rate limit), Wenget now derives the download URL by rewriting the cached package's URLs with the requested version (GitHub release assets always live at `.../releases/download/{tag}/{asset_name}`). This is a best-effort fallback validated by the download itself — it works for the common case (semver tags, asset names without or with the same version string) and fails cleanly with a 404 when a project uses an unusual tag scheme or changed its asset naming. Direct-repo packages are unaffected.
+
 ### Fixed
 
 - **Update installing stale cached version when the GitHub API flakes mid-run**: `wenget update` previously made three independent GitHub API rounds per package (detection, install preview, install). If the API succeeded during detection but failed during installation, the install step silently fell back to the older bucket-cache version and reinstalled it. Now the version + download links detected via the API are synced into the cache up front, and in update mode the install step reads that freshly-synced cache instead of making redundant API calls — reducing API usage from 3 calls per bucket package to 1 and guaranteeing the detected version is the one installed. Direct-repo packages are unaffected (they always resolve live from the API).

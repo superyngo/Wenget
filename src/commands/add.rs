@@ -1216,10 +1216,29 @@ fn install_packages(
                         (versioned_pkg, version, false)
                     }
                     Err(e) => {
-                        // Version not found - error and abort
-                        println!("  {} {}", "✗".red(), e);
-                        fail_count += 1;
-                        continue;
+                        // API unavailable / version lookup failed. For bucket packages,
+                        // try to derive the download URL by rewriting the cached URLs with
+                        // the requested version (best-effort, validated by the download).
+                        match (
+                            matches!(resolved.source, PackageSource::Bucket { .. }),
+                            derive_versioned_package(&resolved.package, custom_ver),
+                        ) {
+                            (true, Some(derived)) => {
+                                let version = custom_ver.trim_start_matches('v').to_string();
+                                println!(
+                                    "  {} GitHub API unavailable; trying derived download URL for v{}",
+                                    "⚠".yellow(),
+                                    version
+                                );
+                                (derived, version, true)
+                            }
+                            _ => {
+                                // Not a bucket package or no usable cached version - abort.
+                                println!("  {} {}", "✗".red(), e);
+                                fail_count += 1;
+                                continue;
+                            }
+                        }
                     }
                 }
             } else {
@@ -2001,6 +2020,58 @@ fn install_package(
     Ok(inst_pkg)
 }
 
+/// Derive a package for a specific version by rewriting the cached download URLs.
+///
+/// GitHub release assets always live at `.../releases/download/{tag}/{asset_name}`,
+/// so replacing the cached version substring with the requested version yields the URL
+/// for that version. This covers both the version in the tag path and any version
+/// embedded in the asset name, and preserves a `v` prefix because only the numeric
+/// part is swapped (e.g. `v0.8.1/foo` -> `v2.0.0/foo`).
+///
+/// This is a best-effort fallback used only when the GitHub API is unavailable: it
+/// fails (the download later 404s) if the project uses a tag scheme that doesn't
+/// contain the version, or changed its asset naming between versions.
+///
+/// Returns `None` when the cached version can't be used as a substitution anchor.
+fn derive_versioned_package(
+    cached: &crate::core::Package,
+    requested_version: &str,
+) -> Option<crate::core::Package> {
+    let old_ver = cached.version.as_deref()?.trim_start_matches('v');
+    let new_ver = requested_version.trim_start_matches('v');
+
+    if old_ver.is_empty() || old_ver == "unknown" || old_ver == "local" {
+        return None;
+    }
+
+    let platforms = cached
+        .platforms
+        .iter()
+        .map(|(platform_id, binaries)| {
+            let rewritten = binaries
+                .iter()
+                .map(|b| crate::core::manifest::PlatformBinary {
+                    url: b.url.replace(old_ver, new_ver),
+                    size: 0,        // unknown for a derived URL
+                    checksum: None, // cached checksum is for a different version
+                    asset_name: b.asset_name.replace(old_ver, new_ver),
+                })
+                .collect();
+            (platform_id.clone(), rewritten)
+        })
+        .collect();
+
+    Some(crate::core::Package {
+        name: cached.name.clone(),
+        description: cached.description.clone(),
+        repo: cached.repo.clone(),
+        homepage: cached.homepage.clone(),
+        license: cached.license.clone(),
+        version: Some(new_ver.to_string()),
+        platforms,
+    })
+}
+
 /// Update manifest cache with latest package info from GitHub API
 fn update_cache_with_packages(
     config: &Config,
@@ -2098,6 +2169,82 @@ fn install_script_from_bucket(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn cached_pkg(version: &str, url: &str, asset_name: &str) -> crate::core::Package {
+        let mut platforms = HashMap::new();
+        platforms.insert(
+            "linux-armv7".to_string(),
+            vec![crate::core::manifest::PlatformBinary {
+                url: url.to_string(),
+                size: 123,
+                checksum: Some("abc".to_string()),
+                asset_name: asset_name.to_string(),
+            }],
+        );
+        crate::core::Package {
+            name: "sshi".to_string(),
+            description: "desc".to_string(),
+            repo: "https://github.com/superyngo/sshi".to_string(),
+            homepage: None,
+            license: None,
+            version: Some(version.to_string()),
+            platforms,
+        }
+    }
+
+    #[test]
+    fn test_derive_versioned_package_version_in_tag_only() {
+        // sshi-style: version only in the tag path, not the asset name.
+        let cached = cached_pkg(
+            "1.2.0",
+            "https://github.com/superyngo/sshi/releases/download/v1.2.0/sshi-linux-armv7.tar.gz",
+            "sshi-linux-armv7.tar.gz",
+        );
+        let derived = derive_versioned_package(&cached, "1.3.0").unwrap();
+        let bin = &derived.platforms["linux-armv7"][0];
+        assert_eq!(
+            bin.url,
+            "https://github.com/superyngo/sshi/releases/download/v1.3.0/sshi-linux-armv7.tar.gz"
+        );
+        assert_eq!(bin.asset_name, "sshi-linux-armv7.tar.gz");
+        assert_eq!(derived.version.as_deref(), Some("1.3.0"));
+        assert!(bin.checksum.is_none());
+    }
+
+    #[test]
+    fn test_derive_versioned_package_version_in_asset_name() {
+        // Nexus-style: version in both the tag and the asset name.
+        let cached = cached_pkg(
+            "0.8.1",
+            "https://github.com/x/y/releases/download/v0.8.1/Setup_0.8.1.exe",
+            "Setup_0.8.1.exe",
+        );
+        let derived = derive_versioned_package(&cached, "v2.0.0").unwrap();
+        let bin = &derived.platforms["linux-armv7"][0];
+        assert_eq!(
+            bin.url,
+            "https://github.com/x/y/releases/download/v2.0.0/Setup_2.0.0.exe"
+        );
+        assert_eq!(bin.asset_name, "Setup_2.0.0.exe");
+    }
+
+    #[test]
+    fn test_derive_versioned_package_rejects_unusable_version() {
+        let cached = cached_pkg(
+            "local",
+            "https://github.com/x/y/releases/download/v1/y.tar.gz",
+            "y.tar.gz",
+        );
+        assert!(derive_versioned_package(&cached, "1.0.0").is_none());
+
+        let mut no_version = cached_pkg(
+            "1.0.0",
+            "https://github.com/x/y/releases/download/v1.0.0/y.tar.gz",
+            "y.tar.gz",
+        );
+        no_version.version = None;
+        assert!(derive_versioned_package(&no_version, "1.0.0").is_none());
+    }
 
     #[test]
     fn test_normalize_asset_for_matching() {
