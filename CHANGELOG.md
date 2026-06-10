@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [3.6.0] - 2026-06-10
+
 ### Changed
 
 - **Parallel update checks with a progress bar**: `wenget update` previously queried the GitHub API for each installed package one repo at a time, printing a line per repo. Update-info fetches now run concurrently (capped at 8 in-flight requests to stay within the unauthenticated rate limit) and the per-repo output is replaced by a single progress bar. All HTTP work happens on worker threads; cache mutations and any interactive prompts are still applied sequentially on the main thread, so behaviour (version comparison, cache fallback when the API is unavailable) is unchanged. Applies to both `wenget update` (all packages) and named updates such as `wenget update bun`.

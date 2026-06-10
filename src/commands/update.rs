@@ -24,7 +24,10 @@ type FetchResult = (String, Result<Package>);
 /// same order as the input jobs so downstream processing stays deterministic. All HTTP
 /// work happens on worker threads; the caller applies any cache mutations or prompts
 /// sequentially on the main thread afterwards.
-fn parallel_fetch_packages(github: &GitHubProvider, jobs: Vec<(String, String)>) -> Vec<FetchResult> {
+fn parallel_fetch_packages(
+    github: &GitHubProvider,
+    jobs: Vec<(String, String)>,
+) -> Vec<FetchResult> {
     let total = jobs.len();
     if total == 0 {
         return Vec::new();
@@ -40,8 +43,7 @@ fn parallel_fetch_packages(github: &GitHubProvider, jobs: Vec<(String, String)>)
     );
 
     let next = AtomicUsize::new(0);
-    let results: Mutex<Vec<Option<FetchResult>>> =
-        Mutex::new((0..total).map(|_| None).collect());
+    let results: Mutex<Vec<Option<FetchResult>>> = Mutex::new((0..total).map(|_| None).collect());
 
     let workers = total.min(MAX_CONCURRENT_FETCHES);
     std::thread::scope(|scope| {
@@ -293,7 +295,10 @@ fn find_upgradeable(
         };
 
         jobs.push((repo_name.clone(), repo_url));
-        job_meta.insert(repo_name, (inst_pkg.source.clone(), inst_pkg.version.clone()));
+        job_meta.insert(
+            repo_name,
+            (inst_pkg.source.clone(), inst_pkg.version.clone()),
+        );
     }
 
     // Phase 2 (parallel): fetch latest package info from GitHub for all collected jobs.
