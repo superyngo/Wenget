@@ -6,6 +6,7 @@ use serde::de::DeserializeOwned;
 use std::time::Duration;
 
 /// HTTP client wrapper
+#[derive(Clone)]
 pub struct HttpClient {
     client: Client,
     token: Option<String>,

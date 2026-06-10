@@ -2,11 +2,76 @@
 
 use crate::commands::add;
 use crate::core::manifest::PackageSource;
-use crate::core::Config;
+use crate::core::{Config, Package};
 use crate::providers::base::SourceProvider;
 use crate::providers::GitHubProvider;
 use anyhow::Result;
 use colored::Colorize;
+use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
+
+/// Maximum number of concurrent GitHub API requests when checking for updates.
+/// Capped to avoid hitting the unauthenticated rate limit (60 req/hour) too quickly.
+const MAX_CONCURRENT_FETCHES: usize = 8;
+
+/// A parallel fetch outcome: the repo name paired with its fetched package (or error).
+type FetchResult = (String, Result<Package>);
+
+/// Fetch package info for many repos in parallel, showing a progress bar.
+///
+/// Each job is `(repo_name, repo_url)`. Returns `(repo_name, Result<Package>)` in the
+/// same order as the input jobs so downstream processing stays deterministic. All HTTP
+/// work happens on worker threads; the caller applies any cache mutations or prompts
+/// sequentially on the main thread afterwards.
+fn parallel_fetch_packages(github: &GitHubProvider, jobs: Vec<(String, String)>) -> Vec<FetchResult> {
+    let total = jobs.len();
+    if total == 0 {
+        return Vec::new();
+    }
+
+    let pb = indicatif::ProgressBar::new(total as u64);
+    pb.set_style(
+        indicatif::ProgressStyle::with_template(
+            "{spinner:.cyan} [{bar:30.cyan/blue}] {pos}/{len} checking for updates...",
+        )
+        .unwrap()
+        .progress_chars("=>-"),
+    );
+
+    let next = AtomicUsize::new(0);
+    let results: Mutex<Vec<Option<FetchResult>>> =
+        Mutex::new((0..total).map(|_| None).collect());
+
+    let workers = total.min(MAX_CONCURRENT_FETCHES);
+    std::thread::scope(|scope| {
+        for _ in 0..workers {
+            let github = github.clone();
+            let jobs = &jobs;
+            let next = &next;
+            let results = &results;
+            let pb = &pb;
+            scope.spawn(move || loop {
+                let i = next.fetch_add(1, Ordering::Relaxed);
+                if i >= total {
+                    break;
+                }
+                let (name, url) = &jobs[i];
+                let res = github.fetch_package(url);
+                results.lock().unwrap()[i] = Some((name.clone(), res));
+                pb.inc(1);
+            });
+        }
+    });
+
+    pb.finish_and_clear();
+
+    Mutex::into_inner(results)
+        .unwrap()
+        .into_iter()
+        .map(|slot| slot.expect("every job slot is filled by a worker"))
+        .collect()
+}
 
 /// Compare two dot-separated version strings.
 /// Returns true if `new` is strictly newer than `old`.
@@ -149,15 +214,19 @@ fn find_upgradeable(
     // Group packages by repo_name to check only once per repo
     let grouped = installed.group_by_repo();
 
+    // Phase 1 (sequential): resolve each repo's URL, handle local-only sources (scripts)
+    // that need no API call, and collect the rest into `jobs` for parallel fetching.
+    // `job_meta` keeps the installed source/version snapshot needed when applying results.
+    let mut jobs: Vec<(String, String)> = Vec::new();
+    let mut job_meta: HashMap<String, (PackageSource, String)> = HashMap::new();
+
     for (repo_name, variants) in grouped {
         // Use the first variant to get version and source info
         let (_key, inst_pkg) = variants[0];
 
-        // Determine repo URL based on source
         let repo_url = match &inst_pkg.source {
             PackageSource::Bucket { name: bucket_name } => {
                 // Get package info from cache for bucket packages
-                // Find package in cache by repo_name
                 let found = cache
                     .packages
                     .values()
@@ -223,23 +292,37 @@ fn find_upgradeable(
             }
         };
 
-        // Fetch latest package info from GitHub (includes version + download links)
-        match github.fetch_package(&repo_url) {
+        jobs.push((repo_name.clone(), repo_url));
+        job_meta.insert(repo_name, (inst_pkg.source.clone(), inst_pkg.version.clone()));
+    }
+
+    // Phase 2 (parallel): fetch latest package info from GitHub for all collected jobs.
+    let results = parallel_fetch_packages(github, jobs);
+
+    // Phase 3 (sequential): apply results — mutate the cache and resolve any prompts on the
+    // main thread, where it is safe to do so.
+    for (repo_name, result) in results {
+        let (source, inst_version) = match job_meta.get(&repo_name) {
+            Some(meta) => meta.clone(),
+            None => continue,
+        };
+
+        match result {
             Ok(latest_pkg) => {
                 let latest_version = latest_pkg
                     .version
                     .clone()
-                    .unwrap_or_else(|| inst_pkg.version.clone());
+                    .unwrap_or_else(|| inst_version.clone());
 
                 // Persist the fresh package info (version + download links) into the cache so
                 // the install step reads the latest data even if the API later becomes
                 // unavailable. Only bucket packages are stored in the cache.
-                if matches!(inst_pkg.source, PackageSource::Bucket { .. }) {
-                    cache.add_package(latest_pkg, inst_pkg.source.clone());
+                if matches!(source, PackageSource::Bucket { .. }) {
+                    cache.add_package(latest_pkg, source.clone());
                 }
 
-                if inst_pkg.version != latest_version {
-                    upgradeable.push((repo_name.clone(), inst_pkg.version.clone(), latest_version));
+                if inst_version != latest_version {
+                    upgradeable.push((repo_name.clone(), inst_version, latest_version));
                 }
             }
             Err(e) => {
@@ -257,7 +340,7 @@ fn find_upgradeable(
                     .find(|p| p.package.name == repo_name)
                 {
                     if let Some(cache_version) = &cached_pkg.package.version {
-                        let should_upgrade = if inst_pkg.version == "local" {
+                        let should_upgrade = if inst_version == "local" {
                             if yes {
                                 true
                             } else {
@@ -273,7 +356,7 @@ fn find_upgradeable(
                                 ))?
                             }
                         } else {
-                            is_newer_version(&inst_pkg.version, cache_version)
+                            is_newer_version(&inst_version, cache_version)
                         };
 
                         if should_upgrade {
@@ -285,7 +368,7 @@ fn find_upgradeable(
                             );
                             upgradeable.push((
                                 repo_name.clone(),
-                                inst_pkg.version.clone(),
+                                inst_version,
                                 cache_version.clone(),
                             ));
                         }
@@ -321,7 +404,9 @@ fn sync_bucket_packages_to_cache(
     github: &GitHubProvider,
     cache: &mut crate::cache::ManifestCache,
 ) {
-    let mut synced = std::collections::HashSet::new();
+    let mut synced = HashSet::new();
+    let mut jobs: Vec<(String, String)> = Vec::new();
+    let mut source_map: HashMap<String, PackageSource> = HashMap::new();
 
     for key in keys {
         let inst_pkg = match installed.get_package(key) {
@@ -348,11 +433,21 @@ fn sync_bucket_packages_to_cache(
             None => continue,
         };
 
-        match github.fetch_package(&repo_url) {
-            Ok(pkg) => cache.add_package(pkg, inst_pkg.source.clone()),
+        jobs.push((inst_pkg.repo_name.clone(), repo_url));
+        source_map.insert(inst_pkg.repo_name.clone(), inst_pkg.source.clone());
+    }
+
+    // Fetch in parallel, then apply cache mutations sequentially on the main thread.
+    for (repo_name, result) in parallel_fetch_packages(github, jobs) {
+        match result {
+            Ok(pkg) => {
+                if let Some(source) = source_map.remove(&repo_name) {
+                    cache.add_package(pkg, source);
+                }
+            }
             Err(e) => log::debug!(
                 "Failed to refresh cache for {} during update: {}",
-                inst_pkg.repo_name,
+                repo_name,
                 e
             ),
         }

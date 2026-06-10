@@ -8,6 +8,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 
 /// GitHub provider
+#[derive(Clone)]
 pub struct GitHubProvider {
     http: HttpClient,
 }
