@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [3.7.0] - 2026-06-12
+
 ### Changed
 
 - **Cleaner progress bar during `wenget update`**: The update check phase now shows a single unified progress bar (`⠁ [====>] 24/24 checking for updates...`) that stays on screen after completion, instead of printing per-repo fetch info. Internal fetch messages moved to debug level (visible with `-v`).
@@ -1106,3 +1108,8 @@ Wenget is now production-ready for managing GitHub binaries across platforms.
 [3.3.3]: https://github.com/superyngo/wenget/compare/v3.3.2...v3.3.3
 [3.3.2]: https://github.com/superyngo/wenget/compare/v3.3.1...v3.3.2
 [3.3.1]: https://github.com/superyngo/wenget/compare/v3.3.0...v3.3.1
+[3.4.0]: https://github.com/superyngo/wenget/compare/v3.3.3...v3.4.0
+[3.4.1]: https://github.com/superyngo/wenget/compare/v3.4.0...v3.4.1
+[3.5.0]: https://github.com/superyngo/wenget/compare/v3.4.1...v3.5.0
+[3.6.0]: https://github.com/superyngo/wenget/compare/v3.5.0...v3.6.0
+[3.7.0]: https://github.com/superyngo/wenget/compare/v3.6.0...v3.7.0
