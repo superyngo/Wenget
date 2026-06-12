@@ -230,7 +230,7 @@ impl Config {
 
         // Fetch bucket manifests with shorter timeout (10 seconds)
         let fetch_bucket = |bucket: &crate::bucket::Bucket| -> Result<SourceManifest> {
-            log::info!("Fetching bucket '{}' from {}", bucket.name, bucket.url);
+            log::debug!("Fetching bucket '{}' from {}", bucket.name, bucket.url);
 
             let http = HttpClient::with_timeout(Duration::from_secs(10))?;
             let content = http

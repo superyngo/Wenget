@@ -112,7 +112,7 @@ impl GitHubProvider {
 
     /// Fetch package information for a specific version
     pub fn fetch_package_by_version(&self, url: &str, version: &str) -> Result<Package> {
-        log::info!("Fetching package from: {} (version: {})", url, version);
+        log::debug!("Fetching package from: {} (version: {})", url, version);
 
         // Parse URL
         let (owner, repo) = Self::parse_github_url(url)
@@ -163,7 +163,7 @@ impl GitHubProvider {
         };
 
         let normalized_version = release.tag_name.trim_start_matches('v').to_string();
-        log::info!(
+        log::debug!(
             "✓ Found {} v{} with {} platform(s)",
             package.name,
             normalized_version,
@@ -214,7 +214,7 @@ impl GitHubProvider {
 
 impl SourceProvider for GitHubProvider {
     fn fetch_package(&self, url: &str) -> Result<Package> {
-        log::info!("Fetching package from: {}", url);
+        log::debug!("Fetching package from: {}", url);
 
         // Parse URL
         let (owner, repo) = Self::parse_github_url(url)
@@ -257,7 +257,7 @@ impl SourceProvider for GitHubProvider {
         };
 
         let version = release.tag_name.trim_start_matches('v').to_string();
-        log::info!(
+        log::debug!(
             "✓ Found {} v{} with {} platform(s)",
             package.name,
             version,

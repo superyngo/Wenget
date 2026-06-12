@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Changed
+
+- **Cleaner progress bar during `wenget update`**: The update check phase now shows a single unified progress bar (`⠁ [====>] 24/24 checking for updates...`) that stays on screen after completion, instead of printing per-repo fetch info. Internal fetch messages moved to debug level (visible with `-v`).
+
 ## [3.6.0] - 2026-06-10
 
 ### Changed

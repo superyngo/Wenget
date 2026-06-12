@@ -24,23 +24,33 @@ type FetchResult = (String, Result<Package>);
 /// same order as the input jobs so downstream processing stays deterministic. All HTTP
 /// work happens on worker threads; the caller applies any cache mutations or prompts
 /// sequentially on the main thread afterwards.
+///
+/// If `existing_pb` is provided, uses that progress bar instead of creating a new one.
+/// The caller is responsible for finishing/clearing an externally provided bar.
 fn parallel_fetch_packages(
     github: &GitHubProvider,
     jobs: Vec<(String, String)>,
+    existing_pb: Option<&indicatif::ProgressBar>,
 ) -> Vec<FetchResult> {
     let total = jobs.len();
     if total == 0 {
         return Vec::new();
     }
 
-    let pb = indicatif::ProgressBar::new(total as u64);
-    pb.set_style(
-        indicatif::ProgressStyle::with_template(
-            "{spinner:.cyan} [{bar:30.cyan/blue}] {pos}/{len} checking for updates...",
-        )
-        .unwrap()
-        .progress_chars("=>-"),
-    );
+    let pb = match existing_pb {
+        Some(pb) => pb.clone(),
+        None => {
+            let pb = indicatif::ProgressBar::new(total as u64);
+            pb.set_style(
+                indicatif::ProgressStyle::with_template(
+                    "{spinner:.cyan} [{bar:30.cyan/blue}] {pos}/{len} checking for updates...",
+                )
+                .unwrap()
+                .progress_chars("=>-"),
+            );
+            pb
+        }
+    };
 
     let next = AtomicUsize::new(0);
     let results: Mutex<Vec<Option<FetchResult>>> = Mutex::new((0..total).map(|_| None).collect());
@@ -66,7 +76,9 @@ fn parallel_fetch_packages(
         }
     });
 
-    pb.finish_and_clear();
+    if existing_pb.is_none() {
+        pb.finish_and_clear();
+    }
 
     Mutex::into_inner(results)
         .unwrap()
@@ -213,8 +225,17 @@ fn find_upgradeable(
 ) -> Result<Vec<(String, String, String)>> {
     let mut upgradeable = Vec::new();
 
-    // Group packages by repo_name to check only once per repo
     let grouped = installed.group_by_repo();
+    let total = grouped.len();
+
+    let pb = indicatif::ProgressBar::new(total as u64);
+    pb.set_style(
+        indicatif::ProgressStyle::with_template(
+            "{spinner:.cyan} [{bar:30.cyan/blue}] {pos}/{len} checking for updates...",
+        )
+        .unwrap()
+        .progress_chars("=>-"),
+    );
 
     // Phase 1 (sequential): resolve each repo's URL, handle local-only sources (scripts)
     // that need no API call, and collect the rest into `jobs` for parallel fetching.
@@ -243,6 +264,7 @@ fn find_upgradeable(
                         repo_name,
                         bucket_name
                     );
+                    pb.inc(1);
                     continue;
                 }
             }
@@ -257,6 +279,7 @@ fn find_upgradeable(
                         "Skipping non-bucket script '{}' - no update source",
                         repo_name
                     );
+                    pb.inc(1);
                     continue;
                 }
 
@@ -264,6 +287,7 @@ fn find_upgradeable(
                 let cached_script = cache.find_script(&repo_name);
                 if cached_script.is_none() {
                     log::debug!("Script '{}' not found in cache, skipping update", repo_name);
+                    pb.inc(1);
                     continue;
                 }
 
@@ -290,6 +314,7 @@ fn find_upgradeable(
                     }
                 }
 
+                pb.inc(1);
                 continue;
             }
         };
@@ -302,7 +327,7 @@ fn find_upgradeable(
     }
 
     // Phase 2 (parallel): fetch latest package info from GitHub for all collected jobs.
-    let results = parallel_fetch_packages(github, jobs);
+    let results = parallel_fetch_packages(github, jobs, Some(&pb));
 
     // Phase 3 (sequential): apply results — mutate the cache and resolve any prompts on the
     // main thread, where it is safe to do so.
@@ -395,6 +420,9 @@ fn find_upgradeable(
         }
     }
 
+    pb.finish();
+    println!();
+
     Ok(upgradeable)
 }
 
@@ -443,7 +471,7 @@ fn sync_bucket_packages_to_cache(
     }
 
     // Fetch in parallel, then apply cache mutations sequentially on the main thread.
-    for (repo_name, result) in parallel_fetch_packages(github, jobs) {
+    for (repo_name, result) in parallel_fetch_packages(github, jobs, None) {
         match result {
             Ok(pkg) => {
                 if let Some(source) = source_map.remove(&repo_name) {
