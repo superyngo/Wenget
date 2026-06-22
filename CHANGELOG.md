@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [3.8.0] - 2026-06-22
+
 ### Fixed
 
 - **`install`/`update` now respect `preferred_platform` config**: The `preferred_platform` setting in `config.toml` was previously parsed but never applied, so installs and updates always used the auto-detected platform. It is now honored by both `wenget add` and `wenget update`. The setting accepts internal identifiers (e.g. `linux-aarch64-musl`) as well as Rust-style target triples (e.g. `aarch64-unknown-linux-musl`); when a libc/compiler variant such as `musl` is requested, that variant is preferred when available and otherwise falls back to a compatible build.
@@ -1121,3 +1123,4 @@ Wenget is now production-ready for managing GitHub binaries across platforms.
 [3.5.0]: https://github.com/superyngo/wenget/compare/v3.4.1...v3.5.0
 [3.6.0]: https://github.com/superyngo/wenget/compare/v3.5.0...v3.6.0
 [3.7.0]: https://github.com/superyngo/wenget/compare/v3.6.0...v3.7.0
+[3.8.0]: https://github.com/superyngo/wenget/compare/v3.7.0...v3.8.0
