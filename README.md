@@ -141,6 +141,7 @@ wenget delete ripgrep
 - `wenget search <keyword>` - Search available packages
 - `wenget update [name]` - Update installed packages
   - `wenget update self` - Upgrade Wenget itself to the latest version
+  - `wenget update [name] -p <target>` - Update for a specific platform (overrides `preferred_platform`)
 
 ### Bucket Management
 
@@ -269,6 +270,11 @@ Common platform identifiers:
 - macOS Apple Silicon: `aarch64-apple-darwin`
 - Windows x86_64: `x86_64-pc-windows-msvc`
 - Windows ARM64: `aarch64-pc-windows-msvc`
+
+`preferred_platform` is applied by both `wenget add` and `wenget update`. It also
+accepts internal identifiers (e.g. `linux-aarch64-musl`). When a libc/compiler
+variant such as `musl` is requested, it is preferred when available and falls
+back to a compatible build otherwise. A `-p/--platform` flag overrides it.
 
 **Custom Bin Directory** - Override default bin location:
 ```toml

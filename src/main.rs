@@ -92,7 +92,11 @@ fn main() {
 
         Commands::Search { names } => commands::run_search(names),
 
-        Commands::Update { names, yes } => commands::run_update(names, yes),
+        Commands::Update {
+            names,
+            yes,
+            platform,
+        } => commands::run_update(names, yes, platform),
 
         Commands::Del {
             names,

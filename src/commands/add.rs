@@ -814,14 +814,14 @@ fn install_packages(
     no_suffix: bool,
     update_mode: bool,
 ) -> Result<()> {
-    // Get current platform
-    let current_platform = if let Some(_custom_plat) = custom_platform {
-        // TODO: Parse custom platform string into Platform struct
-        // For now, use fallback to platform_ids logic
-        Platform::current()
-    } else {
-        Platform::current()
-    };
+    // Get current platform (used for informational messages).
+    let current_platform = Platform::current();
+
+    // Determine the effective platform override: the `-p/--platform` flag takes
+    // precedence over the `preferred_platform` config setting. When neither is
+    // set, auto-detection (`Platform::current`) is used.
+    let platform_override =
+        custom_platform.or_else(|| config.preferences().preferred_platform.as_deref());
 
     // Load cache once for both script lookup and package resolution
     let cache = config.get_or_rebuild_cache()?;
@@ -841,29 +841,23 @@ fn install_packages(
         match resolver.resolve(&input) {
             Ok(resolved) => {
                 for pkg_resolved in resolved {
-                    // Use smart platform matching
-                    let matches = if let Some(custom_plat) = custom_platform {
-                        // If custom platform specified, try direct match
-                        if pkg_resolved.package.platforms.contains_key(custom_plat) {
-                            vec![crate::core::platform::PlatformMatch {
-                                platform_id: custom_plat.to_string(),
-                                is_exact: true,
-                                fallback_type: None,
-                                score: 1000,
-                            }]
-                        } else {
-                            vec![]
-                        }
+                    // Use smart platform matching. When an override (flag or
+                    // config) is set, resolve against it; otherwise auto-detect.
+                    let matches = if let Some(override_str) = platform_override {
+                        Platform::match_override(override_str, &pkg_resolved.package.platforms)
                     } else {
                         current_platform.find_best_match(&pkg_resolved.package.platforms)
                     };
 
                     if matches.is_empty() {
+                        let target = platform_override
+                            .map(|s| s.to_string())
+                            .unwrap_or_else(|| current_platform.to_string());
                         println!(
                             "{} {} does not support platform {}",
                             "Warning:".yellow(),
                             pkg_resolved.package.name,
-                            current_platform
+                            target
                         );
                         println!(
                             "  Available platforms: {}",

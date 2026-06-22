@@ -765,6 +765,60 @@ impl Platform {
         matches
     }
 
+    /// Resolve platform matches for an explicit override string.
+    ///
+    /// The override may come from the `-p/--platform` flag or the
+    /// `preferred_platform` config setting. It accepts both internal platform
+    /// identifiers (e.g. `linux-aarch64-musl`) and Rust-style target triples
+    /// (e.g. `aarch64-unknown-linux-musl`) or loose forms (e.g. `windows-x64`).
+    ///
+    /// Resolution order:
+    /// 1. Exact match against an available platform key.
+    /// 2. Parse os/arch/compiler from the string and use `find_best_match`,
+    ///    preferring the requested compiler/libc variant when it is available.
+    pub fn match_override(
+        override_str: &str,
+        available_platforms: &HashMap<String, Vec<crate::core::manifest::PlatformBinary>>,
+    ) -> Vec<PlatformMatch> {
+        // 1. Direct exact key match (internal identifier form).
+        if available_platforms.contains_key(override_str) {
+            return vec![PlatformMatch {
+                platform_id: override_str.to_string(),
+                is_exact: true,
+                fallback_type: None,
+                score: 1000,
+            }];
+        }
+
+        // 2. Parse a lenient platform string (Rust triples, loose forms, etc.).
+        let parsed = ParsedAsset::from_filename(override_str);
+        let (os, arch) = match (parsed.os, parsed.arch) {
+            (Some(os), Some(arch)) => (os, arch),
+            // Arch missing but OS present: fall back to the OS default arch.
+            (Some(os), None) => match os.default_arch() {
+                Some(arch) => (os, arch),
+                None => return Vec::new(),
+            },
+            _ => return Vec::new(),
+        };
+
+        let platform = Platform::new(os, arch);
+        let mut matches = platform.find_best_match(available_platforms);
+
+        // If a specific compiler/libc was requested (e.g. musl), prefer that
+        // variant by boosting it to the front when it is available.
+        if let Some(compiler) = parsed.compiler {
+            let preferred_id = format!("{}-{}", platform, compiler.as_str());
+            if let Some(pos) = matches.iter().position(|m| m.platform_id == preferred_id) {
+                let mut chosen = matches.remove(pos);
+                chosen.score = 2000;
+                matches.insert(0, chosen);
+            }
+        }
+
+        matches
+    }
+
     /// Get fallback platform identifiers for cross-compatibility
     fn fallback_identifiers(&self) -> Vec<(String, FallbackType)> {
         let mut fallbacks = Vec::new();
@@ -1474,6 +1528,80 @@ mod tests {
         assert_eq!(matches.len(), 1);
         assert!(!matches[0].is_exact);
         assert_eq!(matches[0].fallback_type, Some(FallbackType::Arch32On64));
+    }
+
+    #[test]
+    fn test_match_override_rust_triple_prefers_musl() {
+        use crate::core::manifest::PlatformBinary;
+
+        let bin = |name: &str| PlatformBinary {
+            url: "test".to_string(),
+            size: 0,
+            checksum: None,
+            asset_name: name.to_string(),
+        };
+
+        let mut available = std::collections::HashMap::new();
+        available.insert(
+            "linux-aarch64".to_string(),
+            vec![bin("tool-linux-aarch64.tar.gz")],
+        );
+        available.insert(
+            "linux-aarch64-musl".to_string(),
+            vec![bin("tool-linux-aarch64-musl.tar.gz")],
+        );
+        available.insert(
+            "linux-aarch64-gnu".to_string(),
+            vec![bin("tool-linux-aarch64-gnu.tar.gz")],
+        );
+
+        // Rust target triple with musl should resolve to the musl variant.
+        let matches = Platform::match_override("aarch64-unknown-linux-musl", &available);
+        assert!(!matches.is_empty());
+        assert_eq!(matches[0].platform_id, "linux-aarch64-musl");
+    }
+
+    #[test]
+    fn test_match_override_exact_internal_id() {
+        use crate::core::manifest::PlatformBinary;
+
+        let mut available = std::collections::HashMap::new();
+        available.insert(
+            "linux-aarch64-musl".to_string(),
+            vec![PlatformBinary {
+                url: "test".to_string(),
+                size: 0,
+                checksum: None,
+                asset_name: "tool-linux-aarch64-musl.tar.gz".to_string(),
+            }],
+        );
+
+        let matches = Platform::match_override("linux-aarch64-musl", &available);
+        assert_eq!(matches.len(), 1);
+        assert!(matches[0].is_exact);
+        assert_eq!(matches[0].platform_id, "linux-aarch64-musl");
+    }
+
+    #[test]
+    fn test_match_override_falls_back_when_compiler_absent() {
+        use crate::core::manifest::PlatformBinary;
+
+        // Package only ships a plain aarch64 build (no musl variant).
+        let mut available = std::collections::HashMap::new();
+        available.insert(
+            "linux-aarch64".to_string(),
+            vec![PlatformBinary {
+                url: "test".to_string(),
+                size: 0,
+                checksum: None,
+                asset_name: "tool-linux-aarch64.tar.gz".to_string(),
+            }],
+        );
+
+        // Requesting musl should still resolve to the available aarch64 build.
+        let matches = Platform::match_override("aarch64-unknown-linux-musl", &available);
+        assert!(!matches.is_empty());
+        assert_eq!(matches[0].platform_id, "linux-aarch64");
     }
 
     #[test]

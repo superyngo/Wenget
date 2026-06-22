@@ -97,6 +97,10 @@ pub enum Commands {
         /// Skip confirmation prompts
         #[arg(short = 'y', long)]
         yes: bool,
+
+        /// Specify target platform (e.g., linux-x86_64-musl, aarch64-unknown-linux-musl)
+        #[arg(short = 'p', long = "platform")]
+        platform: Option<String>,
     },
 
     /// Delete (remove) installed packages

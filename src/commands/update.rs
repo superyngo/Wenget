@@ -112,7 +112,7 @@ fn is_newer_version(old: &str, new: &str) -> bool {
 }
 
 /// Upgrade installed packages
-pub fn run(names: Vec<String>, yes: bool) -> Result<()> {
+pub fn run(names: Vec<String>, yes: bool, platform: Option<String>) -> Result<()> {
     // Check for wenget updates first
     if check_and_upgrade_self(yes)? {
         // On Windows, exit after self-update to avoid shell instability
@@ -212,8 +212,10 @@ pub fn run(names: Vec<String>, yes: bool) -> Result<()> {
         log::warn!("Failed to save synced cache: {}", e);
     }
 
-    // Use add command to upgrade (reinstall)
-    add::run(expanded, yes, None, None, None, None, false, true)
+    // Use add command to upgrade (reinstall). The platform override (if any)
+    // is threaded through so updates honor an explicit `-p` target; when None,
+    // the add path falls back to the `preferred_platform` config setting.
+    add::run(expanded, yes, None, platform, None, None, false, true)
 }
 
 /// Find upgradeable packages by checking their sources
