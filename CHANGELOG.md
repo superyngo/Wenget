@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **`install`/`update` now respect `preferred_platform` config**: The `preferred_platform` setting in `config.toml` was previously parsed but never applied, so installs and updates always used the auto-detected platform. It is now honored by both `wenget add` and `wenget update`. The setting accepts internal identifiers (e.g. `linux-aarch64-musl`) as well as Rust-style target triples (e.g. `aarch64-unknown-linux-musl`); when a libc/compiler variant such as `musl` is requested, that variant is preferred when available and otherwise falls back to a compatible build.
+- **`update self` honors `preferred_platform` for libc/compiler choice**: Self-update now applies `preferred_platform` (e.g. to pull a musl build on glibc) — but only when the override targets the same OS+arch as the host. A cross-OS/arch override is ignored with a notice, since replacing the running binary with one for another platform would break wenget.
 
 ### Added
 

@@ -559,6 +559,23 @@ fn check_and_upgrade_self(yes: bool) -> Result<bool> {
     }
 }
 
+/// Whether a `preferred_platform` override targets the same OS and architecture
+/// as the host.
+///
+/// Only such overrides are safe to apply during self-update: they merely select
+/// a libc/compiler variant (e.g. musl on glibc) while keeping OS+arch. A
+/// cross-OS/arch override would replace the running binary with one that cannot
+/// execute on this machine.
+fn override_matches_host(override_str: &str, host: crate::core::Platform) -> bool {
+    let parsed = crate::core::platform::ParsedAsset::from_filename(override_str);
+    match (parsed.os, parsed.arch) {
+        (Some(os), Some(arch)) => os == host.os && arch == host.arch,
+        // OS matches and arch unspecified → treat as host arch (compatible).
+        (Some(os), None) => os == host.os,
+        _ => false,
+    }
+}
+
 /// Upgrade wenget itself
 fn upgrade_self_with_provider(provider: GitHubProvider, latest_version: &str) -> Result<()> {
     use crate::core::{Platform, WenPaths};
@@ -574,10 +591,37 @@ fn upgrade_self_with_provider(provider: GitHubProvider, latest_version: &str) ->
     let package = provider.fetch_package("https://github.com/superyngo/wenget")?;
 
     // Select binary for current platform
-    // Note: Uses same platform matching logic as add command (see add.rs:592)
-    // This handles libc detection (musl vs glibc), compiler variants, and fallbacks
+    // Note: Uses same platform matching logic as add command (see add.rs).
+    // This handles libc detection (musl vs glibc), compiler variants, and fallbacks.
     let current_platform = Platform::current();
-    let matches = current_platform.find_best_match(&package.platforms);
+
+    // Honor `preferred_platform` from config for self-update, but ONLY when it
+    // targets the same OS+arch as the host. The self-update binary must run on
+    // this machine, so a cross-OS/arch override would brick wenget; a pure
+    // libc/compiler choice (e.g. musl on glibc) keeps OS+arch and is safe.
+    let preferred = Config::new()
+        .ok()
+        .and_then(|c| c.preferences().preferred_platform.clone());
+
+    let matches = match preferred.as_deref() {
+        Some(pref) if override_matches_host(pref, current_platform) => {
+            let m = Platform::match_override(pref, &package.platforms);
+            if m.is_empty() {
+                current_platform.find_best_match(&package.platforms)
+            } else {
+                m
+            }
+        }
+        Some(pref) => {
+            println!(
+                "  {} Ignoring preferred_platform '{}' for self-update (different OS/arch than host)",
+                "ℹ".cyan(),
+                pref
+            );
+            current_platform.find_best_match(&package.platforms)
+        }
+        None => current_platform.find_best_match(&package.platforms),
+    };
 
     if matches.is_empty() {
         anyhow::bail!(
@@ -803,6 +847,26 @@ fn replace_exe_unix(current_exe: &std::path::PathBuf, new_exe: &std::path::PathB
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::platform::{Arch, Os};
+    use crate::core::Platform;
+
+    #[test]
+    fn test_override_matches_host() {
+        let host = Platform::new(Os::Linux, Arch::X86_64);
+
+        // Same OS+arch, libc variant only → safe to apply.
+        assert!(override_matches_host("x86_64-unknown-linux-musl", host));
+        assert!(override_matches_host("linux-x86_64-gnu", host));
+        // OS matches, arch unspecified → treated as host arch.
+        assert!(override_matches_host("linux", host));
+
+        // Different arch → unsafe.
+        assert!(!override_matches_host("aarch64-unknown-linux-musl", host));
+        // Different OS → unsafe.
+        assert!(!override_matches_host("x86_64-pc-windows-msvc", host));
+        // Unparseable → unsafe.
+        assert!(!override_matches_host("not-a-platform", host));
+    }
 
     #[test]
     fn test_is_newer_version() {
