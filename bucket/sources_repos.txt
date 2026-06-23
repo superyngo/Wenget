@@ -90,6 +90,7 @@ https://github.com/sipeed/picoclaw
 https://github.com/badlogic/pi-mono
 https://github.com/openai/codex
 https://github.com/dynatrace-oss/ai-config-manager
+https://github.com/pardnchiu/Agenvoy
 
 # === Archived ===
 # https://github.com/ClementTsang/bottom
