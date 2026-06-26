@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [3.8.2] - 2026-06-26
+
 ### Fixed
 
 - **Version comparison for single package updates**: `wenget update <package>` now compares the target version with the installed version before updating. If the package is already up to date, it skips the installation rather than blindly upgrading/downgrading.
