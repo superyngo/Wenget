@@ -972,16 +972,30 @@ fn install_packages(
         Option<String>,
     )> = Vec::new();
 
-    for (original_name, resolved, platform_match) in packages_to_install {
+    for (original_name, mut resolved, _) in packages_to_install {
         let pkg_name = resolved.package.name.clone();
         let repo = &resolved.package.repo;
+
+        let mut target_pkg = resolved.package.clone();
 
         // Fetch version (either custom, or latest from API, falling back to cache)
         // IMPORTANT: Always fetch from GitHub API first to ensure accurate version comparison
         // for update detection. Cached bucket version may be stale.
         let version = if let Some(custom_ver) = custom_version {
             // User specified a version
-            custom_ver.to_string()
+            let ver = custom_ver.trim_start_matches('v').to_string();
+            if let Some(ref gh) = github {
+                if let Ok(pkg) = gh.fetch_package_by_version(repo, custom_ver) {
+                    target_pkg = pkg;
+                } else if let Some(derived) =
+                    derive_versioned_package(&resolved.package, custom_ver)
+                {
+                    target_pkg = derived;
+                }
+            } else if let Some(derived) = derive_versioned_package(&resolved.package, custom_ver) {
+                target_pkg = derived;
+            }
+            ver
         } else if update_mode && matches!(resolved.source, PackageSource::Bucket { .. }) {
             // In update mode the cache was just refreshed with the latest version by the
             // update command. Trust it instead of making a redundant API call that may
@@ -992,21 +1006,50 @@ fn install_packages(
                 .clone()
                 .unwrap_or_else(|| "unknown".to_string())
         } else if let Some(ref gh) = github {
-            // Fetch latest version from API for accurate comparison
-            gh.fetch_latest_version(repo).unwrap_or_else(|_| {
-                // API failed - fall back to cached version
+            // Fetch latest package info from API for accurate comparison and correct URLs
+            if let Ok(pkg) = gh.fetch_package(repo) {
+                target_pkg = pkg;
+                target_pkg
+                    .version
+                    .clone()
+                    .unwrap_or_else(|| "unknown".to_string())
+            } else {
                 resolved
                     .package
                     .version
                     .clone()
                     .unwrap_or_else(|| "unknown".to_string())
-            })
+            }
         } else if let Some(ref v) = resolved.package.version {
             // No GitHub provider available - use cached version
             v.clone()
         } else {
             "unknown".to_string()
         };
+
+        resolved.package = target_pkg;
+
+        // Recompute platform match for the new target package platforms
+        let matches = if let Some(override_str) = platform_override {
+            Platform::match_override(override_str, &resolved.package.platforms)
+        } else {
+            current_platform.find_best_match(&resolved.package.platforms)
+        };
+
+        if matches.is_empty() {
+            let target = platform_override
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| current_platform.to_string());
+            println!(
+                "{} {} v{} does not support platform {}",
+                "Warning:".yellow(),
+                resolved.package.name,
+                version,
+                target
+            );
+            continue;
+        }
+        let platform_match = matches[0].clone();
 
         // Check if already installed
         // Determine which key to check based on input type and variant filter
@@ -1188,20 +1231,16 @@ fn install_packages(
 
         // Try to fetch package info from GitHub API (includes download links)
         // If API rate limit is hit, fallback to cached package info
-        let (pkg_to_install, version, using_fallback) = if update_mode
-            && custom_version.is_none()
-            && matches!(resolved.source, PackageSource::Bucket { .. })
-        {
-            // Update mode: the cache holds the latest package info synced by the update
-            // command, so use it directly and skip the redundant install-time API round.
-            let version = resolved
-                .package
-                .version
-                .clone()
-                .unwrap_or_else(|| "unknown".to_string());
-            (resolved.package.clone(), version, false)
-        } else if let Some(ref gh) = github {
-            if let Some(custom_ver) = custom_version {
+        let (pkg_to_install, version, using_fallback) = if let Some(custom_ver) = custom_version {
+            let normalized_custom = custom_ver.trim_start_matches('v');
+            if resolved.package.version.as_deref() == Some(normalized_custom) {
+                // Already resolved in planning phase
+                (
+                    resolved.package.clone(),
+                    normalized_custom.to_string(),
+                    false,
+                )
+            } else if let Some(ref gh) = github {
                 // User specified a version - fetch that specific version
                 match gh.fetch_package_by_version(repo_url, custom_ver) {
                     Ok(versioned_pkg) => {
@@ -1236,37 +1275,66 @@ fn install_packages(
                     }
                 }
             } else {
-                // No version specified - fetch latest
-                match gh.fetch_package(repo_url) {
-                    Ok(latest_pkg) => {
-                        // Successfully fetched from GitHub API - use latest download links
-                        // Version is now included in the package struct
-                        let version = latest_pkg
-                            .version
-                            .clone()
-                            .unwrap_or_else(|| "unknown".to_string());
-                        (latest_pkg, version, false)
+                match derive_versioned_package(&resolved.package, custom_ver) {
+                    Some(derived) => {
+                        let version = custom_ver.trim_start_matches('v').to_string();
+                        (derived, version, true)
                     }
-                    Err(e) => {
-                        // Failed to fetch from GitHub API (likely rate limit) - use cached package info
-                        log::warn!(
-                            "Failed to fetch latest package info from GitHub API for {}: {}",
-                            pkg_name,
-                            e
-                        );
+                    None => {
                         println!(
-                            "  {} Using cached download links (GitHub API unavailable)",
-                            "⚠".yellow()
+                            "  {} No usable cached version to derive {}",
+                            "✗".red(),
+                            custom_ver
                         );
-
-                        // Use version from cached package if available
-                        let version = resolved
-                            .package
-                            .version
-                            .clone()
-                            .unwrap_or_else(|| "unknown".to_string());
-                        (resolved.package.clone(), version, true)
+                        fail_count += 1;
+                        continue;
                     }
+                }
+            }
+        } else if update_mode && matches!(resolved.source, PackageSource::Bucket { .. }) {
+            // Update mode: the cache holds the latest package info synced by the update
+            // command, so use it directly and skip the redundant install-time API round.
+            let version = resolved
+                .package
+                .version
+                .clone()
+                .unwrap_or_else(|| "unknown".to_string());
+            (resolved.package.clone(), version, false)
+        } else if resolved.package.version.is_some() {
+            // Already resolved in planning phase (e.g. latest version)
+            let version = resolved.package.version.clone().unwrap();
+            (resolved.package.clone(), version, false)
+        } else if let Some(ref gh) = github {
+            // No version specified - fetch latest
+            match gh.fetch_package(repo_url) {
+                Ok(latest_pkg) => {
+                    // Successfully fetched from GitHub API - use latest download links
+                    // Version is now included in the package struct
+                    let version = latest_pkg
+                        .version
+                        .clone()
+                        .unwrap_or_else(|| "unknown".to_string());
+                    (latest_pkg, version, false)
+                }
+                Err(e) => {
+                    // Failed to fetch from GitHub API (likely rate limit) - use cached package info
+                    log::warn!(
+                        "Failed to fetch latest package info from GitHub API for {}: {}",
+                        pkg_name,
+                        e
+                    );
+                    println!(
+                        "  {} Using cached download links (GitHub API unavailable)",
+                        "⚠".yellow()
+                    );
+
+                    // Use version from cached package if available
+                    let version = resolved
+                        .package
+                        .version
+                        .clone()
+                        .unwrap_or_else(|| "unknown".to_string());
+                    (resolved.package.clone(), version, true)
                 }
             }
         } else {

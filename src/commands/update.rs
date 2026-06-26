@@ -201,8 +201,82 @@ pub fn run(names: Vec<String>, yes: bool, platform: Option<String>) -> Result<()
 
     // For named updates, find_upgradeable was skipped, so sync the latest package info
     // for the targeted packages into the cache here.
+    let mut to_run = expanded.clone();
     if !update_all {
         sync_bucket_packages_to_cache(&installed, &expanded, &github, &mut cache);
+
+        // Filter out packages that are already up to date
+        let mut filtered = Vec::new();
+        for key in expanded {
+            if let Some(inst_pkg) = installed.get_package(&key) {
+                match &inst_pkg.source {
+                    PackageSource::Bucket { .. } => {
+                        if let Some(cached_pkg) = cache
+                            .packages
+                            .values()
+                            .find(|p| p.package.name == inst_pkg.repo_name)
+                        {
+                            if let Some(cache_version) = &cached_pkg.package.version {
+                                if is_newer_version(&inst_pkg.version, cache_version) {
+                                    filtered.push(key);
+                                } else {
+                                    println!(
+                                        "  • {} v{} is already up to date (latest: {})",
+                                        inst_pkg.repo_name.bright_white(),
+                                        inst_pkg.version.dimmed(),
+                                        cache_version.green()
+                                    );
+                                }
+                            } else {
+                                filtered.push(key);
+                            }
+                        } else {
+                            filtered.push(key);
+                        }
+                    }
+                    PackageSource::Script { origin, .. } => {
+                        if origin.starts_with("bucket:") {
+                            if let Some(cached_script) = cache.find_script(&inst_pkg.repo_name) {
+                                if let Some((_, platform_info)) =
+                                    cached_script.script.get_installable_script()
+                                {
+                                    let cache_url = &platform_info.url;
+                                    let needs_update = match &inst_pkg.download_url {
+                                        Some(installed_url) => installed_url != cache_url,
+                                        None => true,
+                                    };
+                                    if needs_update {
+                                        filtered.push(key);
+                                    } else {
+                                        println!(
+                                            "  • {} (script) is already up to date",
+                                            inst_pkg.repo_name.bright_white()
+                                        );
+                                    }
+                                } else {
+                                    filtered.push(key);
+                                }
+                            } else {
+                                filtered.push(key);
+                            }
+                        } else {
+                            filtered.push(key);
+                        }
+                    }
+                    _ => {
+                        // For direct repo, we let add::run handle it/check live
+                        filtered.push(key);
+                    }
+                }
+            } else {
+                filtered.push(key);
+            }
+        }
+        to_run = filtered;
+    }
+
+    if to_run.is_empty() {
+        return Ok(());
     }
 
     // Persist the API-synced package info so the add step (running in update_mode) reads
@@ -215,7 +289,7 @@ pub fn run(names: Vec<String>, yes: bool, platform: Option<String>) -> Result<()
     // Use add command to upgrade (reinstall). The platform override (if any)
     // is threaded through so updates honor an explicit `-p` target; when None,
     // the add path falls back to the `preferred_platform` config setting.
-    add::run(expanded, yes, None, platform, None, None, false, true)
+    add::run(to_run, yes, None, platform, None, None, false, true)
 }
 
 /// Find upgradeable packages by checking their sources

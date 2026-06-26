@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Fixed
+
+- **Version comparison for single package updates**: `wenget update <package>` now compares the target version with the installed version before updating. If the package is already up to date, it skips the installation rather than blindly upgrading/downgrading.
+- **Correct download URL display when installing specific version**: `wenget add <package> -v <version>` now correctly displays the download URL for the target version during the planning phase, rather than showing the stale cached version's URL.
+
 ## [3.8.1] - 2026-06-22
 
 ### Fixed
