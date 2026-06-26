@@ -137,6 +137,5 @@ mod tests {
     #[test]
     fn test_module_compiles() {
         // This test just verifies the module compiles correctly
-        assert!(true);
     }
 }

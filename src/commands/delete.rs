@@ -712,7 +712,7 @@ mod tests {
     #[test]
     fn test_specific_variant_not_duplicated_in_final_to_delete() {
         // Simulate the variant resolution logic
-        let names = vec!["opencode::desktop.app".to_string()];
+        let names = ["opencode::desktop.app".to_string()];
         let matching_packages = vec!["opencode::desktop.app".to_string()];
 
         let mut packages_to_delete: Vec<(String, Vec<String>)> = Vec::new();
