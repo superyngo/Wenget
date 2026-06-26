@@ -112,6 +112,9 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+
       - name: Install cross (for musl targets)
         if: matrix.target == 'x86_64-unknown-linux-musl' || matrix.target == 'aarch64-unknown-linux-musl' || matrix.target == 'i686-unknown-linux-musl' || matrix.target == 'armv7-unknown-linux-musleabihf'
         run: cargo install cross --git https://github.com/cross-rs/cross
