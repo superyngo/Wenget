@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Changed
+
+- **Algorithmic complexity and allocation reductions on install/update hot paths**:
+  - Removed per-binary re-read and re-parse of `installed.json` from the install loop; the caller's in-memory manifest snapshot is now reused, eliminating one disk read + JSON parse + migration walk per selected binary.
+  - Added a name→entry index (`ManifestCache::packages_by_name`) and used it in `update.rs`, converting repeated O(installed × cache) linear scans into O(1) lookups during update-check filtering and bucket sync.
+  - Command-name conflict resolution now builds a `HashSet` of taken names once per package instead of scanning every installed package's executables for each of up to 99 candidate suffixes.
+  - `BinarySelector::extract_platforms` parses each release asset once instead of 11× (once per test platform), and drops a redundant unsupported-architecture rescan.
+  - Variant filtering in the install path precomputes per-binary normalized names and variants once instead of recomputing them inside each filter pass.
+
 ## [3.8.3] - 2026-07-08
 
 ### Changed

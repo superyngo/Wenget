@@ -559,6 +559,7 @@ impl InstalledManifest {
     }
 
     /// Check if a command name is already taken by another package
+    #[allow(dead_code)] // Superseded by command_name_set for bulk probes; kept for single-check use and tests.
     pub fn is_command_taken(&self, command_name: &str, exclude_key: Option<&str>) -> bool {
         for (key, package) in &self.packages {
             if let Some(exclude) = exclude_key {
@@ -573,6 +574,31 @@ impl InstalledManifest {
             }
         }
         false
+    }
+
+    /// Build the set of all command names currently in use, optionally excluding
+    /// one package key.
+    ///
+    /// This is the bulk form of `is_command_taken`: build the set once and probe
+    /// it O(1) per candidate, instead of scanning every package's executables for
+    /// each candidate. Used by command-name resolution loops that probe many
+    /// suffixes (e.g. the 1..=99 numeric fallback in `resolve_command_name`).
+    pub fn command_name_set(&self, exclude_key: Option<&str>) -> std::collections::HashSet<String> {
+        let mut set = std::collections::HashSet::new();
+        for (key, package) in &self.packages {
+            if let Some(exclude) = exclude_key {
+                if key == exclude {
+                    continue;
+                }
+            }
+            for name in package.executables.values() {
+                set.insert(name.clone());
+            }
+            for name in &package.command_names {
+                set.insert(name.clone());
+            }
+        }
+        set
     }
 
     /// Migrate old format (single command_name) to new format (command_names vec)
@@ -1024,6 +1050,74 @@ mod tests {
         assert!(manifest.is_command_taken("rg", None));
         assert!(!manifest.is_command_taken("rg", Some("ripgrep")));
         assert!(!manifest.is_command_taken("nonexistent", None));
+    }
+
+    #[test]
+    fn test_command_name_set() {
+        use std::collections::HashSet;
+
+        let mut manifest = InstalledManifest::new();
+
+        // Package A: executables map only
+        let mut a_exes = HashMap::new();
+        a_exes.insert("bin/rg".to_string(), "rg".to_string());
+        a_exes.insert("bin/rg-doc".to_string(), "rg-doc".to_string());
+        manifest.upsert_package(
+            "ripgrep".to_string(),
+            InstalledPackage {
+                repo_name: "ripgrep".to_string(),
+                variant: None,
+                version: "14.0.0".to_string(),
+                platform: "linux-x86_64".to_string(),
+                installed_at: Utc::now(),
+                install_path: "/path".to_string(),
+                executables: a_exes,
+                source: PackageSource::Bucket {
+                    name: "main".to_string(),
+                },
+                description: String::new(),
+                command_names: vec![],
+                command_name: None,
+                asset_name: "rg.tar.gz".to_string(),
+                parent_package: None,
+                download_url: None,
+            },
+        );
+
+        // Package B: legacy command_names only
+        manifest.upsert_package(
+            "fzf".to_string(),
+            InstalledPackage {
+                repo_name: "fzf".to_string(),
+                variant: None,
+                version: "0.44.0".to_string(),
+                platform: "linux-x86_64".to_string(),
+                installed_at: Utc::now(),
+                install_path: "/path".to_string(),
+                executables: HashMap::new(),
+                source: PackageSource::Bucket {
+                    name: "main".to_string(),
+                },
+                description: String::new(),
+                command_names: vec!["fzf".to_string()],
+                command_name: None,
+                asset_name: "fzf.tar.gz".to_string(),
+                parent_package: None,
+                download_url: None,
+            },
+        );
+
+        let set: HashSet<String> = manifest.command_name_set(None);
+        assert!(set.contains("rg"));
+        assert!(set.contains("rg-doc"));
+        assert!(set.contains("fzf"));
+        assert!(!set.contains("missing"));
+
+        // Excluding ripgrep should drop its commands but keep fzf's.
+        let set_excluded = manifest.command_name_set(Some("ripgrep"));
+        assert!(!set_excluded.contains("rg"));
+        assert!(!set_excluded.contains("rg-doc"));
+        assert!(set_excluded.contains("fzf"));
     }
 
     #[test]

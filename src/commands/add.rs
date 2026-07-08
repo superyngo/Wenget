@@ -142,22 +142,26 @@ pub fn run(
 /// 2. Otherwise, use base_name
 /// 3. If name is taken, try base_name-{number}
 /// 4. If is_custom is true, skip variant suffix appending and go directly to conflict checking
+///
+/// `taken` is the precomputed set of command names already in use (excluding the
+/// package being resolved). Callers build it once via
+/// `InstalledManifest::command_name_set` rather than scanning all packages for
+/// every candidate suffix here.
 fn resolve_command_name(
     base_name: &str,
     variant: Option<&str>,
-    installed: &crate::core::InstalledManifest,
-    exclude_key: Option<&str>,
+    taken: &std::collections::HashSet<String>,
     is_custom: bool,
 ) -> String {
     // 1. If custom name provided, skip variant suffix - just check for conflicts
     if is_custom {
-        if !installed.is_command_taken(base_name, exclude_key) {
+        if !taken.contains(base_name) {
             return base_name.to_string();
         }
         // Custom name taken, try numeric suffixes
         for i in 1..=99 {
             let numbered = format!("{}-{}", base_name, i);
-            if !installed.is_command_taken(&numbered, exclude_key) {
+            if !taken.contains(&numbered) {
                 return numbered;
             }
         }
@@ -183,13 +187,13 @@ fn resolve_command_name(
             format!("{}-{}", base_name, var)
         };
 
-        if !installed.is_command_taken(&desired_name, exclude_key) {
+        if !taken.contains(&desired_name) {
             return desired_name;
         }
         // Desired name taken, try numeric suffixes
         for i in 1..=99 {
             let numbered = format!("{}-{}", desired_name, i);
-            if !installed.is_command_taken(&numbered, exclude_key) {
+            if !taken.contains(&numbered) {
                 return numbered;
             }
         }
@@ -197,14 +201,14 @@ fn resolve_command_name(
     }
 
     // 3. No variant - try base_name first
-    if !installed.is_command_taken(base_name, exclude_key) {
+    if !taken.contains(base_name) {
         return base_name.to_string();
     }
 
     // 4. Try numeric suffixes for non-variant
     for i in 1..=99 {
         let numbered = format!("{}-{}", base_name, i);
-        if !installed.is_command_taken(&numbered, exclude_key) {
+        if !taken.contains(&numbered) {
             return numbered;
         }
     }
@@ -1366,6 +1370,26 @@ fn install_packages(
         //   - If asset-name matching succeeds, use it regardless of effective_variant_filter.
         //   - If it fails, fall back to named variant filter.
         // In add mode: use named variant filter, or return all binaries.
+        // Precompute, once per binary, the normalized asset name and the variant.
+        // Both normalize_asset_for_matching and extract_variant_from_asset allocate
+        // (lowercase, split, join) and were previously recomputed inside every
+        // filter pass below.
+        let binary_meta: Vec<(
+            usize,
+            &crate::core::manifest::PlatformBinary,
+            String,
+            Option<String>,
+        )> = binaries
+            .iter()
+            .enumerate()
+            .map(|(idx, binary)| {
+                let normalized = normalize_asset_for_matching(&binary.asset_name);
+                let variant =
+                    crate::core::manifest::extract_variant_from_asset(&binary.asset_name, pkg_name);
+                (idx, binary, normalized, variant)
+            })
+            .collect();
+
         let (filtered_binaries, _original_indices): (Vec<_>, Vec<_>) = if update_mode {
             // Compute asset-name template from the previously installed package.
             let stored_template = installed_check_name
@@ -1374,13 +1398,10 @@ fn install_packages(
                 .map(|p| normalize_asset_for_matching(&p.asset_name));
 
             if let Some(template) = stored_template {
-                let matched: Vec<_> = binaries
+                let matched: Vec<_> = binary_meta
                     .iter()
-                    .enumerate()
-                    .filter(|(_, binary)| {
-                        normalize_asset_for_matching(&binary.asset_name) == template
-                    })
-                    .map(|(idx, binary)| (binary.clone(), idx))
+                    .filter(|(_, _, normalized, _)| normalized.as_str() == template)
+                    .map(|(idx, binary, _, _)| ((*binary).clone(), *idx))
                     .collect();
 
                 if !matched.is_empty() {
@@ -1389,17 +1410,10 @@ fn install_packages(
                 } else if let Some(filter) = effective_variant_filter {
                     // Asset-name match failed (package renamed its assets?): fall back to
                     // named variant filter as a secondary attempt.
-                    binaries
+                    binary_meta
                         .iter()
-                        .enumerate()
-                        .filter(|(_, binary)| {
-                            let variant = crate::core::manifest::extract_variant_from_asset(
-                                &binary.asset_name,
-                                pkg_name,
-                            );
-                            variant.as_deref() == Some(filter)
-                        })
-                        .map(|(idx, binary)| (binary.clone(), idx))
+                        .filter(|(_, _, _, variant)| variant.as_deref() == Some(filter))
+                        .map(|(idx, binary, _, _)| ((*binary).clone(), *idx))
                         .unzip()
                 } else {
                     // Neither match succeeded: return all binaries and let
@@ -1410,17 +1424,10 @@ fn install_packages(
                 // No stored asset_name (package not in installed.json): fall back to
                 // named variant filter or return all binaries.
                 if let Some(filter) = effective_variant_filter {
-                    binaries
+                    binary_meta
                         .iter()
-                        .enumerate()
-                        .filter(|(_, binary)| {
-                            let variant = crate::core::manifest::extract_variant_from_asset(
-                                &binary.asset_name,
-                                pkg_name,
-                            );
-                            variant.as_deref() == Some(filter)
-                        })
-                        .map(|(idx, binary)| (binary.clone(), idx))
+                        .filter(|(_, _, _, variant)| variant.as_deref() == Some(filter))
+                        .map(|(idx, binary, _, _)| ((*binary).clone(), *idx))
                         .unzip()
                 } else {
                     (binaries.clone(), (0..binaries.len()).collect())
@@ -1428,17 +1435,10 @@ fn install_packages(
             }
         } else if let Some(filter) = effective_variant_filter {
             // Normal add mode with named variant filter.
-            binaries
+            binary_meta
                 .iter()
-                .enumerate()
-                .filter(|(_, binary)| {
-                    let variant = crate::core::manifest::extract_variant_from_asset(
-                        &binary.asset_name,
-                        pkg_name,
-                    );
-                    variant.as_deref() == Some(filter)
-                })
-                .map(|(idx, binary)| (binary.clone(), idx))
+                .filter(|(_, _, _, variant)| variant.as_deref() == Some(filter))
+                .map(|(idx, binary, _, _)| ((*binary).clone(), *idx))
                 .unzip()
         } else {
             // Normal add mode, no filter: return all binaries.
@@ -1535,7 +1535,7 @@ fn install_packages(
             }
 
             match install_package(
-                config,
+                installed,
                 paths,
                 &pkg_to_install,
                 &platform_match,
@@ -1672,9 +1672,14 @@ fn install_packages(
 }
 
 /// Install a single package
+///
+/// `installed` is the in-memory snapshot of `installed.json` held by the caller
+/// (`install_packages`). It is used for executable reuse in update mode and for
+/// command-name conflict resolution. It must NOT be re-read from disk here: the
+/// caller holds the authoritative in-memory copy and persists it after install.
 #[allow(clippy::too_many_arguments)]
 fn install_package(
-    config: &Config,
+    installed: &crate::core::InstalledManifest,
     paths: &WenPaths,
     pkg: &crate::core::Package,
     platform_match: &crate::core::platform::PlatformMatch,
@@ -1748,10 +1753,9 @@ fn install_package(
     } else if update_mode {
         // Update mode: keep previously installed executables, ignore new ones,
         // prompt for replacement when old executables disappear
-        let old_exes = config
-            .get_or_create_installed()
-            .ok()
-            .and_then(|m| m.get_package(installed_key).map(|p| p.executables.clone()));
+        let old_exes = installed
+            .get_package(installed_key)
+            .map(|p| p.executables.clone());
 
         if let Some(ref old) = old_exes {
             let old_paths: std::collections::HashSet<_> = old.keys().cloned().collect();
@@ -1943,13 +1947,15 @@ fn install_package(
         (installed_key.to_string(), None)
     };
 
-    // Load installed manifest for command name resolution
-    let installed_manifest = config.get_or_create_installed()?;
-
     // If this package is already installed, grab old executables for command name reuse
-    let old_executables = installed_manifest
+    let old_executables = installed
         .get_package(installed_key)
         .map(|p| p.executables.clone());
+
+    // Precompute the set of command names already in use (excluding this package)
+    // so per-executable conflict checks are O(1) instead of scanning all packages
+    // for every candidate suffix in `resolve_command_name`.
+    let mut taken_names = installed.command_name_set(Some(installed_key));
 
     for exe_relative in selected_executables {
         let exe_path = app_dir.join(&exe_relative);
@@ -2011,13 +2017,7 @@ fn install_package(
             };
 
             // Resolve command name with variant to avoid conflicts
-            resolve_command_name(
-                &base_name,
-                variant_opt.as_deref(),
-                &installed_manifest,
-                Some(installed_key),
-                is_custom,
-            )
+            resolve_command_name(&base_name, variant_opt.as_deref(), &taken_names, is_custom)
         };
 
         println!("  Command will be available as: {}", resolved_name);
@@ -2037,6 +2037,9 @@ fn install_package(
             create_shim(&exe_path, &bin_path, &resolved_name)?;
         }
 
+        // Record the name as taken so subsequent executables in the same package
+        // don't resolve to a colliding name.
+        taken_names.insert(resolved_name.clone());
         executables.insert(exe_relative.clone(), resolved_name);
     }
 
@@ -2347,6 +2350,57 @@ mod tests {
         assert_eq!(
             normalize_asset_for_matching("uv-aarch64-apple-darwin.tar.gz"),
             normalize_asset_for_matching("uv-aarch64-apple-darwin.tar.gz")
+        );
+    }
+
+    #[test]
+    fn test_resolve_command_name_no_conflict() {
+        let taken = std::collections::HashSet::new();
+        // No variant, name free -> base name returned as-is.
+        assert_eq!(resolve_command_name("rg", None, &taken, false), "rg");
+    }
+
+    #[test]
+    fn test_resolve_command_name_numeric_suffix_on_conflict() {
+        let mut taken = std::collections::HashSet::new();
+        taken.insert("rg".to_string());
+
+        // "rg" taken -> "rg-1"
+        assert_eq!(resolve_command_name("rg", None, &taken, false), "rg-1");
+
+        // "rg" and "rg-1" taken -> "rg-2"
+        taken.insert("rg-1".to_string());
+        assert_eq!(resolve_command_name("rg", None, &taken, false), "rg-2");
+    }
+
+    #[test]
+    fn test_resolve_command_name_with_variant() {
+        let taken = std::collections::HashSet::new();
+        // Variant appends "-variant" when base doesn't already end with it.
+        assert_eq!(
+            resolve_command_name("bun", Some("baseline"), &taken, false),
+            "bun-baseline"
+        );
+    }
+
+    #[test]
+    fn test_resolve_command_name_variant_already_suffixed() {
+        let taken = std::collections::HashSet::new();
+        // Base already ends with "-profile" variant -> kept as-is.
+        assert_eq!(
+            resolve_command_name("bun-profile", Some("profile"), &taken, false),
+            "bun-profile"
+        );
+    }
+
+    #[test]
+    fn test_resolve_command_name_custom_takes_numeric_suffix() {
+        let mut taken = std::collections::HashSet::new();
+        taken.insert("mytool".to_string());
+        // Custom name that conflicts falls through to numeric suffix.
+        assert_eq!(
+            resolve_command_name("mytool", None, &taken, true),
+            "mytool-1"
         );
     }
 }

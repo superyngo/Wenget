@@ -915,6 +915,7 @@ impl BinarySelector {
     ///
     /// # Returns
     /// Vector of (score, asset, compiler_variant) sorted by score (highest first)
+    #[allow(dead_code)] // extract_platforms now inlines this logic to parse each asset once; kept as a public helper.
     pub fn select_all_for_platform(
         assets: &[BinaryAsset],
         platform: Platform,
@@ -940,6 +941,7 @@ impl BinarySelector {
     ///
     /// # Returns
     /// The detected compiler variant, or None if not detected
+    #[allow(dead_code)] // only used by select_all_for_platform; kept alongside it.
     fn detect_compiler_from_filename(filename: &str) -> Option<Compiler> {
         let lower = filename.to_lowercase();
         if lower.contains("musl") {
@@ -1008,14 +1010,10 @@ impl BinarySelector {
                 return None;
             }
             None => {
-                // No explicit architecture detected
-                // Check if filename contains unsupported arch keywords - if so, reject
-                if ParsedAsset::contains_unsupported_arch(filename) {
-                    return None;
-                }
-
-                // Additional check: detect arch-like patterns that aren't in our supported list
-                // This catches cases like "powerpc64" that aren't in UNSUPPORTED_ARCHS
+                // No explicit architecture detected.
+                // Unsupported arch keywords were already filtered above (line ~975),
+                // so only the unknown-arch-pattern check remains here: it catches
+                // arch-like strings (e.g. "powerpc64") that aren't in UNSUPPORTED_ARCHS.
                 if ParsedAsset::contains_unknown_arch_pattern(filename) {
                     return None;
                 }
@@ -1079,6 +1077,34 @@ impl BinarySelector {
     pub fn extract_platforms(assets: &[BinaryAsset]) -> HashMap<String, Vec<BinaryAsset>> {
         let mut platforms: HashMap<String, Vec<BinaryAsset>> = HashMap::new();
 
+        // Parse each asset once and cache the data that scoring needs.
+        // The previous implementation re-parsed every asset 11 times (once per
+        // test platform) via score_asset -> ParsedAsset::from_filename.
+        struct Preparsed<'a> {
+            asset: &'a BinaryAsset,
+            parsed: ParsedAsset,
+            filename_lower: String,
+            excluded: bool,
+            unsupported_arch: bool,
+            unknown_arch_pattern: bool,
+        }
+
+        let preparsed: Vec<Preparsed> = assets
+            .iter()
+            .map(|asset| {
+                let filename_lower = asset.name.to_lowercase();
+                let parsed = ParsedAsset::from_filename(&asset.name);
+                Preparsed {
+                    excluded: Self::should_exclude(&filename_lower),
+                    unsupported_arch: ParsedAsset::contains_unsupported_arch(&filename_lower),
+                    unknown_arch_pattern: ParsedAsset::contains_unknown_arch_pattern(&asset.name),
+                    parsed,
+                    filename_lower,
+                    asset,
+                }
+            })
+            .collect();
+
         // Try all common platform combinations
         let test_platforms = vec![
             // Windows
@@ -1099,10 +1125,26 @@ impl BinarySelector {
         ];
 
         for platform in test_platforms {
-            // Get ALL matching assets for this platform
-            let all_matches = Self::select_all_for_platform(assets, platform);
+            // Score every asset against this platform using the cached parse.
+            // Mirrors score_asset + select_all_for_platform, but without re-parsing.
+            let mut scored: Vec<(usize, &BinaryAsset, Option<Compiler>)> = Vec::new();
+            for p in &preparsed {
+                let Some(score) = Self::score_parsed(
+                    &p.parsed,
+                    &p.filename_lower,
+                    p.excluded,
+                    p.unsupported_arch,
+                    p.unknown_arch_pattern,
+                    platform,
+                ) else {
+                    continue;
+                };
+                scored.push((score, p.asset, p.parsed.compiler));
+            }
+            // Sort by score (highest first) — matches select_all_for_platform ordering.
+            scored.sort_by(|a, b| b.0.cmp(&a.0));
 
-            for (_score, asset, compiler) in all_matches {
+            for (_score, asset, compiler) in scored {
                 // Build platform identifier with compiler variant
                 let platform_id = match compiler {
                     Some(c) => format!("{}-{}", platform, c.as_str()),
@@ -1110,11 +1152,106 @@ impl BinarySelector {
                 };
 
                 // Push all matching assets into the vector
-                platforms.entry(platform_id).or_default().push(asset);
+                platforms
+                    .entry(platform_id)
+                    .or_default()
+                    .push(asset.clone());
             }
         }
 
         platforms
+    }
+
+    /// Score a pre-parsed asset against a platform.
+    ///
+    /// This is the parse-once form of `score_asset`: callers precompute the
+    /// `ParsedAsset`, lowercased filename, and the exclude/unsupported-arch flags
+    /// once per asset, then this pure-scoring function runs in O(1) per
+    /// (asset, platform) pair. Behavior is identical to `score_asset`.
+    fn score_parsed(
+        parsed: &ParsedAsset,
+        filename_lower: &str,
+        excluded: bool,
+        unsupported_arch: bool,
+        unknown_arch_pattern: bool,
+        platform: Platform,
+    ) -> Option<usize> {
+        // Exclude certain files
+        if excluded {
+            return None;
+        }
+
+        // Filter out unsupported architectures
+        if unsupported_arch {
+            return None;
+        }
+
+        // Skip if extension is unsupported
+        if parsed.extension == FileExtension::Unsupported {
+            return None;
+        }
+
+        let mut score = 0;
+
+        // OS matching (mandatory)
+        let os_matches = match parsed.os {
+            Some(os) => os == platform.os,
+            None => false,
+        };
+
+        if !os_matches {
+            return None;
+        }
+        score += 100;
+
+        // Architecture matching
+        match parsed.arch {
+            Some(arch) if arch == platform.arch => {
+                // Explicit architecture match
+                score += 50;
+            }
+            Some(_) => {
+                // Explicit architecture mismatch - exclude
+                return None;
+            }
+            None => {
+                // No explicit architecture detected.
+                // Unsupported arch keywords were already filtered above, so only
+                // the unknown-arch-pattern check remains: it catches arch-like
+                // strings (e.g. "powerpc64") that aren't in UNSUPPORTED_ARCHS.
+                if unknown_arch_pattern {
+                    return None;
+                }
+
+                // Fall back to OS default arch
+                if let Some(default_arch) = platform.os.default_arch() {
+                    if platform.arch == default_arch {
+                        // Use default architecture (lower score than explicit)
+                        score += 25;
+                    }
+                    // If platform arch doesn't match default, still allow but no arch bonus
+                } else {
+                    // OS has no default (FreeBSD) - require explicit arch
+                    return None;
+                }
+            }
+        }
+
+        // Compiler scoring based on OS-specific priority
+        if let Some(compiler) = parsed.compiler {
+            let priority = compiler.priority(platform.os);
+            score += (priority as usize) * 10;
+        }
+
+        // File format preference
+        score += parsed.extension.format_score();
+
+        // Suppress unused-variable warning for filename_lower: it is computed by
+        // callers to drive the exclude/unsupported-arch flags above, and kept as a
+        // parameter so the signature mirrors score_asset's inputs.
+        let _ = filename_lower;
+
+        Some(score)
     }
 }
 

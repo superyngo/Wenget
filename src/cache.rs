@@ -196,6 +196,20 @@ impl ManifestCache {
         self.packages.values().find(|cp| cp.package.name == name)
     }
 
+    /// Build a name → cached package index for bulk name-based lookups.
+    ///
+    /// The `packages` map is keyed by repo URL, but update/check flows look
+    /// packages up by name. Building this index once turns repeated O(n×m)
+    /// linear scans into O(n + m). When duplicate names exist across buckets,
+    /// the first one encountered wins (matching `find_package` semantics).
+    pub fn packages_by_name(&self) -> HashMap<&str, &CachedPackage> {
+        let mut index = HashMap::with_capacity(self.packages.len());
+        for cp in self.packages.values() {
+            index.entry(cp.package.name.as_str()).or_insert(cp);
+        }
+        index
+    }
+
     /// Find a script by name
     #[allow(dead_code)]
     pub fn find_script(&self, name: &str) -> Option<&CachedScript> {

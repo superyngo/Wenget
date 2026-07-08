@@ -207,15 +207,12 @@ pub fn run(names: Vec<String>, yes: bool, platform: Option<String>) -> Result<()
 
         // Filter out packages that are already up to date
         let mut filtered = Vec::new();
+        let cache_by_name = cache.packages_by_name();
         for key in expanded {
             if let Some(inst_pkg) = installed.get_package(&key) {
                 match &inst_pkg.source {
                     PackageSource::Bucket { .. } => {
-                        if let Some(cached_pkg) = cache
-                            .packages
-                            .values()
-                            .find(|p| p.package.name == inst_pkg.repo_name)
-                        {
+                        if let Some(cached_pkg) = cache_by_name.get(inst_pkg.repo_name.as_str()) {
                             if let Some(cache_version) = &cached_pkg.package.version {
                                 if is_newer_version(&inst_pkg.version, cache_version) {
                                     filtered.push(key);
@@ -316,6 +313,11 @@ fn find_upgradeable(
     // Phase 1 (sequential): resolve each repo's URL, handle local-only sources (scripts)
     // that need no API call, and collect the rest into `jobs` for parallel fetching.
     // `job_meta` keeps the installed source/version snapshot needed when applying results.
+    //
+    // Build a name → cached package index once: the loop below and the cache-fallback
+    // path in Phase 3 both look packages up by repo name, which is O(cache) per lookup
+    // against the URL-keyed `cache.packages` map.
+    let cache_by_name = cache.packages_by_name();
     let mut jobs: Vec<(String, String)> = Vec::new();
     let mut job_meta: HashMap<String, (PackageSource, String)> = HashMap::new();
 
@@ -326,10 +328,7 @@ fn find_upgradeable(
         let repo_url = match &inst_pkg.source {
             PackageSource::Bucket { name: bucket_name } => {
                 // Get package info from cache for bucket packages
-                let found = cache
-                    .packages
-                    .values()
-                    .find(|cached_pkg| cached_pkg.package.name == repo_name);
+                let found = cache_by_name.get(repo_name.as_str());
 
                 if let Some(cached_pkg) = found {
                     cached_pkg.package.repo.clone()
@@ -439,7 +438,10 @@ fn find_upgradeable(
                     e
                 );
 
-                // Find package in cache by repo_name
+                // Find package in cache by repo_name.
+                // A linear scan is acceptable here: this branch only runs on API
+                // failure (rare), and `cache` may have been mutated by prior Ok
+                // results in this loop, so a pre-built name index would be stale.
                 if let Some(cached_pkg) = cache
                     .packages
                     .values()
@@ -513,6 +515,10 @@ fn sync_bucket_packages_to_cache(
     let mut jobs: Vec<(String, String)> = Vec::new();
     let mut source_map: HashMap<String, PackageSource> = HashMap::new();
 
+    // Name-keyed index of the cache so per-key lookups are O(1) instead of
+    // an O(keys × cache) linear scan.
+    let cache_by_name = cache.packages_by_name();
+
     for key in keys {
         let inst_pkg = match installed.get_package(key) {
             Some(p) => p,
@@ -529,11 +535,7 @@ fn sync_bucket_packages_to_cache(
         }
 
         // Look up the repo URL from the cached bucket entry.
-        let repo_url = match cache
-            .packages
-            .values()
-            .find(|cached| cached.package.name == inst_pkg.repo_name)
-        {
+        let repo_url = match cache_by_name.get(inst_pkg.repo_name.as_str()) {
             Some(cached) => cached.package.repo.clone(),
             None => continue,
         };
