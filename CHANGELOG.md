@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [3.8.3] - 2026-07-08
+
+### Changed
+
+- **Performance optimizations across I/O, HTTP, and concurrency hot paths**:
+  - Batch `installed.json` writes: saves manifest once after all installs instead of per-package, eliminating O(n) full JSON serializations.
+  - Shared HTTP client via `OnceLock`: reuses TCP/TLS connections across downloads instead of creating a new client per call.
+  - Parallel bucket fetches in `rebuild_cache`: buckets fetched concurrently via `std::thread::scope`, reducing cache rebuild latency from sequential sum to max of fetch times.
+  - Compact JSON serialization for `manifest-cache.json` (~30% smaller file).
+  - Increased download buffer from 8 KB to 64 KB for fewer syscalls.
+  - Removed unnecessary `.clone()` calls in update command.
+
 ## [3.8.2] - 2026-06-26
 
 ### Fixed
@@ -1137,3 +1149,6 @@ Wenget is now production-ready for managing GitHub binaries across platforms.
 [3.6.0]: https://github.com/superyngo/wenget/compare/v3.5.0...v3.6.0
 [3.7.0]: https://github.com/superyngo/wenget/compare/v3.6.0...v3.7.0
 [3.8.0]: https://github.com/superyngo/wenget/compare/v3.7.0...v3.8.0
+[3.8.1]: https://github.com/superyngo/wenget/compare/v3.8.0...v3.8.1
+[3.8.2]: https://github.com/superyngo/wenget/compare/v3.8.1...v3.8.2
+[3.8.3]: https://github.com/superyngo/wenget/compare/v3.8.2...v3.8.3
