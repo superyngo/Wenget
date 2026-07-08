@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [3.8.4] - 2026-07-08
+
 ### Changed
 
 - **Algorithmic complexity and allocation reductions on install/update hot paths**:
@@ -1161,3 +1163,4 @@ Wenget is now production-ready for managing GitHub binaries across platforms.
 [3.8.1]: https://github.com/superyngo/wenget/compare/v3.8.0...v3.8.1
 [3.8.2]: https://github.com/superyngo/wenget/compare/v3.8.1...v3.8.2
 [3.8.3]: https://github.com/superyngo/wenget/compare/v3.8.2...v3.8.3
+[3.8.4]: https://github.com/superyngo/wenget/compare/v3.8.3...v3.8.4
