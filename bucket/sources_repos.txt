@@ -51,6 +51,7 @@ https://github.com/cloudflare/cloudflared
 https://github.com/wavetermdev/waveterm
 https://github.com/microsoft/terminal
 https://github.com/cmderdev/cmder
+https://github.com/Adembc/lazyssh
 
 # === System Monitoring ===
 https://github.com/itefixnet/wincdu
