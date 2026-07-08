@@ -3,7 +3,7 @@
 //! The cache fetches and merges bucket sources into a unified view.
 //! This reduces GitHub API calls and improves performance.
 
-use crate::bucket::{Bucket, BucketConfig};
+use crate::bucket::Bucket;
 use crate::core::manifest::{Package, PackageSource, ScriptItem, SourceManifest};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
@@ -144,7 +144,7 @@ impl ManifestCache {
             })?;
         }
 
-        let content = serde_json::to_string_pretty(self).context("Failed to serialize cache")?;
+        let content = serde_json::to_string(self).context("Failed to serialize cache")?;
 
         fs::write(path, content)
             .with_context(|| format!("Failed to write cache: {}", path.display()))
@@ -227,28 +227,22 @@ impl Default for ManifestCache {
     }
 }
 
-/// Build cache from buckets only
-pub fn build_cache(
-    bucket_config: &BucketConfig,
-    fetch_bucket_fn: impl Fn(&Bucket) -> Result<SourceManifest>,
-) -> Result<ManifestCache> {
+pub fn build_cache_from_results(
+    buckets_with_results: Vec<(Bucket, Result<SourceManifest>)>,
+) -> ManifestCache {
     let mut cache = ManifestCache::new();
     cache.last_updated = Utc::now();
 
-    // Add packages from all enabled buckets
-    let enabled_buckets = bucket_config.enabled_buckets();
-
-    for bucket in enabled_buckets {
+    for (bucket, result) in buckets_with_results {
         let source_key = format!("bucket:{}", bucket.name);
         let now = Utc::now();
 
-        match fetch_bucket_fn(bucket) {
+        match result {
             Ok(manifest) => {
                 let package_count = manifest.packages.len();
                 let script_count = manifest.scripts.len();
                 let total_count = package_count + script_count;
 
-                // Add packages
                 for package in manifest.packages {
                     cache.add_package(
                         package,
@@ -258,7 +252,6 @@ pub fn build_cache(
                     );
                 }
 
-                // Add scripts
                 for script in manifest.scripts {
                     cache.add_script(
                         script,
@@ -268,7 +261,6 @@ pub fn build_cache(
                     );
                 }
 
-                // Record source info
                 cache.sources.insert(
                     source_key,
                     CachedSourceInfo {
@@ -283,12 +275,11 @@ pub fn build_cache(
             }
             Err(e) => {
                 log::warn!("Failed to fetch bucket '{}': {}", bucket.name, e);
-                // Continue with other buckets
             }
         }
     }
 
-    Ok(cache)
+    cache
 }
 
 #[cfg(test)]

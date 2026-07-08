@@ -363,12 +363,6 @@ fn install_scripts(
         match install_single_script(paths, &name, &content, &script_type, &origin) {
             Ok(inst_pkg) => {
                 installed.upsert_package(name.clone(), inst_pkg);
-                if let Err(e) = config.save_installed(installed) {
-                    println!("  {} Failed to save installed manifest: {}", "✗".red(), e);
-                    fail_count += 1;
-                    failed_scripts.push(name);
-                    continue;
-                }
                 println!("  {} Installed successfully", "✓".green());
                 success_count += 1;
                 successful_scripts.push(name);
@@ -378,6 +372,12 @@ fn install_scripts(
                 fail_count += 1;
                 failed_scripts.push(name);
             }
+        }
+    }
+
+    if success_count > 0 {
+        if let Err(e) = config.save_installed(installed) {
+            eprintln!("{} Failed to save installed manifest: {}", "✗".red(), e);
         }
     }
 
@@ -504,12 +504,6 @@ fn install_local_files(
                 };
                 let display_names = inst_pkg.get_command_names().join(", ");
                 installed.upsert_package(name.clone(), inst_pkg);
-                if let Err(e) = config.save_installed(installed) {
-                    println!("  {} Failed to save installed manifest: {}", "✗".red(), e);
-                    fail_count += 1;
-                    failed_files.push(name.clone());
-                    continue;
-                }
                 println!(
                     "  {} Installed successfully as {}",
                     "✓".green(),
@@ -525,6 +519,12 @@ fn install_local_files(
             }
         }
         println!();
+    }
+
+    if success_count > 0 {
+        if let Err(e) = config.save_installed(installed) {
+            eprintln!("{} Failed to save installed manifest: {}", "✗".red(), e);
+        }
     }
 
     println!("{}", "Summary:".bold());
@@ -620,12 +620,6 @@ fn install_from_urls(
                         };
                         let display_names = inst_pkg.get_command_names().join(", ");
                         installed.upsert_package(name.clone(), inst_pkg);
-                        if let Err(e) = config.save_installed(installed) {
-                            println!("  {} Failed to save installed manifest: {}", "✗".red(), e);
-                            fail_count += 1;
-                            failed_urls.push(name.clone());
-                            continue;
-                        }
                         println!(
                             "  {} Installed successfully as {}",
                             "✓".green(),
@@ -659,6 +653,12 @@ fn install_from_urls(
             }
         }
         println!();
+    }
+
+    if success_count > 0 {
+        if let Err(e) = config.save_installed(installed) {
+            eprintln!("{} Failed to save installed manifest: {}", "✗".red(), e);
+        }
     }
 
     println!("{}", "Summary:".bold());
@@ -1551,12 +1551,6 @@ fn install_packages(
             ) {
                 Ok(inst_pkg) => {
                     installed.upsert_package(installed_key.clone(), inst_pkg);
-                    if let Err(e) = config.save_installed(installed) {
-                        println!("  {} Failed to save installed manifest: {}", "✗".red(), e);
-                        fail_count += 1;
-                        failed_packages.push(installed_key.clone());
-                        continue;
-                    }
 
                     // Collect package for cache update if fetched from GitHub API
                     // (only once, not for each binary)
@@ -1575,6 +1569,12 @@ fn install_packages(
                 }
             }
             println!();
+        }
+    }
+
+    if success_count > 0 {
+        if let Err(e) = config.save_installed(installed) {
+            eprintln!("{} Failed to save installed manifest: {}", "✗".red(), e);
         }
     }
 
@@ -1625,6 +1625,12 @@ fn install_packages(
             }
         }
         println!();
+    }
+
+    if script_success_count > 0 {
+        if let Err(e) = config.save_installed(installed) {
+            eprintln!("{} Failed to save installed manifest: {}", "✗".red(), e);
+        }
     }
 
     // Summary
@@ -2163,7 +2169,7 @@ fn update_cache_with_packages(
 /// Install a script from bucket cache
 #[allow(clippy::too_many_arguments)]
 fn install_script_from_bucket(
-    config: &Config,
+    _config: &Config,
     paths: &WenPaths,
     installed: &mut crate::core::InstalledManifest,
     name: &str,
@@ -2223,7 +2229,6 @@ fn install_script_from_bucket(
         download_url: Some(url.to_string()),
     };
     installed.upsert_package(name.to_string(), inst_pkg);
-    config.save_installed(installed)?;
 
     Ok(())
 }

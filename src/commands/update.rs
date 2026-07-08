@@ -383,7 +383,7 @@ fn find_upgradeable(
 
                     if needs_update {
                         upgradeable.push((
-                            repo_name.clone(),
+                            repo_name,
                             inst_pkg.download_url.clone().unwrap_or_default(),
                             cache_url.clone(),
                         ));
@@ -428,7 +428,7 @@ fn find_upgradeable(
                 }
 
                 if inst_version != latest_version {
-                    upgradeable.push((repo_name.clone(), inst_version, latest_version));
+                    upgradeable.push((repo_name, inst_version, latest_version));
                 }
             }
             Err(e) => {
@@ -472,11 +472,7 @@ fn find_upgradeable(
                                 repo_name,
                                 cache_version
                             );
-                            upgradeable.push((
-                                repo_name.clone(),
-                                inst_version,
-                                cache_version.clone(),
-                            ));
+                            upgradeable.push((repo_name, inst_version, cache_version.clone()));
                         }
                     } else {
                         eprintln!(

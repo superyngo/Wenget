@@ -5,17 +5,24 @@ use indicatif::{ProgressBar, ProgressStyle};
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
+use std::sync::OnceLock;
+
+fn shared_client() -> &'static reqwest::blocking::Client {
+    static CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::blocking::Client::builder()
+            .user_agent(format!("WenPM/{}", env!("CARGO_PKG_VERSION")))
+            .build()
+            .expect("Failed to create HTTP client")
+    })
+}
 
 /// Download a file from URL to a local path with progress bar
 pub fn download_file(url: &str, dest: &Path) -> Result<()> {
     log::info!("Downloading: {}", url);
     log::debug!("Destination: {}", dest.display());
 
-    // Create HTTP client
-    let client = reqwest::blocking::Client::builder()
-        .user_agent(format!("WenPM/{}", env!("CARGO_PKG_VERSION")))
-        .build()
-        .context("Failed to create HTTP client")?;
+    let client = shared_client();
 
     // Send GET request
     let response = client
@@ -50,7 +57,7 @@ pub fn download_file(url: &str, dest: &Path) -> Result<()> {
 
     // Download and write with progress
     let mut downloaded = 0u64;
-    let mut buffer = vec![0; 8192];
+    let mut buffer = vec![0; 65536];
 
     let mut reader = std::io::BufReader::new(response);
     loop {

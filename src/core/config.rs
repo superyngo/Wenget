@@ -222,33 +222,61 @@ impl Config {
 
     /// Force rebuild manifest cache from buckets only
     pub fn rebuild_cache(&self) -> Result<ManifestCache> {
-        use crate::cache::build_cache;
+        use crate::bucket::Bucket;
+        use crate::cache::build_cache_from_results;
         use crate::utils::HttpClient;
         use std::time::Duration;
 
         let bucket_config = self.get_or_create_buckets()?;
+        let enabled_buckets: Vec<Bucket> = bucket_config
+            .enabled_buckets()
+            .into_iter()
+            .cloned()
+            .collect();
 
-        // Fetch bucket manifests with shorter timeout (10 seconds)
-        let fetch_bucket = |bucket: &crate::bucket::Bucket| -> Result<SourceManifest> {
-            log::debug!("Fetching bucket '{}' from {}", bucket.name, bucket.url);
+        if enabled_buckets.is_empty() {
+            let cache = ManifestCache::new();
+            self.save_cache(&cache)?;
+            return Ok(cache);
+        }
 
-            let http = HttpClient::with_timeout(Duration::from_secs(10))?;
-            let content = http
-                .get_text(&bucket.url)
-                .with_context(|| format!("Failed to fetch bucket from {}", bucket.url))?;
+        let results: Vec<(Bucket, Result<SourceManifest>)> = std::thread::scope(|scope| {
+            let handles: Vec<_> = enabled_buckets
+                .into_iter()
+                .map(|bucket| {
+                    scope.spawn(move || {
+                        let name = bucket.name.clone();
+                        let url = bucket.url.clone();
+                        log::debug!("Fetching bucket '{}' from {}", name, url);
 
-            // Try to parse as SourceManifest
-            let manifest: SourceManifest = serde_json::from_str(&content)
-                .with_context(|| format!("Failed to parse bucket manifest from {}", bucket.url))?;
+                        let fetch_result = (|| -> Result<SourceManifest> {
+                            let http = HttpClient::with_timeout(Duration::from_secs(10))?;
+                            let content = http
+                                .get_text(&url)
+                                .with_context(|| format!("Failed to fetch bucket from {}", url))?;
+                            serde_json::from_str(&content).with_context(|| {
+                                format!("Failed to parse bucket manifest from {}", url)
+                            })
+                        })();
 
-            Ok(manifest)
-        };
+                        (
+                            Bucket {
+                                name,
+                                url,
+                                enabled: bucket.enabled,
+                                priority: bucket.priority,
+                            },
+                            fetch_result,
+                        )
+                    })
+                })
+                .collect();
 
-        let cache = build_cache(&bucket_config, fetch_bucket)?;
+            handles.into_iter().map(|h| h.join().unwrap()).collect()
+        });
 
-        // Save cache
+        let cache = build_cache_from_results(results);
         self.save_cache(&cache)?;
-
         Ok(cache)
     }
 
