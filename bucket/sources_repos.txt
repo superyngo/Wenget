@@ -92,6 +92,7 @@ https://github.com/badlogic/pi-mono
 https://github.com/openai/codex
 https://github.com/dynatrace-oss/ai-config-manager
 https://github.com/pardnchiu/Agenvoy
+https://github.com/DeusData/codebase-memory-mcp
 
 # === Archived ===
 # https://github.com/ClementTsang/bottom
