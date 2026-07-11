@@ -69,6 +69,7 @@ https://github.com/sxyazi/yazi
 https://github.com/jarun/nnn
 https://github.com/rn7s2/rsync-win
 https://github.com/rclone/rclone
+https://github.com/t8y2/dbx
 
 # === Viewers/Editors ===
 https://github.com/sharkdp/bat
