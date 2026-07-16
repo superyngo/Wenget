@@ -52,6 +52,7 @@ https://github.com/wavetermdev/waveterm
 https://github.com/microsoft/terminal
 https://github.com/cmderdev/cmder
 https://github.com/Adembc/lazyssh
+https://github.com/AlistGo/alist
 
 # === System Monitoring ===
 https://github.com/itefixnet/wincdu
