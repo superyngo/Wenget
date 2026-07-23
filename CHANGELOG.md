@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+
+- 2026-07-23: docs: add `docs/RESOURCE_FILTERING_RULES.md` — single source of truth cataloguing all package-analysis filtering rules (asset→platform bucketing gates and scoring, platform selection/fallback ordering, executable-candidate gates and scoring, variant extraction, command-name normalization, glob matching), each cited to its implementing `file:function`.
+
 ## [3.8.4] - 2026-07-08
 
 ### Changed
